@@ -284,7 +284,7 @@ export default {
     g.fillStyle = darken(col, 0.35);
     g.fillRect(cx - 12, cy + 10, 24, 2);
     g.fillRect(cx + 10, cy - 12, 2, 24);
-    drawIcon(g, kind, cx, cy, 7, OUT);
+    drawIcon(g, kind, cx, cy, 8, OUT);
     if (Math.floor(t * 4 + x) % 4 === 0) {
       g.fillStyle = '#ffffff';
       g.fillRect(cx - 10, cy - 10, 4, 2);

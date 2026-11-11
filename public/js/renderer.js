@@ -715,6 +715,7 @@ export class Renderer {
       const cx = pv.sx;
       let y = pv.sy - (th.labelGap ?? 7) * z;
       if (cx < -40 || cx > this.SW + 40 || y < -60 || y > this.SH + 80) continue;
+      if (view.hud && cx < 176 && y < 150) continue; // would sit under the minimap
       if (view.names !== false) {
         ctx.font = lab.font;
         ctx.lineWidth = lab.strokeWidth ?? 3;
