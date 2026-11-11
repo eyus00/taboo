@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <title>You're It! - multiplayer tag</title>
+    <meta name="description" content="Real-time multiplayer tag for 2-4 players. Share a 4-letter room code and don't be it." />
+    <meta name="theme-color" content="#05030f" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='6' width='24' height='22' rx='6' fill='%23ff2bd6'/%3E%3Crect x='9' y='12' width='14' height='6' rx='2' fill='%23fff'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body data-theme="neon">
+    <canvas id="stage"></canvas>
+
+    <!-- HOME -->
+    <main id="home" class="screen">
+      <div class="panel home-panel">
+        <h1 class="logo">YOU'RE <span class="it">IT!</span></h1>
+        <p class="tagline">Real-time tag for 2&ndash;4 players. Don't be it.</p>
+
+        <label class="field">
+          <span>Your name</span>
+          <input id="name" maxlength="12" autocomplete="off" spellcheck="false" placeholder="Player" />
+        </label>
+
+        <div class="row">
+          <button id="btn-create" class="btn primary">Create Room</button>
+          <button id="btn-join" class="btn">Join Room</button>
+        </div>
+        <form id="join-form" class="join hidden">
+          <input id="code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" autocapitalize="characters" aria-label="Room code" />
+          <button class="btn primary" type="submit">Join</button>
+        </form>
+        <p id="home-error" class="error" role="alert"></p>
+
+        <button id="btn-practice" class="btn ghost">Practice vs bots</button>
+
+        <div class="style-picker">
+          <button id="style-prev" aria-label="Previous art style">&#9664;</button>
+          <div>
+            <small>Art style</small>
+            <strong id="style-name">Neon District</strong>
+          </div>
+          <button id="style-next" aria-label="Next art style">&#9654;</button>
+        </div>
+
+        <p class="hint"><b>Move</b> &larr; &rarr; or A D &nbsp;&middot;&nbsp; <b>Jump</b> &uarr; W or Space</p>
+        <p id="conn" class="conn">Connecting to server&hellip;</p>
+      </div>
+    </main>
+
+    <!-- LOBBY -->
+    <main id="lobby" class="screen hidden">
+      <div class="panel lobby-panel">
+        <header class="lobby-head">
+          <button id="btn-leave" class="link">&larr; Leave</button>
+          <div class="code-box">
+            <small>Room code</small>
+            <div id="room-code" class="code">----</div>
+          </div>
+          <button id="btn-copy" class="btn small">Copy invite link</button>
+        </header>
+
+        <div class="lobby-grid">
+          <section>
+            <h2>Players</h2>
+            <ul id="players" class="players"></ul>
+          </section>
+          <section id="settings">
+            <h2>Match <small id="settings-note"></small></h2>
+            <div class="setting">
+              <span>Art style</span>
+              <div id="opt-theme" class="opts"></div>
+            </div>
+            <div class="setting">
+              <span>Arena</span>
+              <div id="opt-arena" class="opts arenas"></div>
+            </div>
+            <div class="setting">
+              <span>Round</span>
+              <div id="opt-duration" class="opts"></div>
+            </div>
+          </section>
+        </div>
+
+        <footer class="lobby-foot">
+          <button id="btn-start" class="btn primary big">Start Game</button>
+          <p id="lobby-wait" class="wait">Waiting for host to start&hellip;</p>
+        </footer>
+      </div>
+    </main>
+
+    <!-- RESULTS -->
+    <div id="results" class="screen overlay hidden">
+      <div class="panel results-panel">
+        <h2 id="results-title">Round over</h2>
+        <p id="results-sub" class="tagline"></p>
+        <ol id="results-list" class="results-list"></ol>
+        <div class="row">
+          <button id="btn-again" class="btn primary">Play Again</button>
+          <button id="btn-tolobby" class="btn">Lobby</button>
+          <button id="btn-quit" class="btn ghost">Leave Room</button>
+        </div>
+        <p id="results-wait" class="wait"></p>
+      </div>
+    </div>
+
+    <div id="topbar">
+      <button id="btn-exit" class="icon hidden" title="Leave match" aria-label="Leave match">&#10005;</button>
+      <button id="btn-mute" class="icon" title="Sound on/off" aria-label="Sound on/off">&#9835;</button>
+    </div>
+
+    <div id="touch" class="hidden">
+      <div class="pad">
+        <button data-bit="1" aria-label="Move left">&#9664;</button>
+        <button data-bit="2" aria-label="Move right">&#9654;</button>
+      </div>
+      <button class="jump" data-bit="4" aria-label="Jump">JUMP</button>
+    </div>
+
+    <div id="toasts" aria-live="polite"></div>
+
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "name": "youre-it",
+  "version": "1.0.0",
+  "description": "You're It! - real-time multiplayer tag for 2-4 players, with five art styles",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test/sim.test.js && node test/net.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}

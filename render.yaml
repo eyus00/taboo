@@ -1,0 +1,12 @@
+# One-click deploy on Render (free plan): New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: youre-it-tag
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22
