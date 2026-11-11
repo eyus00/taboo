@@ -1,8 +1,8 @@
 // NEON DISTRICT - cyberpunk. Rain-slick night city, glowing rails, little
 // visor-bots leaving light trails.
 
-import { W, H, PW } from '/shared/config.js';
-import { rr, rgba, vnoise, squashAt } from '../util.js';
+import { ART_W as W, ART_H as H, PW } from '/shared/config.js';
+import { rr, rgba, vnoise, squashAt, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
 
 const CYAN = '#22e6ff';
 const PINK = '#ff2bd6';
@@ -71,8 +71,11 @@ function skyline(g, rnd, o) {
   }
 }
 
-function drawPlatform(g, p, i, rnd) {
-  const accent = p.ground ? [CYAN, PINK][i % 2] : [PINK, CYAN, VIOLET, AMBER][i % 4];
+// every platform gets a rail colour that only depends on where it is
+const accentOf = (p) => (p.ground ? [CYAN, PINK][(p.x / 40) & 1] : [PINK, CYAN, VIOLET, AMBER][(p.x / 40 + p.y / 40) & 3]);
+
+function drawPlatform(g, p, rnd) {
+  const accent = accentOf(p);
   if (!p.ground) {
     // light cone under floating slabs
     const cone = g.createLinearGradient(0, p.y + p.h, 0, p.y + p.h + 54);
@@ -155,7 +158,6 @@ function drawPlatform(g, p, i, rnd) {
   g.restore();
   g.fillStyle = 'rgba(255,255,255,.7)';
   g.fillRect(p.x + 1, p.y + 0.5, p.w - 2, 1);
-  return accent;
 }
 
 export default {
@@ -193,7 +195,7 @@ export default {
   },
 
   build(env) {
-    const { rnd, arena, layer } = env;
+    const { rnd, layer } = env;
     const signs = [];
     const beacons = [];
     const bg = layer((g) => {
@@ -247,11 +249,6 @@ export default {
       g.fillRect(0, H - 150, W, 150);
     });
 
-    const accents = [];
-    const plats = layer((g) => {
-      arena.platforms.forEach((p, i) => accents.push(drawPlatform(g, p, i, rnd)));
-    });
-
     const overlay = layer((g) => {
       g.fillStyle = 'rgba(0,0,10,.11)';
       for (let y = 0; y < H; y += 3) g.fillRect(0, y, W, 1);
@@ -267,7 +264,7 @@ export default {
     const cars = [];
     for (let i = 0; i < 4; i++) cars.push({ y: 60 + rnd() * 170, v: (rnd() < 0.5 ? -1 : 1) * (50 + rnd() * 80), off: rnd() * 900, col: rnd() < 0.5 ? CYAN : AMBER });
 
-    return { bg, plats, overlay, signs, beacons, accents, rain, cars, arena, trail: [0, 0, 0, 0] };
+    return { bg, overlay, signs, beacons, rain, cars, trail: [0, 0, 0, 0] };
   },
 
   back(g, sc, t) {
@@ -301,21 +298,106 @@ export default {
     }
   },
 
-  platforms(g, sc, t) {
-    g.drawImage(sc.plats, 0, 0, W, H);
-    // a pulse of light racing along every rail
-    const ps = sc.arena.platforms;
-    for (let i = 0; i < ps.length; i++) {
-      const p = ps[i];
-      const x = p.x - 30 + ((t * 110 + i * 83) % (p.w + 60));
+  platPad: { x: 18, top: 20, bottom: 58 },
+  platform(g, p, i, rnd) {
+    drawPlatform(g, p, rnd);
+  },
+
+  // a pulse of light racing along every rail on screen
+  platformFx(g, sc, t, shown) {
+    for (const p of shown) {
+      const x = p.x - 30 + ((t * 110 + p.x * 0.7 + p.y * 0.3) % (p.w + 60));
       const x0 = Math.max(p.x, x);
       const x1 = Math.min(p.x + p.w, x + 30);
       if (x1 <= x0) continue;
-      g.fillStyle = rgba(sc.accents[i], 0.28);
+      g.fillStyle = rgba(accentOf(p), 0.28);
       g.fillRect(x0, p.y - 3, x1 - x0, 9);
       g.fillStyle = 'rgba(255,255,255,.9)';
       g.fillRect(x0, p.y - 0.5, x1 - x0, 3.5);
     }
+  },
+
+  // a repulsor pad
+  trampoline(g, tr, t, k) {
+    const { x, y, w, h } = tr;
+    const glow = 0.55 + 0.25 * Math.sin(t * 6) + k * 0.6;
+    g.fillStyle = '#120d2e';
+    g.fillRect(x, y + 6, w, h - 6);
+    g.fillStyle = rgba(AMBER, 0.35);
+    g.fillRect(x, y + h - 2, w, 2);
+    g.shadowColor = AMBER;
+    g.shadowBlur = 10 + k * 14;
+    g.fillStyle = rgba(AMBER, Math.min(1, glow));
+    g.fillRect(x + 2, y + 3 + k * 3, w - 4, 3.5);
+    g.shadowBlur = 0;
+    // chevrons rising off the pad
+    g.strokeStyle = rgba(AMBER, 0.85);
+    g.lineWidth = 2;
+    g.lineJoin = 'round';
+    for (let n = 0; n < 3; n++) {
+      const ph = (t * 1.6 + n / 3) % 1;
+      const cy = y - 2 - ph * 26 - k * 10;
+      g.globalAlpha = (1 - ph) * 0.9;
+      g.beginPath();
+      g.moveTo(x + w / 2 - 9, cy + 4);
+      g.lineTo(x + w / 2, cy - 2);
+      g.lineTo(x + w / 2 + 9, cy + 4);
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+  },
+
+  // a hard-light gate
+  portal(g, po, t) {
+    const col = PORTAL_COLORS[po.pair % PORTAL_COLORS.length];
+    const cx = po.cx;
+    const cy = po.cy + 2;
+    const rx = 18;
+    const ry = 34;
+    g.save();
+    g.beginPath();
+    g.ellipse(cx, cy, rx, ry, 0, 0, 6.283);
+    g.clip();
+    g.fillStyle = rgba(col, 0.22);
+    g.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
+    g.fillStyle = rgba(col, 0.55);
+    for (let ly = -ry + ((t * 40) % 8); ly < ry; ly += 8) g.fillRect(cx - rx, cy + ly, rx * 2, 2);
+    g.restore();
+    g.shadowColor = col;
+    g.shadowBlur = 14;
+    g.strokeStyle = col;
+    g.lineWidth = 3;
+    g.beginPath();
+    g.ellipse(cx, cy, rx, ry, 0, 0, 6.283);
+    g.stroke();
+    g.shadowBlur = 0;
+    g.strokeStyle = 'rgba(255,255,255,.85)';
+    g.lineWidth = 1.2;
+    g.beginPath();
+    g.ellipse(cx, cy, rx, ry, 0, t * 2.5, t * 2.5 + 1.3);
+    g.stroke();
+  },
+
+  // a spinning hologram
+  pickup(g, kind, x, y, t) {
+    const col = KIND_COLORS[kind];
+    const wob = Math.abs(Math.cos(t * 2.4 + x));
+    g.shadowColor = col;
+    g.shadowBlur = 14;
+    g.strokeStyle = col;
+    g.lineWidth = 2.2;
+    g.fillStyle = 'rgba(10,7,30,.8)';
+    g.beginPath();
+    g.moveTo(x, y - 17);
+    g.lineTo(x + 15 * (0.35 + 0.65 * wob), y);
+    g.lineTo(x, y + 17);
+    g.lineTo(x - 15 * (0.35 + 0.65 * wob), y);
+    g.closePath();
+    g.fill();
+    g.stroke();
+    g.shadowBlur = 6;
+    drawIcon(g, kind, x, y, 6.5, '#ffffff');
+    g.shadowBlur = 0;
   },
 
   player(g, pv, t) {
@@ -485,13 +567,14 @@ export default {
         y: 0,
         life: 0.45,
         color: pv.color,
+        top: pv.y - 520,
         draw(g, p, k) {
           g.globalAlpha = k * 0.6;
           g.fillStyle = p.color;
-          g.fillRect(p.x - 16 * k, 0, 32 * k, H);
+          g.fillRect(p.x - 16 * k, p.top, 32 * k, 560);
           g.globalAlpha = k;
           g.fillStyle = '#fff';
-          g.fillRect(p.x - 2 * k, 0, 4 * k, H);
+          g.fillRect(p.x - 2 * k, p.top, 4 * k, 560);
         },
       });
     },
@@ -509,15 +592,15 @@ export default {
       // glitch slices
       for (let i = 0; i < 6; i++) {
         R.emit({
-          x: 0,
-          y: Math.random() * H,
+          x: x - 700,
+          y: y - 260 + Math.random() * 520,
           life: 0.1 + Math.random() * 0.12,
           size: 3 + Math.random() * 14,
           color: i % 2 ? CYAN : PINK,
           draw(g, p, k) {
             g.globalAlpha = 0.28 * k;
             g.fillStyle = p.color;
-            g.fillRect(0, p.y, W, p.size);
+            g.fillRect(p.x, p.y, 1400, p.size);
           },
         });
       }

@@ -86,8 +86,33 @@ export class Sfx {
       case 'jump':
         this.tone(300, 640, 0.13, 0.13 * vol);
         break;
+      case 'airjump':
+        this.tone(520, 980, 0.11, 0.11 * vol);
+        break;
       case 'land':
         this.noise(0.07, 0.22 * vol, 500);
+        break;
+      case 'dash':
+        this.noise(0.14, 0.32 * vol, 3200);
+        this.tone(700, 260, 0.12, 0.06 * vol);
+        break;
+      case 'bounce':
+        this.tone(180, 760, 0.22, 0.2 * vol, 'sine');
+        this.tone(360, 1300, 0.18, 0.08 * vol, 'triangle', 0.02);
+        break;
+      case 'portal':
+        this.tone(900, 220, 0.2, 0.12 * vol, 'sine');
+        this.tone(240, 1100, 0.22, 0.1 * vol, 'sine', 0.08);
+        break;
+      case 'pick':
+        [660, 880, 1320].forEach((f, i) => this.tone(f, f, 0.12, 0.14 * vol, 'triangle', i * 0.05));
+        break;
+      case 'block':
+        this.noise(0.12, 0.4, 5000);
+        this.tone(1400, 700, 0.25, 0.16, 'triangle');
+        break;
+      case 'freeze':
+        [1800, 1500, 2100].forEach((f, i) => this.tone(f, f * 0.8, 0.16, 0.08 * vol, 'sine', i * 0.04));
         break;
       case 'tag':
         this.noise(0.18, 0.5, 2400);

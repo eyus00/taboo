@@ -2,8 +2,8 @@
 // sun, drifting petals; platforms are single bold brush strokes and the
 // players are little wanderers in straw hats.
 
-import { W, H, PW } from '/shared/config.js';
-import { rgba, darken, vnoise, hash1, clamp, squashAt } from '../util.js';
+import { ART_W as W, ART_H as H, PW } from '/shared/config.js';
+import { rgba, darken, vnoise, hash1, clamp, squashAt, rr, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
 
 const INK = '#1c1b1f';
 const PAPER = '#efe6d2';
@@ -229,7 +229,7 @@ export default {
   },
 
   build(env) {
-    const { rnd, arena, layer } = env;
+    const { rnd, layer } = env;
     const bg = layer((g) => {
       g.fillStyle = PAPER;
       g.fillRect(0, 0, W, H);
@@ -335,10 +335,6 @@ export default {
       g.restore();
     });
 
-    const plats = layer((g) => {
-      for (const p of arena.platforms) drawPlatform(g, rnd, p);
-    });
-
     const shade = layer((g) => {
       const v = g.createRadialGradient(W / 2, H / 2, H * 0.48, W / 2, H / 2, H);
       v.addColorStop(0, 'rgba(110,80,40,0)');
@@ -351,15 +347,114 @@ export default {
     for (let i = 0; i < 30; i++) {
       petals.push({ x: rnd() * W, y: rnd() * H, vy: 22 + rnd() * 30, vx: -(10 + rnd() * 26), amp: 10 + rnd() * 22, f: 0.6 + rnd() * 1.2, ph: rnd() * 6.283, s: 2.6 + rnd() * 2.6, light: rnd() < 0.5 });
     }
-    return { bg, plats, shade, petals };
+    return { bg, shade, petals };
   },
 
   back(g, sc) {
     g.drawImage(sc.bg, 0, 0, W, H);
   },
 
-  platforms(g, sc) {
-    g.drawImage(sc.plats, 0, 0, W, H);
+  // one platform, painted once and cached by the renderer
+  platPad: { x: 10, top: 18, bottom: 30 },
+  platform(g, p, i, rnd) {
+    drawPlatform(g, rnd, p);
+  },
+
+  // a little taiko drum
+  trampoline(g, tr, t, k) {
+    const x = tr.x;
+    const w = tr.w;
+    const y = tr.y + k * 5;
+    const bottom = tr.y + tr.h;
+    g.beginPath();
+    g.moveTo(x + 3, y + 4);
+    g.lineTo(x + w - 3, y + 4);
+    g.quadraticCurveTo(x + w + 4, (y + bottom) / 2 + 2, x + w - 3, bottom);
+    g.lineTo(x + 3, bottom);
+    g.quadraticCurveTo(x - 4, (y + bottom) / 2 + 2, x + 3, y + 4);
+    g.closePath();
+    g.fillStyle = RED;
+    g.fill();
+    g.strokeStyle = INK;
+    g.lineWidth = 1.6;
+    g.stroke();
+    g.fillStyle = INK;
+    for (let sx = x + 7; sx < x + w - 6; sx += 9) g.fillRect(sx, y + 7, 2.4, 2.4);
+    rr(g, x - 2, y - 1, w + 4, 6, 3);
+    g.fillStyle = '#f6eedb';
+    g.fill();
+    g.stroke();
+    if (k > 0.05) {
+      g.strokeStyle = rgba(INK, k);
+      g.lineCap = 'round';
+      g.lineWidth = 1.6;
+      g.beginPath();
+      for (let n = 0; n < 3; n++) {
+        const lx = x + w * (0.25 + 0.25 * n);
+        g.moveTo(lx, y - 5 - k * 6);
+        g.lineTo(lx + (n - 1) * 4, y - 12 - k * 12);
+      }
+      g.stroke();
+    }
+  },
+
+  // an enso - a circle drawn in one breath - with a wash of colour inside
+  portal(g, po, t, i) {
+    const col = PORTAL_COLORS[po.pair % PORTAL_COLORS.length];
+    const cx = po.cx;
+    const cy = po.cy + 2;
+    const rx = 19;
+    const ry = 33;
+    const rg = g.createRadialGradient(cx, cy, 2, cx, cy, 38);
+    rg.addColorStop(0, rgba(col, 0.6));
+    rg.addColorStop(1, rgba(col, 0));
+    g.fillStyle = rg;
+    g.beginPath();
+    g.ellipse(cx, cy, rx + 12, ry + 10, 0, 0, 6.283);
+    g.fill();
+    g.strokeStyle = rgba(col, 0.9);
+    g.lineWidth = 2;
+    g.lineCap = 'round';
+    g.beginPath();
+    for (let a = 0.6; a < 7; a += 0.3) {
+      const r = a * 2.3;
+      const px = cx + Math.cos(a * 1.5 - t * 3) * r * 0.6;
+      const py = cy + Math.sin(a * 1.5 - t * 3) * r * 1.05;
+      if (a === 0.6) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.stroke();
+    g.strokeStyle = INK;
+    const n = 22;
+    const rot = t * 1.3 + i * 1.7;
+    for (let k = 0; k < n; k++) {
+      g.lineWidth = 1.4 + 4.6 * Math.sin((k / n) * Math.PI);
+      g.beginPath();
+      g.ellipse(cx, cy, rx, ry, 0, rot + (k / n) * 5.5, rot + ((k + 1.25) / n) * 5.5);
+      g.stroke();
+    }
+  },
+
+  // a paper charm with the power painted on it
+  pickup(g, kind, x, y, t) {
+    const col = KIND_COLORS[kind];
+    const rg = g.createRadialGradient(x, y, 2, x, y, 30);
+    rg.addColorStop(0, rgba(col, 0.5));
+    rg.addColorStop(1, rgba(col, 0));
+    g.fillStyle = rg;
+    g.fillRect(x - 30, y - 30, 60, 60);
+    g.translate(x, y);
+    g.rotate(Math.sin(t * 2.2 + x) * 0.1);
+    rr(g, -11.5, -15, 23, 30, 2.5);
+    g.fillStyle = '#f9f1de';
+    g.fill();
+    g.strokeStyle = INK;
+    g.lineWidth = 1.8;
+    g.stroke();
+    g.fillStyle = RED;
+    g.fillRect(-11.5, -15, 23, 4.5);
+    g.fillRect(-3, 10.5, 6, 2.5);
+    drawIcon(g, kind, 0, 1, 7.5, darken(col, 0.22));
   },
 
   player(g, pv, t) {
@@ -563,7 +658,7 @@ export default {
       if (Math.random() < 0.6) R.emit({ x: pv.cx - pv.face * 9, y: pv.feet - 2, vx: -pv.face * 40, vy: -40, g: 500, life: 0.3, size: 1 + Math.random(), color: INK });
     },
     respawn(R, pv) {
-      for (let i = 0; i < 12; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 40, y: Math.random() * 30, vx: (Math.random() - 0.5) * 60, vy: 40 + Math.random() * 80, life: 0.9, size: 2 + Math.random() * 2, color: i % 2 ? '#f7bccb' : '#ee93ab' });
+      for (let i = 0; i < 12; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 40, y: pv.y - 30 + Math.random() * 50, vx: (Math.random() - 0.5) * 60, vy: 40 + Math.random() * 80, life: 0.9, size: 2 + Math.random() * 2, color: i % 2 ? '#f7bccb' : '#ee93ab' });
     },
     tag(R, to) {
       R.flash(RED, 0.14);

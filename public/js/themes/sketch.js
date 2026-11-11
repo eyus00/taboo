@@ -2,8 +2,8 @@
 // times a second with a slightly different wobble, so the whole page "boils"
 // like a flip-book.
 
-import { W, H, PW } from '/shared/config.js';
-import { mulberry32, hash1, lighten, squashAt } from '../util.js';
+import { ART_W as W, ART_H as H, PW } from '/shared/config.js';
+import { hash1, lighten, squashAt, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
 
 const INK = '#2b2b30';
 const PAPER = '#fbf7e9';
@@ -300,7 +300,7 @@ export default {
   },
 
   build(env) {
-    const { rnd, arena, layer } = env;
+    const { rnd, layer } = env;
     const bg = layer((g) => {
       g.fillStyle = PAPER;
       g.fillRect(0, 0, W, H);
@@ -349,19 +349,6 @@ export default {
       doodles(g, rnd);
     });
 
-    const seed = Math.floor(rnd() * 1e9);
-    const plats = [];
-    for (let v = 0; v < BOIL; v++) {
-      plats.push(
-        layer((g) => {
-          arena.platforms.forEach((p, i) => {
-            // same seed for the hatching layout of each variant family, different wobble
-            drawPlatform(g, mulberry32(seed + v * 977 + i * 31), p, i);
-          });
-        }),
-      );
-    }
-
     const shade = layer((g) => {
       const v = g.createRadialGradient(W / 2, H / 2, H * 0.5, W / 2, H / 2, H);
       v.addColorStop(0, 'rgba(120,95,50,0)');
@@ -370,7 +357,7 @@ export default {
       g.fillRect(0, 0, W, H);
     }, 0.5);
 
-    return { bg, plats, shade, dash: [0, 0, 0, 0] };
+    return { bg, shade, dash: [0, 0, 0, 0] };
   },
 
   back(g, sc, t) {
@@ -416,8 +403,121 @@ export default {
     g.restore();
   },
 
-  platforms(g, sc, t) {
-    g.drawImage(sc.plats[Math.floor(t * 6) % BOIL], 0, 0, W, H);
+  // every platform is drawn a few times with a different wobble; the renderer flips between them
+  platPad: { x: 12, top: 16, bottom: 16 },
+  platVariants: BOIL,
+  platform(g, p, i, rnd) {
+    drawPlatform(g, rnd, p, (p.x / 40 + p.y / 40) | 0);
+  },
+
+  // a doodled spring with a plank on top
+  trampoline(g, tr, t, k) {
+    const frame = Math.floor(t * 8);
+    const j = (n) => (hash1(frame * 13 + n, tr.x) - 0.5) * 1.6;
+    const x0 = tr.x + 6;
+    const x1 = tr.x + tr.w - 6;
+    const top = tr.y - 4 + k * 9;
+    const base = tr.y + tr.h;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.strokeStyle = '#e23b3b';
+    g.lineWidth = 2.4;
+    g.beginPath();
+    const coils = 5;
+    for (const sx of [x0 + 8, x1 - 8]) {
+      g.moveTo(sx, top + 4);
+      for (let c = 1; c <= coils; c++) g.lineTo(sx + (c % 2 ? 7 : -7) + j(c), top + 4 + ((base - top - 4) * c) / coils);
+    }
+    g.stroke();
+    g.strokeStyle = INK;
+    g.lineWidth = 3.2;
+    g.beginPath();
+    g.moveTo(tr.x - 2 + j(20), top + j(21));
+    g.lineTo(tr.x + tr.w + 2 + j(22), top + j(23));
+    g.stroke();
+    g.lineWidth = 1.4;
+    g.beginPath();
+    g.moveTo(tr.x - 1 + j(24), top + 4.5 + j(25));
+    g.lineTo(tr.x + tr.w + 1 + j(26), top + 4.5 + j(27));
+    g.stroke();
+    if (k > 0.05) {
+      g.globalAlpha = k;
+      g.lineWidth = 1.6;
+      g.beginPath();
+      for (let n = -1; n <= 1; n++) {
+        g.moveTo(tr.cx + n * 16, top - 6);
+        g.lineTo(tr.cx + n * 20, top - 16 - k * 8);
+      }
+      g.stroke();
+      g.globalAlpha = 1;
+    }
+  },
+
+  // a scribbled whirlpool
+  portal(g, po, t) {
+    const col = PORTAL_COLORS[po.pair % PORTAL_COLORS.length];
+    const frame = Math.floor(t * 8);
+    const j = (n) => (hash1(frame * 7 + n, po.x) - 0.5) * 2.4;
+    const cx = po.cx;
+    const cy = po.cy + 2;
+    g.lineCap = 'round';
+    g.fillStyle = '#fffdf5';
+    g.beginPath();
+    g.ellipse(cx, cy, 20, 34, 0, 0, 6.283);
+    g.fill();
+    g.strokeStyle = col;
+    g.lineWidth = 2.2;
+    g.beginPath();
+    for (let a = 0; a < 15; a += 0.32) {
+      const r = a * 1.25;
+      const px = cx + Math.cos(a - t * 4) * r + j(a * 10);
+      const py = cy + Math.sin(a - t * 4) * r * 1.7 + j(a * 10 + 5);
+      if (a === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.stroke();
+    g.strokeStyle = INK;
+    g.lineWidth = 2.6;
+    for (let pass = 0; pass < 2; pass++) {
+      g.beginPath();
+      for (let n = 0; n <= 16; n++) {
+        const a = (n / 16) * 6.283;
+        const px = cx + Math.cos(a) * (20 + j(n + pass * 40));
+        const py = cy + Math.sin(a) * (34 + j(n + 20 + pass * 40));
+        if (n === 0) g.moveTo(px, py);
+        else g.lineTo(px, py);
+      }
+      g.stroke();
+      g.lineWidth = 1;
+    }
+  },
+
+  // a sticker
+  pickup(g, kind, x, y, t) {
+    const col = KIND_COLORS[kind];
+    const frame = Math.floor(t * 8);
+    const j = (n) => (hash1(frame * 11 + n, x) - 0.5) * 1.8;
+    g.translate(x, y);
+    g.rotate(Math.sin(t * 2 + x) * 0.12);
+    g.beginPath();
+    for (let n = 0; n < 16; n++) {
+      const a = (n / 16) * 6.283;
+      const r = (n % 2 ? 13 : 17) + j(n);
+      if (n === 0) g.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      else g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.closePath();
+    g.fillStyle = '#fffdf5';
+    g.fill();
+    g.globalAlpha = 0.35;
+    g.fillStyle = col;
+    g.fill();
+    g.globalAlpha = 1;
+    g.strokeStyle = INK;
+    g.lineWidth = 2.2;
+    g.lineJoin = 'round';
+    g.stroke();
+    drawIcon(g, kind, 0, 0, 7, INK);
   },
 
   player(g, pv, t) {
@@ -619,7 +719,7 @@ export default {
       if (Math.random() < 0.5) puff(R, pv.cx - pv.face * 10, pv.feet - 2, -pv.face * 25, -6, 3);
     },
     respawn(R, pv) {
-      for (let i = 0; i < 4; i++) puff(R, pv.cx + (Math.random() - 0.5) * 30, 14 + Math.random() * 20, (Math.random() - 0.5) * 60, 20, 6);
+      for (let i = 0; i < 4; i++) puff(R, pv.cx + (Math.random() - 0.5) * 30, pv.y - 10 + Math.random() * 30, (Math.random() - 0.5) * 60, 20, 6);
     },
     tag(R, to) {
       R.shake(8);

@@ -1,8 +1,8 @@
 // ARCADE - 8-bit. The world is drawn at half resolution on a 2px grid and
 // scaled up with hard edges, then a CRT scanline pass goes on top.
 
-import { W, H, PW } from '/shared/config.js';
-import { vnoise, hash1, lighten, darken } from '../util.js';
+import { ART_W as W, ART_H as H } from '/shared/config.js';
+import { vnoise, hash1, lighten, darken, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
 
 const U = 2; // one "pixel" in arena units
 const OUT = '#1a1040';
@@ -105,7 +105,7 @@ export default {
   },
 
   build(env) {
-    const { rnd, arena, layer } = env;
+    const { rnd, layer } = env;
     const stars = [];
     const bg = layer((g) => {
       // banded sunset with dithered joins
@@ -168,10 +168,6 @@ export default {
       }
     });
 
-    const plats = layer((g) => {
-      for (const p of arena.platforms) drawPlatform(g, rnd, p);
-    });
-
     // CRT pass, drawn at full resolution over the upscaled pixels
     const crt = layer((g) => {
       g.fillStyle = 'rgba(8,4,30,.16)';
@@ -186,7 +182,7 @@ export default {
     const clouds = [];
     for (let i = 0; i < 5; i++) clouds.push({ x: rnd() * W, y: snap(40 + rnd() * 130), v: 5 + rnd() * 9, s: 1 + Math.floor(rnd() * 2) });
 
-    return { bg, plats, crt, stars, clouds };
+    return { bg, crt, stars, clouds };
   },
 
   back(g, sc, t) {
@@ -220,8 +216,80 @@ export default {
     }
   },
 
-  platforms(g, sc) {
-    g.drawImage(sc.plats, 0, 0, W, H);
+  platPad: { x: 2, top: 2, bottom: 2 },
+  platform(g, p, i, rnd) {
+    drawPlatform(g, rnd, p);
+  },
+
+  // the classic red spring
+  trampoline(g, tr, t, k) {
+    const x = snap(tr.x);
+    const w = snap(tr.w);
+    const base = tr.y + tr.h;
+    const top = snap(tr.y - 4 + k * 8);
+    g.fillStyle = OUT;
+    g.fillRect(x + 8, top + 4, w - 16, base - top - 4);
+    g.fillStyle = '#c8c8e0';
+    for (let y = top + 6; y < base - 1; y += 4) g.fillRect(x + 10, y, w - 20, 2);
+    g.fillStyle = OUT;
+    g.fillRect(x - 2, top - 2, w + 4, 8);
+    g.fillStyle = '#ff5964';
+    g.fillRect(x, top, w, 4);
+    g.fillStyle = '#ffb3b8';
+    g.fillRect(x, top, w, 2);
+  },
+
+  // a doorway full of swirling pixels
+  portal(g, po, t) {
+    const col = PORTAL_COLORS[po.pair % PORTAL_COLORS.length];
+    const x = snap(po.x + 4);
+    const y = snap(po.y + 4);
+    const w = 36;
+    const h = 72;
+    g.fillStyle = OUT;
+    g.fillRect(x - 2, y - 2, w + 4, h + 2);
+    g.fillRect(x + 4, y - 6, w - 8, 4);
+    g.fillStyle = darken(col, 0.55);
+    g.fillRect(x + 2, y + 2, w - 4, h - 2);
+    g.fillRect(x + 6, y - 4, w - 12, 6);
+    const f = Math.floor(t * 9);
+    for (let cy = 0; cy < 17; cy++) {
+      for (let cx = 0; cx < 8; cx++) {
+        const d = Math.hypot(cx - 3.5, (cy - 8) * 0.55);
+        const v = (d * 1.7 - f * 0.6 + Math.atan2(cy - 8, cx - 3.5) * 1.3) % 4;
+        const n = ((v % 4) + 4) % 4;
+        if (n < 1.3) {
+          g.fillStyle = n < 0.5 ? '#ffffff' : lighten(col, 0.35);
+          g.fillRect(x + 2 + cx * 4, y + 2 + cy * 4, 4, 4);
+        } else if (n < 2.4) {
+          g.fillStyle = col;
+          g.fillRect(x + 2 + cx * 4, y + 2 + cy * 4, 4, 4);
+        }
+      }
+    }
+  },
+
+  // an item box
+  pickup(g, kind, x, y, t) {
+    const col = KIND_COLORS[kind];
+    const cx = snap(x);
+    const cy = snap(y);
+    g.fillStyle = OUT;
+    g.fillRect(cx - 14, cy - 14, 28, 28);
+    g.fillStyle = col;
+    g.fillRect(cx - 12, cy - 12, 24, 24);
+    g.fillStyle = lighten(col, 0.5);
+    g.fillRect(cx - 12, cy - 12, 24, 2);
+    g.fillRect(cx - 12, cy - 12, 2, 24);
+    g.fillStyle = darken(col, 0.35);
+    g.fillRect(cx - 12, cy + 10, 24, 2);
+    g.fillRect(cx + 10, cy - 12, 2, 24);
+    drawIcon(g, kind, cx, cy, 7, OUT);
+    if (Math.floor(t * 4 + x) % 4 === 0) {
+      g.fillStyle = '#ffffff';
+      g.fillRect(cx - 10, cy - 10, 4, 2);
+      g.fillRect(cx - 10, cy - 8, 2, 2);
+    }
   },
 
   player(g, pv, t) {
@@ -346,7 +414,7 @@ export default {
       R.emit({ x: pv.cx - pv.face * 10, y: pv.feet - 2, vx: -pv.face * 30, vy: -30, g: 300, life: 0.2, size: 2, color: '#a7f5c0', fade: false });
     },
     respawn(R, pv) {
-      for (let i = 0; i < 10; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 24, y: Math.random() * 40, vy: 60 + Math.random() * 120, life: 0.4, size: 2, color: i % 2 ? pv.color : '#ffffff', fade: false });
+      for (let i = 0; i < 10; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 24, y: pv.y - 30 + Math.random() * 40, vy: 60 + Math.random() * 120, life: 0.4, size: 2, color: i % 2 ? pv.color : '#ffffff', fade: false });
     },
     tag(R, to, from) {
       R.flash('#ffffff', 0.5);

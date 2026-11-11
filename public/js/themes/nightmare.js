@@ -1,8 +1,8 @@
 // NIGHTMARE - horror. A graveyard under a sick moon. Fog, lightning, things
 // with eyes in the dark, and the players are restless spirits.
 
-import { W, H, PW } from '/shared/config.js';
-import { rgba, lighten, darken, vnoise, hash1, clamp, squashAt } from '../util.js';
+import { ART_W as W, ART_H as H, PW } from '/shared/config.js';
+import { rgba, lighten, darken, vnoise, hash1, clamp, squashAt, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
 
 const BONE = '#d9d4c4';
 const BLOOD = '#b3121d';
@@ -223,7 +223,7 @@ export default {
   },
 
   build(env) {
-    const { rnd, arena, layer } = env;
+    const { rnd, layer } = env;
     const eyes = [];
     const nodes = [];
     const windows = [];
@@ -333,18 +333,11 @@ export default {
     });
 
     // where the eyes can be
-    for (const n of nodes.slice(0, 5)) eyes.push({ x: n.x, y: n.y, s: 2.6 + rnd() * 1.4, red: rnd() < 0.3, ph: rnd() * 40 });
-    for (const p of arena.platforms) {
-      if (!p.ground && rnd() < 0.75) eyes.push({ x: p.x + 20 + rnd() * (p.w - 40), y: p.y + p.h + 16 + rnd() * 10, s: 2.4 + rnd(), red: rnd() < 0.4, ph: rnd() * 40 });
-    }
-    for (let i = 0; i < 3; i++) {
+    for (const n of nodes.slice(0, 6)) eyes.push({ x: n.x, y: n.y, s: 2.6 + rnd() * 1.4, red: rnd() < 0.3, ph: rnd() * 40 });
+    for (let i = 0; i < 5; i++) {
       const x = 60 + rnd() * (W - 120);
       eyes.push({ x, y: ridge(x) + 30 + rnd() * 40, s: 2.2 + rnd() * 1.6, red: rnd() < 0.3, ph: rnd() * 40 });
     }
-
-    const plats = layer((g) => {
-      for (const p of arena.platforms) drawPlatform(g, p, rnd);
-    });
 
     const vignette = layer((g) => {
       const v = g.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, H * 0.98);
@@ -408,7 +401,6 @@ export default {
 
     return {
       bg,
-      plats,
       vignette,
       puff,
       cloud,
@@ -478,10 +470,10 @@ export default {
       let lx = 0;
       let best = 1e9;
       for (const p of pvs) {
-        const d = Math.abs(p.cx - e.x) + Math.abs(p.y - e.y);
+        const d = Math.abs(p.ax - e.x) + Math.abs(p.ay - e.y);
         if (d < best) {
           best = d;
-          lx = clamp((p.cx - e.x) / 120, -1, 1);
+          lx = clamp((p.ax - e.x) / 120, -1, 1);
         }
       }
       const col = e.red ? '255,50,40' : '240,226,150';
@@ -503,8 +495,112 @@ export default {
     }
   },
 
-  platforms(g, sc) {
-    g.drawImage(sc.plats, 0, 0, W, H);
+  platPad: { x: 8, top: 14, bottom: 34 },
+  platform(g, p, i, rnd) {
+    drawPlatform(g, p, rnd);
+  },
+
+  // a fat pale toadstool
+  trampoline(g, tr, t, k) {
+    const cx = tr.x + tr.w / 2;
+    const base = tr.y + tr.h;
+    const top = tr.y - 6 + k * 9;
+    g.fillStyle = '#b8b39d';
+    g.fillRect(cx - 7, top + 8, 14, base - top - 8);
+    g.fillStyle = 'rgba(0,0,0,.25)';
+    g.fillRect(cx + 2, top + 8, 5, base - top - 8);
+    g.beginPath();
+    g.moveTo(tr.x - 3, top + 12);
+    g.quadraticCurveTo(tr.x + 2, top - 6 + k * 4, cx, top - 6 + k * 4);
+    g.quadraticCurveTo(tr.x + tr.w - 2, top - 6 + k * 4, tr.x + tr.w + 3, top + 12);
+    g.quadraticCurveTo(cx, top + 16, tr.x - 3, top + 12);
+    g.closePath();
+    g.fillStyle = '#8c1620';
+    g.shadowColor = '#ff2a2a';
+    g.shadowBlur = 6 + k * 14;
+    g.fill();
+    g.shadowBlur = 0;
+    g.fillStyle = '#e6dfc6';
+    for (const [dx, dy, r] of [[-18, 4, 4], [-4, -1, 5], [12, 3, 4.2], [24, 7, 2.6]]) {
+      g.beginPath();
+      g.ellipse(cx + dx, top + dy + k * 3, r, r * 0.7, 0, 0, 6.283);
+      g.fill();
+    }
+  },
+
+  // a stone arch with something burning inside
+  portal(g, po, t) {
+    const col = PORTAL_COLORS[po.pair % PORTAL_COLORS.length];
+    const cx = po.cx;
+    const x = po.x;
+    const y = po.y;
+    const w = po.w;
+    const h = po.h;
+    const arch = (inset) => {
+      g.beginPath();
+      g.moveTo(x + inset, y + h);
+      g.lineTo(x + inset, y + 24);
+      g.quadraticCurveTo(x + inset, y + inset, cx, y + inset);
+      g.quadraticCurveTo(x + w - inset, y + inset, x + w - inset, y + 24);
+      g.lineTo(x + w - inset, y + h);
+      g.closePath();
+    };
+    arch(-3);
+    g.fillStyle = '#3d484b';
+    g.fill();
+    g.strokeStyle = '#0b0e0f';
+    g.lineWidth = 1.5;
+    g.stroke();
+    arch(4);
+    g.fillStyle = '#050607';
+    g.fill();
+    g.save();
+    g.clip();
+    for (let n = 0; n < 5; n++) {
+      const ph = (t * 0.7 + n / 5) % 1;
+      const fy = y + h - ph * h;
+      const r = 16 * (1 - ph * 0.6);
+      const rg = g.createRadialGradient(cx + Math.sin(t * 3 + n * 2) * 6, fy, 1, cx, fy, r);
+      rg.addColorStop(0, rgba(lighten(col, 0.4), 0.9 * (1 - ph)));
+      rg.addColorStop(1, rgba(col, 0));
+      g.fillStyle = rg;
+      g.fillRect(x, fy - r, w, r * 2);
+    }
+    g.restore();
+    g.globalCompositeOperation = 'lighter';
+    const halo = g.createRadialGradient(cx, po.cy, 4, cx, po.cy, 54);
+    halo.addColorStop(0, rgba(col, 0.28));
+    halo.addColorStop(1, rgba(col, 0));
+    g.fillStyle = halo;
+    g.fillRect(cx - 54, po.cy - 54, 108, 108);
+    g.globalCompositeOperation = 'source-over';
+  },
+
+  // a will-o'-the-wisp with the power inside it
+  pickup(g, kind, x, y, t) {
+    const col = KIND_COLORS[kind];
+    g.globalCompositeOperation = 'lighter';
+    const rg = g.createRadialGradient(x, y, 2, x, y, 34);
+    rg.addColorStop(0, rgba(col, 0.75));
+    rg.addColorStop(0.4, rgba(col, 0.3));
+    rg.addColorStop(1, rgba(col, 0));
+    g.fillStyle = rg;
+    g.fillRect(x - 34, y - 34, 68, 68);
+    g.globalCompositeOperation = 'source-over';
+    g.fillStyle = '#07090a';
+    g.beginPath();
+    g.arc(x, y, 12.5, 0, 6.283);
+    g.fill();
+    g.strokeStyle = col;
+    g.lineWidth = 2;
+    g.stroke();
+    // a wisp of flame on top
+    g.fillStyle = rgba(col, 0.9);
+    g.beginPath();
+    g.moveTo(x - 5, y - 11);
+    g.quadraticCurveTo(x + Math.sin(t * 6 + x) * 4, y - 26 - Math.sin(t * 9) * 3, x + 5, y - 11);
+    g.fill();
+    drawIcon(g, kind, x, y, 6.5, lighten(col, 0.35));
   },
 
   player(g, pv, t) {
@@ -630,9 +726,9 @@ export default {
     d.fillRect(0, 0, W / 4, H / 4);
     d.globalCompositeOperation = 'destination-out';
     for (const p of pvs) {
-      const r = (p.local ? 200 : 150) / 4;
-      const px = p.cx / 4;
-      const py = (p.y + 18) / 4;
+      const r = ((p.local ? 220 : 160) * p.ak) / 4;
+      const px = p.ax / 4;
+      const py = p.ay / 4;
       const rg = d.createRadialGradient(px, py, 2, px, py, r);
       rg.addColorStop(0, 'rgba(0,0,0,1)');
       rg.addColorStop(0.5, 'rgba(0,0,0,.6)');
@@ -652,13 +748,12 @@ export default {
     // each spirit throws a little light of its own colour
     g.globalCompositeOperation = 'lighter';
     for (const p of pvs) {
-      const r = 95;
-      const py = p.y + 18;
-      const rg = g.createRadialGradient(p.cx, py, 4, p.cx, py, r);
+      const r = 100 * p.ak;
+      const rg = g.createRadialGradient(p.ax, p.ay, 3, p.ax, p.ay, r);
       rg.addColorStop(0, rgba(p.isIt ? '#ff2a1f' : p.color, 0.2));
       rg.addColorStop(1, rgba(p.isIt ? '#ff2a1f' : p.color, 0));
       g.fillStyle = rg;
-      g.fillRect(p.cx - r, py - r, r * 2, r * 2);
+      g.fillRect(p.ax - r, p.ay - r, r * 2, r * 2);
     }
     g.globalCompositeOperation = 'source-over';
 
@@ -701,7 +796,7 @@ export default {
       }
     },
     respawn(R, pv) {
-      for (let i = 0; i < 14; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 30, y: Math.random() * 60, vy: 30 + Math.random() * 60, life: 0.7, size: 6, grow: 10, alpha: 0.25, color: pv.color });
+      for (let i = 0; i < 14; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 30, y: pv.y - 40 + Math.random() * 70, vy: 30 + Math.random() * 60, life: 0.7, size: 6, grow: 10, alpha: 0.25, color: pv.color });
     },
     tag(R, to, from) {
       R.flash('#a00010', 0.42);

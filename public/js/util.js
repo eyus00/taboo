@@ -90,3 +90,65 @@ export function fitText(ctx, text, maxWidth) {
   while (t.length > 1 && ctx.measureText(`${t}…`).width > maxWidth) t = t.slice(0, -1);
   return `${t}…`;
 }
+
+// ---------------------------------------------------------------------------
+// Power-up icons, shared by every art style so they are always recognisable.
+// ---------------------------------------------------------------------------
+export const KIND_COLORS = { speed: '#ffb020', jump: '#3ecf6e', shield: '#4aa3ff', freeze: '#8fe6ff' };
+
+// Draws the icon for a power-up centred on (cx, cy), fitting a circle of radius r.
+export function drawIcon(g, kind, cx, cy, r, color) {
+  g.save();
+  g.translate(cx, cy);
+  g.fillStyle = color;
+  g.strokeStyle = color;
+  g.lineJoin = 'round';
+  g.lineCap = 'round';
+  if (kind === 'speed') {
+    // lightning bolt
+    g.beginPath();
+    g.moveTo(r * 0.25, -r);
+    g.lineTo(-r * 0.6, r * 0.12);
+    g.lineTo(-r * 0.05, r * 0.12);
+    g.lineTo(-r * 0.3, r);
+    g.lineTo(r * 0.6, -r * 0.18);
+    g.lineTo(r * 0.05, -r * 0.18);
+    g.closePath();
+    g.fill();
+  } else if (kind === 'jump') {
+    // two chevrons pointing up
+    g.lineWidth = r * 0.36;
+    g.beginPath();
+    g.moveTo(-r * 0.7, -r * 0.05);
+    g.lineTo(0, -r * 0.75);
+    g.lineTo(r * 0.7, -r * 0.05);
+    g.moveTo(-r * 0.7, r * 0.7);
+    g.lineTo(0, 0);
+    g.lineTo(r * 0.7, r * 0.7);
+    g.stroke();
+  } else if (kind === 'shield') {
+    g.beginPath();
+    g.moveTo(0, -r);
+    g.lineTo(r * 0.82, -r * 0.62);
+    g.lineTo(r * 0.82, r * 0.05);
+    g.quadraticCurveTo(r * 0.7, r * 0.75, 0, r);
+    g.quadraticCurveTo(-r * 0.7, r * 0.75, -r * 0.82, r * 0.05);
+    g.lineTo(-r * 0.82, -r * 0.62);
+    g.closePath();
+    g.fill();
+  } else {
+    // snowflake
+    g.lineWidth = r * 0.26;
+    g.beginPath();
+    for (let i = 0; i < 3; i++) {
+      const a = (i * Math.PI) / 3 + Math.PI / 2;
+      g.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      g.lineTo(-Math.cos(a) * r, -Math.sin(a) * r);
+    }
+    g.stroke();
+  }
+  g.restore();
+}
+
+// Colours for portal pairs (same in every style, so partners are easy to match).
+export const PORTAL_COLORS = ['#4aa3ff', '#ff7a45', '#b06cff'];

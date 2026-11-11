@@ -8,10 +8,11 @@ import { makeBot, botThink } from '/shared/bots.js';
 const BOT_NAMES = ['Zap', 'Mox', 'Juno', 'Blip', 'Rook', 'Fizz', 'Dash', 'Pip'];
 
 export class LocalGame {
-  // opts: { arena, themeId, duration, human (name or null), bots, backdrop, input, onEvent }
+  // opts: { arena, themeId, mode, duration, human (name or null), bots, backdrop, input, onEvent }
   constructor(opts) {
     this.arena = opts.arena;
     this.themeId = opts.themeId;
+    this.mode = opts.mode || 'potato';
     this.duration = opts.duration || 90;
     this.backdrop = !!opts.backdrop; // endless, no HUD, no countdown
     this.input = opts.input;
@@ -43,8 +44,9 @@ export class LocalGame {
     this.acc = 0;
     this.lastNow = null;
     this.lastCount = 4;
+    this.lastSecond = -1;
     this.prev = [null, null, null, null];
-    if (this.backdrop) this.sim.pickIt();
+    if (this.backdrop) this.sim.start();
   }
 
   update(now) {
@@ -62,7 +64,7 @@ export class LocalGame {
       if (this.countdownMs <= 0) {
         this.phase = 'playing';
         this.goTime = now;
-        sim.pickIt();
+        sim.start();
         this.endTick = sim.tick + this.duration * TICK_RATE;
         this.onEvent('go', sim.it);
       }
@@ -83,15 +85,21 @@ export class LocalGame {
           }
         }
         sim.step(inputs);
-        for (const e of sim.events) if (e.type === 'tag') this.onEvent('tag', e.from, e.to);
+        for (const e of sim.events) {
+          if (e.type === 'tag') this.onEvent('tag', e.from, e.to);
+          else if (e.type === 'block') this.onEvent('block', e.from, e.to);
+          else if (e.type === 'pick') this.onEvent('pick', e.slot, e.kind);
+        }
         sim.events.length = 0;
         if (this.phase === 'playing' && sim.tick >= this.endTick) {
           this.phase = 'over';
-          const { rows, winners } = standings(sim, this.names);
+          const { rows, winners, loser } = standings(sim, this.names, this.mode);
           this.onEvent('end', {
             reason: 'time',
+            mode: this.mode,
             winners,
-            rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE) })),
+            loser,
+            rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags })),
           });
           break;
         }
@@ -105,7 +113,7 @@ export class LocalGame {
       if (!p) continue;
       const s = p.s;
       const pr = this.prev[p.slot];
-      const smooth = pr && pr.dead === 0 && s.dead === 0 && Math.abs(pr.y - s.y) < 60;
+      const smooth = pr && pr.dead === 0 && s.dead === 0 && Math.abs(pr.y - s.y) + Math.abs(pr.x - s.x) < 80;
       players.push({
         slot: p.slot,
         name: this.names[p.slot],
@@ -117,20 +125,37 @@ export class LocalGame {
         face: s.face,
         immune: p.immune,
         stun: s.stun,
+        frz: s.frz,
+        dash: s.dashT > 0,
+        spd: s.spd,
+        jmp: s.jmp,
+        shd: s.shd,
         dead: s.dead,
         itTicks: p.itTicks,
         local: p.slot === this.human,
       });
     }
     const goAge = this.goTime != null ? (now - this.goTime) / 1000 : null;
+    const timeLeft = this.phase === 'countdown' ? this.duration : Math.max(0, (this.endTick - sim.tick) / TICK_RATE);
+    if (this.phase === 'playing' && !this.backdrop) {
+      const sec = Math.ceil(timeLeft);
+      if (sec !== this.lastSecond) {
+        if (sec <= 5 && sec >= 1 && this.lastSecond !== -1) this.onEvent('tick', sec);
+        this.lastSecond = sec;
+      }
+    }
+    const me = this.human >= 0 ? sim.players[this.human].s : null;
     return {
       phase: this.phase,
+      mode: this.mode,
       countdownMs: this.phase === 'countdown' ? this.countdownMs : null,
       goAge,
-      timeLeft: this.phase === 'countdown' ? this.duration : Math.max(0, (this.endTick - sim.tick) / TICK_RATE),
+      timeLeft,
       duration: this.duration,
       it: sim.it,
       players,
+      pickups: sim.pickups,
+      me: me && this.phase !== 'countdown' ? { dashCd: me.dashCd, spd: me.spd, jmp: me.jmp, shd: me.shd } : null,
       hud: !this.backdrop,
       names: !this.backdrop,
       code: null,

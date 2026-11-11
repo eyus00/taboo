@@ -2,7 +2,7 @@
 //
 // One Node process does everything: serves the static site, runs the rooms,
 // and is the single source of truth for every match (who is "it", who touched
-// whom, how long each player has been "it"). Browsers only send key presses.
+// whom, who picked up what). Browsers only send key presses.
 //
 //   npm install && npm start   ->  http://localhost:3000
 
@@ -23,12 +23,23 @@ import {
   DURATIONS,
   DEFAULT_DURATION,
   THEME_IDS,
+  DEFAULT_THEME,
+  MODE_IDS,
+  IN_MASK,
 } from './shared/config.js';
 import { ARENA_IDS, arenaById } from './shared/arenas.js';
 import { Sim, standings } from './shared/sim.js';
+import { packState, publicFlags } from './shared/physics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
+
+// The automated tests play very short rounds; nothing else can ask for one.
+const TEST_DURATION = Number(process.env.TAG_TEST_DURATION) || 0;
+
+// Other players are drawn this many ticks in the past on every screen
+// (see INTERP_TICKS in public/js/net.js). Used for lag-compensated tagging.
+const VIEW_DELAY_TICKS = 6;
 
 // ---------------------------------------------------------------------------
 // HTTP
@@ -100,7 +111,7 @@ function roomState(room) {
     hostId: room.hostId,
     phase: room.phase, // lobby | countdown | playing | results
     settings: room.settings,
-    players: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, slot: p.slot, playing: p.playing })),
+    players: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, slot: p.slot, playing: p.playing, wins: p.wins })),
   };
 }
 
@@ -113,6 +124,7 @@ function roundInfo(room) {
   return {
     arena: g.arenaId,
     theme: g.themeId,
+    mode: g.mode,
     duration: g.duration,
     playing: g.state === 'playing',
     countdown: Math.max(0, g.goAt - Date.now()),
@@ -124,7 +136,7 @@ function addPlayer(room, socket, name) {
   const used = new Set([...room.players.values()].map((p) => p.slot));
   let slot = 0;
   while (used.has(slot)) slot++;
-  const player = { id: socket.id, name: cleanName(name), slot, playing: false };
+  const player = { id: socket.id, name: cleanName(name), slot, playing: false, wins: 0, rtt: 0 };
   room.players.set(socket.id, player);
   socket.join(room.code);
   socket.data.code = room.code;
@@ -171,19 +183,21 @@ function startRound(room) {
   room.lastTheme = themeId;
 
   const sim = new Sim(arenaById(arenaId));
+  sim.powerups = s.powerups;
   const spawns = shuffled([0, 1, 2, 3]);
   const net = [null, null, null, null];
   let i = 0;
   for (const p of room.players.values()) {
     p.playing = true;
     sim.add(p.slot, spawns[i++]);
-    net[p.slot] = { q: [], recv: 0, lastSeq: 0, lastBits: 0, idle: 0, win: 0, spare: Infinity, late: 0, trimmed: 0, skipped: 0 };
+    net[p.slot] = { q: [], recv: 0, lastSeq: 0, lastBits: 0, idle: 0, win: 0, spare: Infinity, late: 0, trimmed: 0, skipped: 0, id: p.id };
   }
   room.game = {
     sim,
     net,
     arenaId,
     themeId,
+    mode: s.mode,
     duration: s.duration,
     state: 'countdown',
     goAt: Date.now() + COUNTDOWN_MS + 500, // a beat for everyone to load the arena
@@ -199,21 +213,29 @@ function startRound(room) {
 function finishRound(room, reason) {
   const g = room.game;
   if (!g) return;
-  const names = [];
-  for (const p of room.players.values()) {
-    names[p.slot] = p.name;
-    p.playing = false;
-  }
   if (process.env.DEBUG_NET) {
     // per-player input buffer stats: late = had to repeat an input, trimmed = extra step, skipped = dropped after a stall
     const played = g.sim.tick - (g.endTick - g.duration * TICK_RATE);
     console.log(`[net ${room.code}] ${played} ticks |`, g.net.map((n, i) => (n ? `p${i} received=${n.recv} late=${n.late} trimmed=${n.trimmed} skipped=${n.skipped} queued=${n.q.length}` : '')).filter(Boolean).join(' | '));
   }
-  const { rows, winners } = standings(g.sim, names);
+  const names = [];
+  for (const p of room.players.values()) names[p.slot] = p.name;
+  let { rows, winners, loser } = standings(g.sim, names, g.mode);
+  if (reason === 'forfeit') {
+    // everyone else left: whoever stayed wins, whatever the clock says
+    winners = rows.map((r) => r.slot);
+    loser = -1;
+  }
+  for (const p of room.players.values()) {
+    if (p.playing && winners.includes(p.slot)) p.wins++;
+    p.playing = false;
+  }
   room.results = {
     reason, // 'time' | 'forfeit'
-    winners, // slots; more than one means an exact tie
-    rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE) })),
+    mode: g.mode,
+    winners, // slots
+    loser, // slot of whoever was "it" at the end (hot potato), or -1
+    rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags })),
   };
   room.game = null;
   room.phase = 'results';
@@ -226,7 +248,8 @@ function flushEvents(room) {
   const sim = room.game.sim;
   for (const e of sim.events) {
     if (e.type === 'tag') io.to(room.code).emit('tag', e.from, e.to);
-    else if (e.type === 'it') io.to(room.code).emit('it', e.to);
+    else if (e.type === 'block') io.to(room.code).emit('block', e.from, e.to);
+    else if (e.type === 'pick') io.to(room.code).emit('pick', e.slot, e.kind, e.point);
   }
   sim.events.length = 0;
 }
@@ -286,19 +309,24 @@ function tickRoom(room) {
     // Players stand frozen on their spawn points until GO.
     for (let slot = 0; slot < 4; slot++) sim.stepOne(slot, 0);
     sim.endTick();
+    sim.events.length = 0;
     if (Date.now() >= g.goAt) {
       g.state = 'playing';
       room.phase = 'playing';
-      sim.pickIt();
+      sim.start();
       g.endTick = sim.tick + g.duration * TICK_RATE;
       io.to(room.code).emit('go', sim.it);
       emitRoom(room);
     }
   } else {
-    for (let i = 0; i < 4; i++) {
-      const slot = (i + sim.tick) & 3;
+    for (let slot = 0; slot < 4; slot++) {
       if (!sim.players[slot]) continue;
-      for (const bits of takeInputs(g.net[slot])) sim.stepOne(slot, bits);
+      const n = g.net[slot];
+      for (const bits of takeInputs(n)) sim.stepOne(slot, bits);
+      // How far in the past this player sees everyone else: the round trip to
+      // them and back, the smoothing delay, and whatever waits in their queue.
+      const rtt = room.players.get(n.id)?.rtt || 0;
+      sim.rewind[slot] = Math.min(40, Math.round(rtt / TICK_MS) + VIEW_DELAY_TICKS + n.q.length);
     }
     sim.endTick();
     flushEvents(room);
@@ -311,8 +339,11 @@ function tickRoom(room) {
   if (sim.tick % SNAP_EVERY === 0) sendSnapshot(room);
 }
 
-// Snapshot: [tick, playing, itSlot, ticksLeft | msToGo, players[]]
-// player:   [slot, x, y, vx, vy, flags, coyote, stun, dead, immune, itTicks, ackSeq]
+// Snapshot, one per player because each also gets their own full state:
+//   [tick, playing, itSlot, ticksLeft | msToGo, players[], pickups[], mine]
+//   player: [slot, x, y, vx, vy, flags, immune, itTicks, tags]
+//   pickup: point * 4 + type
+//   mine:   [ackSeq, ...packState(mine)] or 0 for spectators
 function sendSnapshot(room) {
   const g = room.game;
   const sim = g.sim;
@@ -320,24 +351,17 @@ function sendSnapshot(room) {
   for (const pl of sim.players) {
     if (!pl) continue;
     const s = pl.s;
-    ps.push([
-      pl.slot,
-      s.x,
-      s.y,
-      s.vx,
-      s.vy,
-      (s.ground ? 1 : 0) | (s.face > 0 ? 2 : 0),
-      s.coyote,
-      s.stun,
-      s.dead,
-      pl.immune,
-      pl.itTicks,
-      g.net[pl.slot].lastSeq,
-    ]);
+    ps.push([pl.slot, s.x, s.y, s.vx, s.vy, publicFlags(s), pl.immune, pl.itTicks, pl.tags]);
   }
+  const pk = sim.pickups.map((k) => k.point * 4 + k.type);
   const playing = g.state === 'playing';
   const left = playing ? g.endTick - sim.tick : Math.max(0, g.goAt - Date.now());
-  io.to(room.code).volatile.emit('s', [sim.tick, playing ? 1 : 0, sim.it, left, ps]);
+  const head = [sim.tick, playing ? 1 : 0, sim.it, left, ps, pk];
+  for (const p of room.players.values()) {
+    const pl = p.playing ? sim.players[p.slot] : null;
+    const mine = pl ? [g.net[p.slot].lastSeq, ...packState(pl.s)] : 0;
+    io.to(p.id).volatile.emit('s', [...head, mine]);
+  }
 }
 
 // One loop drives every active match, and only runs while there is one.
@@ -390,6 +414,19 @@ function runLoop() {
 io.on('connection', (socket) => {
   socket.data.code = null;
 
+  // Measure the round trip to this browser every couple of seconds.
+  const probe = setInterval(() => {
+    const room = rooms.get(socket.data.code);
+    const player = room?.players.get(socket.id);
+    if (!player) return;
+    const t0 = performance.now();
+    socket.timeout(3000).emit('q', (err) => {
+      if (err) return;
+      const rtt = performance.now() - t0;
+      player.rtt = player.rtt ? player.rtt * 0.7 + rtt * 0.3 : rtt;
+    });
+  }, 2000);
+
   socket.on('create', (msg, ack) => {
     if (typeof ack !== 'function') return;
     leaveRoom(socket);
@@ -400,7 +437,7 @@ io.on('connection', (socket) => {
       hostId: socket.id,
       players: new Map(),
       phase: 'lobby',
-      settings: { arena: 'random', theme: 'random', duration: DEFAULT_DURATION },
+      settings: { mode: MODE_IDS[0], arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true },
       game: null,
       results: null,
       lastArena: null,
@@ -432,15 +469,20 @@ io.on('connection', (socket) => {
   });
 
   socket.on('leave', () => leaveRoom(socket));
-  socket.on('disconnect', () => leaveRoom(socket));
+  socket.on('disconnect', () => {
+    clearInterval(probe);
+    leaveRoom(socket);
+  });
 
   socket.on('settings', (msg) => {
     const room = rooms.get(socket.data.code);
     if (!room || room.hostId !== socket.id || room.game) return;
     const s = room.settings;
+    if (MODE_IDS.includes(msg?.mode)) s.mode = msg.mode;
     if (msg?.arena === 'random' || ARENA_IDS.includes(msg?.arena)) s.arena = msg.arena;
     if (msg?.theme === 'random' || THEME_IDS.includes(msg?.theme)) s.theme = msg.theme;
-    if (DURATIONS.includes(msg?.duration)) s.duration = msg.duration;
+    if (DURATIONS.includes(msg?.duration) || (TEST_DURATION && msg?.duration === TEST_DURATION)) s.duration = msg.duration;
+    if (typeof msg?.powerups === 'boolean') s.powerups = msg.powerups;
     emitRoom(room);
   });
 
@@ -480,12 +522,12 @@ io.on('connection', (socket) => {
       const seq = first + i;
       if (seq <= n.recv) continue;
       n.recv = seq;
-      n.q.push({ seq, bits: list[i] & 7 });
+      n.q.push({ seq, bits: list[i] & IN_MASK });
     }
     if (n.q.length > 64) n.q.splice(0, n.q.length - 64);
   });
 
-  // Latency probe.
+  // Latency probe from the browser (for its on-screen ping).
   socket.on('p', (ack) => {
     if (typeof ack === 'function') ack();
   });
