@@ -165,7 +165,7 @@ try {
     assert.ok(c.end, 'spectator also sees the results');
   });
 
-  await test('play again includes the spectator; a full timed round ends with standings', async () => {
+  await test('the next round includes the former spectator and starts a fresh 60s clock', async () => {
     a.socket.emit('lobby');
     await until(() => a.room.phase === 'lobby', 'back to lobby');
     a.socket.emit('settings', { duration: 60 });

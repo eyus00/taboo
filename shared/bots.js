@@ -225,10 +225,15 @@ export function botThink(sim, slot, mem) {
   return guard(arena, s, bits);
 }
 
-// Never steer under a ledge while rising - that just bonks your head.
+// Mid-air sanity: once over a pit, commit to the jump instead of changing
+// your mind halfway, and never steer under a ledge while rising (that just
+// bonks your head).
 function guard(arena, s, bits) {
   if (s.ground) return bits;
   bits &= ~IN_JUMP;
+  if (Math.abs(s.vx) > 40 && !floorUnder(arena, s.x + PW / 2, s.y + PH)) {
+    bits = (bits & ~(IN_LEFT | IN_RIGHT)) | (s.vx > 0 ? IN_RIGHT : IN_LEFT);
+  }
   const dir = bits & IN_RIGHT ? 1 : bits & IN_LEFT ? -1 : 0;
   if (dir !== 0 && s.vy < 0) {
     const rise = (s.vy * s.vy) / (2 * G_UP);

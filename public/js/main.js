@@ -36,7 +36,9 @@ const pickRandom = (list, avoid) => {
 const renderer = new Renderer($('stage'));
 const input = new Input();
 const sfx = new Sfx();
-const socket = io({ transports: ['websocket', 'polling'] });
+// Default transport order on purpose: plain HTTP first (gets through school and
+// office firewalls), then upgrade to a WebSocket whenever one is allowed.
+const socket = io({ tryAllTransports: true });
 const net = new NetGame(socket, input, onGameEvent);
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 
@@ -490,7 +492,11 @@ function onGameEvent(type, a, b) {
     const mySlot = mode === 'net' ? net.mySlot : 0;
     sfx.play(b === mySlot ? 'tagged' : 'tag');
   } else if (type === 'count') sfx.play('count');
-  else if (type === 'go') sfx.play('go');
+  else if (type === 'go') {
+    sfx.play('go');
+    renderer.flash('#ffffff', 0.25); // the moment someone becomes "it"
+    renderer.shake(5);
+  }
   else if (type === 'tick') sfx.play('tick');
   else if (type === 'end') showResults(a, true);
 }

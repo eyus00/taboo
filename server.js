@@ -206,7 +206,8 @@ function finishRound(room, reason) {
   }
   if (process.env.DEBUG_NET) {
     // per-player input buffer stats: late = had to repeat an input, trimmed = extra step, skipped = dropped after a stall
-    console.log(`[net ${room.code}]`, g.net.map((n, i) => (n ? `p${i} late=${n.late} trimmed=${n.trimmed} skipped=${n.skipped} queued=${n.q.length}` : '')).filter(Boolean).join(' | '));
+    const played = g.sim.tick - (g.endTick - g.duration * TICK_RATE);
+    console.log(`[net ${room.code}] ${played} ticks |`, g.net.map((n, i) => (n ? `p${i} received=${n.recv} late=${n.late} trimmed=${n.trimmed} skipped=${n.skipped} queued=${n.q.length}` : '')).filter(Boolean).join(' | '));
   }
   const { rows, winners } = standings(g.sim, names);
   room.results = {

@@ -294,7 +294,7 @@ body[data-theme='nightmare'] .error { color: #ff5a5a; }
 .icon.off { text-decoration: line-through; opacity: 0.35; }
 
 #touch { position: fixed; inset: auto 0 0 0; padding: 0 14px calc(14px + env(safe-area-inset-bottom)); display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none; z-index: 4; }
-#touch button { pointer-events: auto; width: 74px; height: 74px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.5); background: rgba(20, 20, 30, 0.35); color: #fff; font-size: 24px; touch-action: none; }
+#touch button { pointer-events: auto; width: 74px; height: 74px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.55); background: rgba(20, 20, 30, 0.28); color: #fff; font-size: 24px; touch-action: none; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
 #touch button.down { background: rgba(255, 255, 255, 0.35); }
 #touch .pad { display: flex; gap: 12px; }
 #touch .jump { width: 92px; height: 92px; font-size: 15px; font-weight: 700; letter-spacing: 0.06em; }
@@ -345,6 +345,13 @@ body[data-theme='ink'] .tagline, body[data-theme='ink'] .hint { font-style: ital
   .lobby-head { grid-template-columns: 1fr; justify-items: center; }
   .lobby-head .link, .lobby-head .btn { justify-self: center; }
   .panel { padding: 20px 16px 16px; }
+}
+@media (max-height: 480px) {
+  /* phones held sideways: keep the buttons out of the arena as much as possible */
+  #touch { padding: 0 8px calc(8px + env(safe-area-inset-bottom)); }
+  #touch button { width: 60px; height: 60px; font-size: 20px; }
+  #touch .pad { gap: 6px; }
+  #touch .jump { width: 78px; height: 78px; font-size: 13px; }
 }
 @media (max-height: 560px) {
   .tagline { margin-bottom: 10px; }

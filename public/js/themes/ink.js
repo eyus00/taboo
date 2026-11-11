@@ -225,6 +225,7 @@ export default {
     bigStroke: 'rgba(239,230,210,.92)',
     radius: 2,
     swatchRadius: 6,
+    swatchLine: 'rgba(255,246,232,.85)',
   },
 
   build(env) {
