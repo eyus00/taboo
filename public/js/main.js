@@ -1,8 +1,9 @@
-// Onigokko - everything outside the match itself: the title scroll, rooms,
-// match setup, how to play, the draw before a round, results.
+// Onigokko - everything outside the match itself: the title scroll, the ways
+// to play (host, public, private), your profile, match setup, how to play,
+// the draw before a round, results.
 //
 // On a wide screen the title scroll stays on the left and whatever you open
-// (rooms, match setup, how to play) opens beside it; on a narrow one there is
+// (play, public games, profile, match setup, how to play) opens beside it; on a narrow one there is
 // one panel at a time. Every screen can be driven with the keyboard alone
 // (arrows + Enter, Esc to go back, a letter or number for most things).
 
@@ -64,9 +65,10 @@ const { renderer, input, sfx, net } = play;
 
 let myName = cleanName(store.get('tag.name'));
 let screen = ''; // name | home | game
-let panel = ''; // what is open beside the title scroll: '' | rooms | lobby | help
+let panel = ''; // what is open beside the title scroll: '' | rooms (the ways to play) | find | profile | lobby | help
 let overlay = ''; // over a match: '' | results | pause | help
 let helpFrom = ''; // what How to play goes back to
+let profileFrom = ''; // and what your profile goes back to
 let kind = 'online'; // what match setup is showing: online | practice
 let room = null; // latest room state from the server
 let afterName = null;
@@ -125,7 +127,9 @@ for (let i = 0; i < 14; i++) {
 // ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
-const PANELS = ['rooms', 'lobby', 'help'];
+const PANELS = ['rooms', 'find', 'profile', 'lobby', 'help'];
+// the first letter of a name, for its seal
+const initial = (name) => (Array.from(String(name || '').trim())[0] || '?').toUpperCase();
 
 // the name of what is in front right now (also what the automated checks ask for)
 const top = () => overlay || (screen === 'home' ? panel || 'home' : screen);
@@ -137,6 +141,7 @@ function show(name, beside = '') {
   $('s-name').hidden = name !== 'name';
   $('s-home').hidden = name !== 'home';
   $('home-name').textContent = myName;
+  $('home-seal').textContent = initial(myName);
   $('game').hidden = name !== 'game';
   document.body.classList.toggle('in-game', name === 'game');
   document.body.classList.toggle('has-panel', !!panel);
@@ -145,8 +150,9 @@ function show(name, beside = '') {
     draw.clear();
   }
   // which entry of the title scroll is open
-  $('btn-friends').toggleAttribute('aria-current', panel === 'rooms' || (panel === 'lobby' && kind === 'online'));
+  $('btn-play').toggleAttribute('aria-current', panel === 'rooms' || panel === 'find' || (panel === 'lobby' && kind === 'online'));
   $('btn-practice').toggleAttribute('aria-current', panel === 'lobby' && kind === 'practice');
+  $('btn-profile').toggleAttribute('aria-current', panel === 'profile');
   $('btn-help').toggleAttribute('aria-current', panel === 'help');
   setOverlay('');
 }
@@ -183,7 +189,7 @@ function moveFocus(dir) {
   const root = topRoot();
   if (!root) return;
   // a group of choices (a row of rules, a grid of cards) counts as one stop; left / right move inside it
-  const stops = [...root.querySelectorAll('button, input[type="text"], .seg, .cards')].filter((e) => {
+  const stops = [...root.querySelectorAll('button, input[type="text"], .seg, .cards, .digits')].filter((e) => {
     if (e.closest('.numpad') || e.closest('.locked') || e.closest('.demo')) return false;
     return !e.disabled && e.offsetParent !== null;
   });
@@ -258,7 +264,7 @@ function toHome(message = '', focus) {
 
 // Close whatever is open beside the title scroll; the focus goes back to the entry that opened it.
 function closePanel() {
-  const opener = panel === 'help' ? $('btn-help') : panel === 'lobby' && kind === 'practice' ? $('btn-practice') : $('btn-friends');
+  const opener = panel === 'help' ? $('btn-help') : panel === 'profile' ? $('btn-profile') : panel === 'lobby' && kind === 'practice' ? $('btn-practice') : $('btn-play');
   $('home-error').textContent = '';
   show('home');
   focusFirst(opener);
@@ -290,12 +296,63 @@ $('name-form').addEventListener('submit', (e) => {
   else toHome();
 });
 $('name').addEventListener('input', () => ($('name-error').textContent = ''));
-function rename() {
-  // the room knows you by the name you came in with
-  if (room) return toast('Leave the room to change your name');
-  askName();
+
+// ---------------------------------------------------------------------------
+// Profile: who you are (your name, under your own seal)
+// ---------------------------------------------------------------------------
+// Go back to whatever was open before How to play or the profile.
+function reopen(from) {
+  if (from === 'lobby' && (room || kind === 'practice')) return openLobby();
+  if (room) return openLobby(); // the room you are in comes first
+  if (from === 'rooms') return openRooms(code);
+  if (from === 'find') return openFind();
+  if (from === 'profile') return openProfile(true);
+  closePanel();
 }
-$('btn-rename').addEventListener('click', rename);
+
+function openProfile(again) {
+  if (screen !== 'home') return;
+  if (!again && panel !== 'profile') profileFrom = panel === 'help' ? '' : panel;
+  const field = $('profile-name');
+  field.value = myName;
+  // the room knows you by the name you came in with
+  field.disabled = !!room;
+  $('btn-profile-save').hidden = !!room;
+  $('profile-error').textContent = '';
+  $('profile-note').textContent = room ? `You are in room ${room.code}. Leave the room to change your name.` : 'This is how the others see you: in the room, above your head, on the scoreboard.';
+  $('profile-seal').textContent = initial(myName);
+  show('home', 'profile');
+  if (isTouch) field.blur(); // on a phone the keyboard comes up when you tap the name, not before
+  else if (!room) field.select();
+}
+function closeProfile() {
+  const from = profileFrom;
+  profileFrom = '';
+  if (from) reopen(from);
+  else closePanel();
+}
+$('btn-profile').addEventListener('click', () => (panel === 'profile' ? closeProfile() : openProfile()));
+$('btn-profile-back').addEventListener('click', closeProfile);
+$('profile-name').addEventListener('input', () => {
+  $('profile-error').textContent = '';
+  $('profile-seal').textContent = initial(cleanName($('profile-name').value));
+});
+$('profile-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (room) return closeProfile();
+  const name = cleanName($('profile-name').value);
+  if (!name) {
+    $('profile-error').textContent = 'Type a name to continue.';
+    $('profile-name').focus();
+    return;
+  }
+  const changed = name !== myName;
+  myName = name;
+  store.set('tag.name', name);
+  sfx.play('click');
+  if (changed) toast(`Signed as ${name}`);
+  closeProfile();
+});
 
 // ---------------------------------------------------------------------------
 // Talking to the server
@@ -362,8 +419,8 @@ socket.on('disconnect', () => {
 // ---------------------------------------------------------------------------
 // The title scroll
 // ---------------------------------------------------------------------------
-$('btn-friends').addEventListener('click', () => {
-  if (room) openLobby(); // already in a room: that is where your friends are
+$('btn-play').addEventListener('click', () => {
+  if (room) openLobby(); // already in a room: that is where the game is
   else openRooms('');
 });
 $('btn-practice').addEventListener('click', () => {
@@ -408,10 +465,8 @@ async function openHelp() {
 }
 function closeHelp() {
   if (overlay === 'help') return setOverlay(helpFrom);
-  const back = helpFrom === 'lobby' && (room || kind === 'practice') ? 'lobby' : helpFrom === 'rooms' && !room ? 'rooms' : '';
-  if (!back) return closePanel();
-  if (back === 'lobby') openLobby();
-  else show('home', back);
+  if (helpFrom && helpFrom !== 'help') reopen(helpFrom);
+  else closePanel();
 }
 $('btn-help-back').addEventListener('click', closeHelp);
 
@@ -431,7 +486,7 @@ for (const k of ITEM_KINDS) {
 }
 
 // ---------------------------------------------------------------------------
-// Play with friends: open a room, or type a code on our own number pad
+// Play: host a game, find a public one, or enter the code of a private one
 // ---------------------------------------------------------------------------
 let code = '';
 let codeTried = '';
@@ -439,13 +494,21 @@ let codeTried = '';
 function openRooms(start) {
   $('join-error').textContent = '';
   $('create-error').textContent = '';
+  $('numpad').hidden = true;
+  $('digits').classList.remove('open');
   codeTried = '';
   show('home', 'rooms');
   setCode(start);
+  watchGames();
 }
 
-$('btn-create').addEventListener('click', () => enterRoom('create', { name: myName }, $('create-error')));
+// Host: a room of your own. It starts private, and "Public" in the room opens
+// it to everyone - unless you came from the list of public games, where a new
+// game is meant for everyone from the start.
+const hostGame = (errorEl, open = false) => enterRoom('create', { name: myName, open }, errorEl);
+$('btn-create').addEventListener('click', () => hostGame($('create-error')));
 
+// Private: the code is typed straight into the menu.
 function setCode(next) {
   code = String(next).replace(/\D/g, '').slice(0, CODE_LEN);
   const boxes = $('digits').children;
@@ -455,7 +518,7 @@ function setCode(next) {
   }
   $('digits').classList.remove('bad');
   $('digits').setAttribute('aria-label', `Room code: ${code.split('').join(' ') || 'empty'}`);
-  $('btn-join-go').disabled = code.length !== CODE_LEN;
+  for (const id of ['btn-join-go', 'btn-pad-go']) $(id).disabled = code.length !== CODE_LEN;
   if (code.length < CODE_LEN) $('join-error').textContent = '';
   // the fourth digit joins straight away (once per code, so a wrong one can be corrected)
   if (code.length === CODE_LEN && code !== codeTried) submitCode();
@@ -470,24 +533,119 @@ async function submitCode() {
     sfx.play('lose');
   }
 }
+function retryCode() {
+  codeTried = '';
+  submitCode();
+}
 
+// Typing a digit anywhere on this panel goes into the code.
+function typeCode(next) {
+  setCode(next);
+  if (top() === 'rooms' && !isTouch && document.activeElement !== $('digits')) $('digits').focus({ preventScroll: true });
+}
+
+// Tapping the code opens our own little number pad under it (a phone has no keys).
+$('digits').addEventListener('click', () => {
+  $('numpad').hidden = false;
+  $('digits').classList.add('open');
+  $('numpad').scrollIntoView({ block: 'nearest' });
+});
 $('numpad').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   const d = b.dataset.d;
   if (d === 'back') setCode(code.slice(0, -1));
-  else if (d === 'go') {
-    codeTried = '';
-    submitCode();
-  } else setCode(code + d);
+  else if (d === 'go') retryCode();
+  else setCode(code + d);
   sfx.play('click');
+});
+$('btn-join-go').addEventListener('click', () => {
+  sfx.play('click');
+  retryCode();
 });
 $('btn-rooms-back').addEventListener('click', closePanel);
 addEventListener('paste', (e) => {
   if (top() !== 'rooms') return;
   const text = e.clipboardData?.getData('text') || '';
-  if (/\d/.test(text)) setCode(text);
+  if (/\d/.test(text)) typeCode(text);
 });
+
+// Public: the games anyone may join. The server is asked again every couple
+// of seconds while this panel or the list is open.
+let games = [];
+let gamesSig = '';
+let gamesTimer = 0;
+let findFresh = false; // the list was just opened: put the keyboard on its first row
+
+async function refreshGames() {
+  if (!socket.connected) return paintGames();
+  const res = await new Promise((resolve) => socket.timeout(5000).emit('list', (err, r) => resolve(err ? null : r)));
+  if (res && Array.isArray(res.rooms)) games = res.rooms;
+  paintGames();
+}
+function watchGames() {
+  clearInterval(gamesTimer);
+  refreshGames();
+  gamesTimer = setInterval(() => {
+    if (panel !== 'rooms' && panel !== 'find') return clearInterval(gamesTimer);
+    if (!document.hidden) refreshGames();
+  }, 2500);
+}
+
+const nameOfArena = (id) => (id === 'random' ? 'Random arena' : ARENAS.find((a) => a.id === id)?.name || 'Arena');
+const describeGame = (g) => [g.game === 'cup' ? 'Tournament' : 'Quick match', MODES.find((m) => m.id === g.mode)?.name || '', nameOfArena(g.arena)].filter(Boolean).join(' - ');
+
+function paintGames() {
+  const n = games.length;
+  $('find-count').textContent = n ? `${n} game${n > 1 ? 's' : ''} open right now` : 'Join a game that is open to everyone';
+  $('btn-find').classList.toggle('has', n > 0);
+  if (panel !== 'find') return;
+  const box = $('games');
+  const sig = JSON.stringify(games);
+  if (sig !== gamesSig || !box.childElementCount !== !n) {
+    gamesSig = sig;
+    const held = box.contains(document.activeElement) ? document.activeElement.dataset.code : '';
+    box.textContent = '';
+    for (const g of games) {
+      const li = el('li');
+      const b = el('button', 'game');
+      b.dataset.code = String(g.code).replace(/\D/g, '');
+      const who = el('span', 'who');
+      who.append(el('b', '', `${g.host || 'Someone'}'s game`), el('small', '', describeGame(g)));
+      const state = el('span', g.playing ? 'state on' : 'state', g.playing ? 'Playing' : 'In the room');
+      b.append(el('i', 'seal hanko', initial(g.host)), who, el('span', 'count', `${g.players}/${g.max}`), state, el('span', 'join', 'Join'));
+      b.setAttribute('aria-label', `Join ${g.host}'s game: ${describeGame(g)}, ${g.players} of ${g.max} players, ${g.playing ? 'playing - you join the next round' : 'waiting in the room'}`);
+      b.addEventListener('click', () => joinGame(b.dataset.code));
+      li.append(b);
+      box.append(li);
+    }
+    if (held) (box.querySelector(`[data-code="${held}"]`) || box.querySelector('button') || $('btn-find-host')).focus?.();
+  }
+  $('find-none').hidden = n > 0;
+  $('find-lead').textContent = !socket.connected ? 'Waking up the server - this can take up to a minute...' : n ? 'Games that are open to everyone. Pick one to join - the list keeps itself up to date.' : 'Games that are open to everyone show up here.';
+  if (findFresh) {
+    findFresh = false;
+    focusFirst(box.querySelector('button') || $('btn-find-host'));
+  }
+}
+
+function openFind() {
+  $('find-error').textContent = '';
+  gamesSig = '';
+  findFresh = true;
+  show('home', 'find');
+  paintGames(); // what we already know, straight away...
+  findFresh = true;
+  watchGames(); // ...then the latest
+}
+async function joinGame(roomCode) {
+  sfx.play('click');
+  const ok = await enterRoom('join', { code: roomCode, name: myName }, $('find-error'));
+  if (!ok && panel === 'find') refreshGames(); // it filled up, or it is gone
+}
+$('btn-find').addEventListener('click', openFind);
+$('btn-find-back').addEventListener('click', () => openRooms(code));
+$('btn-find-host').addEventListener('click', () => hostGame($('find-error'), true));
 
 // ---------------------------------------------------------------------------
 // Match setup: an online room, or practice
@@ -495,6 +653,8 @@ addEventListener('paste', (e) => {
 // Every row writes one setting (`key`); two rows may write the same one, shown
 // at different times (the rules of a quick match / of a tournament).
 const OPTIONS = [
+  // who can join: beside the room code (private = by code only; public = also listed under "Public")
+  { id: 'open', key: 'open', hot: 'v', label: 'Open to', only: 'online', type: 'seg', box: 'room-open', values: [[false, 'Private'], [true, 'Public']] },
   { id: 'arena', key: 'arena', hot: 'a', type: 'cards', box: 'arena-cards', values: [...ARENAS.map((a) => [a.id, a.name]), ['random', 'Random']] },
   { id: 'theme', key: 'theme', hot: 's', type: 'cards', box: 'style-cards', values: [...THEMES.map((t) => [t.id, t.name]), ['random', 'Random']] },
   { id: 'game', key: 'game', hot: 'g', label: 'Game', only: 'online', type: 'seg', values: [['quick', 'Quick match'], ['cup', 'Tournament']] },
@@ -547,6 +707,7 @@ function radio(o, value, i) {
 function buildOptions() {
   const box = $('options');
   box.textContent = '';
+  $('room-open').textContent = '';
   for (const o of OPTIONS) {
     if (o.only && o.only !== kind) continue;
     if (o.type === 'cards') {
@@ -584,21 +745,21 @@ function buildOptions() {
     });
     row.append(seg);
     if (o.hint) row.append(el('span', 'hint'));
-    box.append(row);
+    (o.box ? $(o.box) : box).append(row);
   }
 }
 
 function syncOptions() {
   const s = settings();
   const lock = locked();
-  for (const id of ['options', 'arena-cards', 'style-cards']) $(id).classList.toggle('locked', lock);
+  for (const id of ['options', 'arena-cards', 'style-cards', 'room-open']) $(id).classList.toggle('locked', lock);
   for (const inp of $('s-lobby').querySelectorAll('input[type="radio"]')) {
     const o = OPTIONS.find((x) => x.id === inp.name.slice(4));
     inp.checked = isOn(o, s, o.values[inp.dataset.i][0]);
     inp.disabled = lock;
     inp.parentElement.classList.toggle('on', inp.checked);
   }
-  for (const row of $('options').children) {
+  for (const row of $('s-lobby').querySelectorAll('.opt')) {
     const o = OPTIONS.find((x) => x.id === row.dataset.id);
     row.hidden = !!o.show && !o.show(s);
     const hint = row.querySelector('.hint');
@@ -685,10 +846,17 @@ function renderLobby() {
     start.hidden = !amHost();
     start.disabled = !enough;
     setLabel(start, room.settings.game === 'cup' ? 'Start tournament' : 'Start match', 'Enter');
-    $('lobby-note').textContent = enough ? '' : 'Share the code with your friends - you need at least 2 players.';
+    const open = !!room.settings.open;
+    $('room-open').hidden = false;
+    $('lobby-note').textContent = open
+      ? `Public: anyone can find this game${enough ? '.' : ' - you need at least 2 players.'}`
+      : enough
+        ? ''
+        : 'Private: share the code with your friends - you need at least 2 players.';
     $('start-note').textContent = amHost() ? '' : `Waiting for ${host ? host.name : 'the host'} to start...`;
   } else {
     $('players-title').textContent = 'Players';
+    $('room-open').hidden = true;
     $('lobby-note').textContent = '';
     $('start-note').textContent = '';
     start.hidden = false;
@@ -699,7 +867,7 @@ function renderLobby() {
     $('lobby-legend'),
     locked()
       ? [[['Esc', 'Esc'], 'leave the room'], [['C'], 'copy the invite link']]
-      : [[['\u2191', '\u2193'], 'move'], [['\u2190', '\u2192'], 'choose'], [['Enter'], 'start'], [online ? ['Esc', 'Esc'] : ['Esc'], online ? 'leave the room' : 'back']],
+      : [[['\u2191', '\u2193'], 'move'], [['\u2190', '\u2192'], 'choose'], [['Enter'], 'start'], ...(online ? [[['V'], 'public or private']] : []), [online ? ['Esc', 'Esc'] : ['Esc'], online ? 'leave the room' : 'back']],
   );
   // Where the keyboard starts: the start button; alone in a room, the invite
   // link. (A guest gets no starting point: Enter must not walk them out.)
@@ -714,7 +882,7 @@ function leaveRoom() {
   const wasOnline = kind === 'online';
   if (wasOnline && room) socket.emit('leave');
   play.stop();
-  toHome('', wasOnline ? $('btn-friends') : $('btn-practice'));
+  toHome('', wasOnline ? $('btn-play') : $('btn-practice'));
 }
 $('btn-leave').addEventListener('click', leaveRoom);
 $('btn-start').addEventListener('click', () => {
@@ -986,7 +1154,7 @@ socket.on('room', (r) => {
   net.code = r.code;
   if (r.phase === 'lobby') {
     clearInterval(nextTimer);
-    if (panel === 'help' && kind === 'online') renderLobby(); // reading How to play in a room: leave them to it
+    if ((panel === 'help' || panel === 'profile') && kind === 'online') renderLobby(); // reading How to play (or their profile) in a room: leave them to it
     else if (panel !== 'lobby' || overlay || kind !== 'online') {
       kind = 'online';
       openLobby();
@@ -1028,6 +1196,8 @@ function goBack() {
     if (safe || twice('results', `Press Esc again to ${amHost() ? 'end the tournament' : 'leave the room'}`)) resultsBack();
   } else if (screen === 'game') openPause();
   else if (panel === 'help') closeHelp();
+  else if (panel === 'profile') closeProfile();
+  else if (panel === 'find') openRooms(code);
   else if (panel === 'rooms') closePanel();
   else if (panel === 'lobby') {
     if (kind === 'practice') closePanel();
@@ -1047,26 +1217,27 @@ function shortcut(key, e) {
   if (key === 'f') return toggleFullscreen(), true;
   if (at === 'game') return false; // everything else belongs to the match
 
-  // every menu: how to play; beside the title scroll: your name
+  // every menu: how to play
   if (key === 'h' && at !== 'results') return at === 'help' ? closeHelp() : openHelp(), true;
-  if (key === 'n' && screen === 'home') return rename(), true;
 
-  if (at === 'home' || (at === 'help' && screen === 'home')) {
-    // the title scroll's entries (digits are a room code while Play with friends is open)
-    if (key === '1') return $('btn-friends').click(), true;
+  if (at === 'home' || ((at === 'help' || at === 'profile' || at === 'find') && screen === 'home')) {
+    // the title scroll's entries (digits are a room code while Play is open)
+    if (key === '1') return $('btn-play').click(), true;
     if (key === '2') return $('btn-practice').click(), true;
+    if (key === '3') return $('btn-profile').click(), true;
   }
   // the tools under the menu sit in a row: left and right walk along it
   if ((key === 'arrowleft' || key === 'arrowright') && document.activeElement?.classList.contains('tool')) return moveFocus(key === 'arrowright' ? 1 : -1), true;
   if (at === 'rooms') {
-    if (/^\d$/.test(key)) return setCode(code + key), true;
-    if (key === 'backspace') return setCode(code.slice(0, -1)), true;
+    if (/^\d$/.test(key)) return typeCode(code + key), true;
+    if (key === 'backspace') return typeCode(code.slice(0, -1)), true;
     if (key === 'c') return $('btn-create').click(), true;
-    if (key === 'enter' && code.length === CODE_LEN) {
-      // a full code is on the pad: Enter tries it again, wherever the focus is
-      codeTried = '';
-      return submitCode(), true;
-    }
+    if (key === 'p') return openFind(), true;
+    // Enter on the code (or anywhere but a button, once the code is complete) tries it again
+    if (key === 'enter' && code.length === CODE_LEN && (!onButton || document.activeElement === $('btn-join-go'))) return retryCode(), true;
+    if (key === 'enter' && document.activeElement === $('digits')) return true;
+  } else if (at === 'find') {
+    if (key === 'c') return $('btn-find-host').click(), true;
   } else if (at === 'lobby') {
     if (key === 'enter' && !onButton) {
       if (!$('btn-start').hidden && !$('btn-start').disabled) $('btn-start').click();

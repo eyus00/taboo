@@ -104,7 +104,7 @@ try {
     assert.match(code, /^\d{4}$/);
     assert.equal(res.room.hostId, a.socket.id);
     assert.equal(res.room.players[0].name, 'Anascript');
-    assert.deepEqual(res.room.settings, { game: 'quick', rounds: 5, mode: 'potato', arena: 'random', theme: 'ink', duration: 60, powerups: true });
+    assert.deepEqual(res.room.settings, { game: 'quick', rounds: 5, mode: 'potato', arena: 'random', theme: 'ink', duration: 60, powerups: true, open: false });
     a.room = res.room;
   });
 
@@ -128,7 +128,7 @@ try {
     await until(() => b.room.settings.arena === 'dojo' && b.room.settings.mode === 'time', 'settings');
     a.socket.emit('settings', { arena: 'nope', theme: 'nope', mode: 'nope', duration: 5, powerups: 'yes', game: 'nope', rounds: 4 });
     await sleep(150);
-    assert.deepEqual(b.room.settings, { game: 'quick', rounds: 3, mode: 'time', arena: 'dojo', theme: 'space', duration: 90, powerups: false });
+    assert.deepEqual(b.room.settings, { game: 'quick', rounds: 3, mode: 'time', arena: 'dojo', theme: 'space', duration: 90, powerups: false, open: false });
     assert.equal(a.room.phase, 'lobby');
   });
 
@@ -386,6 +386,51 @@ try {
     const z = client('Zed');
     assert.ok((await z.call('join', { code, name: 'Zed' })).error);
     z.socket.close();
+  });
+
+  await test('public games: a room is private until its host opens it; then anyone can find it and join without the code', async () => {
+    const host = client('Hoshi');
+    const guest = client('Gen');
+    const seeker = client('Suki');
+    const list = async (x) => (await new Promise((res) => x.socket.emit('list', res))).rooms;
+    const made = await host.call('create', { name: 'Hoshi' });
+    assert.equal(made.room.settings.open, false, 'a new room is private');
+    assert.deepEqual(await list(seeker), [], 'so nobody can find it');
+    // only the host can open it
+    assert.ok((await guest.call('join', { code: made.room.code, name: 'Gen' })).ok);
+    await until(() => host.room && host.room.players.length === 2, 'guest in');
+    guest.socket.emit('settings', { open: true });
+    await sleep(120);
+    assert.deepEqual(await list(seeker), []);
+    host.socket.emit('settings', { open: true, game: 'cup' });
+    await until(() => host.room.settings.open === true, 'room opened');
+    const found = await list(seeker);
+    assert.equal(found.length, 1);
+    assert.deepEqual(
+      { ...found[0] },
+      { code: made.room.code, host: 'Hoshi', players: 2, max: 6, game: 'cup', mode: 'team', arena: 'random', theme: host.room.settings.theme, playing: false },
+    );
+    // found it: join with what the list gave us
+    const joined = await seeker.call('join', { code: found[0].code, name: 'Suki' });
+    assert.ok(joined.ok);
+    assert.equal(joined.room.players.length, 3);
+    // a full room is no longer offered, and neither is one made private again
+    const more = ['Ichi', 'Ni', 'San'].map((n) => client(n));
+    for (const x of more) assert.ok((await x.call('join', { code: made.room.code, name: x.name })).ok);
+    assert.deepEqual(await list(seeker), [], 'six of six: nothing to join');
+    more[2].socket.emit('leave');
+    await until(() => host.room.players.length === 5, 'one left');
+    assert.equal((await list(seeker)).length, 1);
+    host.socket.emit('settings', { open: false });
+    await until(() => host.room.settings.open === false, 'room closed');
+    assert.deepEqual(await list(seeker), []);
+    // a room can also be opened as public straight away, and shows as playing once a match is on
+    const second = client('Tora');
+    const pub = await second.call('create', { name: 'Tora', open: true });
+    assert.equal(pub.room.settings.open, true);
+    assert.deepEqual((await list(seeker)).map((r) => [r.code, r.playing]), [[pub.room.code, false]]);
+    for (const x of [host, guest, seeker, second, ...more]) x.socket.close();
+    await sleep(150);
   });
 
   console.log(`net: ${passed} tests passed`);

@@ -1,6 +1,6 @@
 # Onigokko
 
-*Onigokko* (鬼ごっこ) is Japanese for tag; whoever is it is the *oni*. This is real-time multiplayer tag for 2&ndash;6 players, in the browser. Everyone plays on their own device: one person opens a room, shares the 4-digit code (or the invite link), and friends join.
+*Onigokko* (鬼ごっこ) is Japanese for tag; whoever is it is the *oni*. This is real-time multiplayer tag for 2&ndash;6 players, in the browser. Everyone plays on their own device. **Host** a game, find a **Public** one in the list, or type the 4-digit code of a **Private** one (an invite link works too).
 
 - **Three ways to play.** *Hot Potato* (whoever is the oni when the clock hits zero loses), *Least Time* (every second as the oni counts against you), and *Team Bomb* (two teams, one bomb, two flags). Any of them as a quick match or a tournament of 3, 5 or 7 rounds.
 - **Lucky boxes.** Touch one and you get a random item to keep: set it off when it hurts most. A Blast that hurls everyone on screen away, a Swap that trades places with someone, a Storm that puts everyone else in slow motion, Goo to slip on, Frost, Ward, Swift and Spring. Nothing works in the last 10 seconds, so nobody can sit on one for the buzzer.
@@ -59,9 +59,9 @@ Everything can be done without a mouse, and every screen shows its keys (on phon
 |---|---|
 | Any menu | &uarr; / &darr; move, &larr; / &rarr; change the choice you are on, Enter choose, Esc back |
 | Anywhere | M sound on / off, F full screen |
-| Title screen | 1 play with friends, 2 practice, H how to play, N change name |
-| Rooms | C create a room, or type the four digits of a code (the fourth joins) |
-| Match setup | A next arena, S next style (Shift goes back), G game, R rules or rounds, T sides, L round length, P lucky boxes, B bots, Enter start, C copy the invite link |
+| Title screen | 1 play, 2 practice, 3 your profile (your name), H how to play |
+| Play | C host a game, P public games, or type the four digits of a private code (the fourth joins) |
+| Match setup | A next arena, S next style (Shift goes back), G game, R rules or rounds, T sides, L round length, P lucky boxes, B bots, Enter start; in a room also C copy the invite link and V public or private |
 | In a match | Esc pause menu; there: Esc resume, H how to play, Q leave |
 | Results | Enter play again, Esc back |
 
@@ -75,6 +75,7 @@ Keys that would throw you out of a game (Esc in a room, Q in the pause menu, Esc
 - **Portals** come in coloured pairs: step into one and you fly to its partner as a spark, in an arc over the map, safe from tags until you arrive. A portal with a small arrow badge lets you press jump to drop out wherever you are.
 - If you join while a round is running you watch it and play the next one.
 - The player who opened the room is the host (picks the game, style, arena and round length; starts it). If they leave, the next player becomes host.
+- A room starts **private**: only people with the code or the invite link get in. The host can switch it to **public**, and then it shows up under Play &rarr; Public for anyone to join until it is full.
 
 ### Lucky boxes
 
@@ -141,8 +142,8 @@ test/                `npm test` - rules/physics checks and scripted online match
 
 **Smooth.** Drawing is built so that weak laptops hold their frame rate:
 
-- Everything that never moves &ndash; backdrop, platforms, slopes &ndash; is painted once into a background canvas. Showing a finished picture again costs the browser nothing, and following the player just slides that picture around.
-- A transparent canvas on top is cleared and redrawn each frame with only the moving things: players, items, sparks. Anything fancy (glows, portals, name tags) is pre-rendered into small sprites.
+- Everything that never moves &ndash; backdrop, platforms, slopes &ndash; is painted once into a picture of the whole arena. Each frame the part you can see is copied onto the screen, pixel for pixel, which is about the cheapest thing a browser can do.
+- Only the moving things are drawn on top of that each frame: players, items, sparks. Anything fancy (glows, portals, name tags) is pre-rendered into small sprites.
 - The heads-up display is ordinary HTML, updated ten times a second.
 - Art styles are loaded only when a match needs them.
 - If frames still take too long, the game drops ambient animation first and then the resolution of the moving layer.

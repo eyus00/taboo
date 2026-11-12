@@ -138,6 +138,29 @@ function emitRoom(room) {
   io.to(room.code).emit('room', roomState(room));
 }
 
+// The games anyone may join: rooms whose host opened them to the public, with
+// a free place. Waiting rooms come first, then the fullest.
+function publicRooms() {
+  const list = [];
+  for (const room of rooms.values()) {
+    if (!room.settings.open || room.players.size >= MAX_PLAYERS) continue;
+    const s = room.settings;
+    list.push({
+      code: room.code,
+      host: room.players.get(room.hostId)?.name || '',
+      players: room.players.size,
+      max: MAX_PLAYERS,
+      game: s.game,
+      mode: s.mode,
+      arena: s.arena,
+      theme: s.theme,
+      playing: room.phase !== 'lobby',
+    });
+  }
+  list.sort((x, y) => x.playing - y.playing || y.players - x.players || (x.code < y.code ? -1 : 1));
+  return list.slice(0, 40);
+}
+
 function roundInfo(room) {
   const g = room.game;
   return {
@@ -626,7 +649,8 @@ io.on('connection', (socket) => {
       hostId: socket.id,
       players: new Map(),
       phase: 'lobby',
-      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true },
+      // open: anyone can find the room under "Public"; otherwise it takes the code
+      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true, open: msg?.open === true },
       game: null,
       cup: null,
       nextTimer: null,
@@ -663,6 +687,11 @@ io.on('connection', (socket) => {
     }
   });
 
+  // The list of public games (the client asks again every couple of seconds while it is looking).
+  socket.on('list', (ack) => {
+    if (typeof ack === 'function') ack({ rooms: publicRooms() });
+  });
+
   socket.on('leave', () => leaveRoom(socket));
   socket.on('disconnect', () => {
     clearInterval(probe);
@@ -684,6 +713,7 @@ io.on('connection', (socket) => {
     if (msg?.theme === 'random' || THEME_IDS.includes(msg?.theme)) s.theme = msg.theme;
     if (DURATIONS.includes(msg?.duration) || (TEST_DURATION && msg?.duration === TEST_DURATION)) s.duration = msg.duration;
     if (typeof msg?.powerups === 'boolean') s.powerups = msg.powerups;
+    if (typeof msg?.open === 'boolean') s.open = msg.open;
     emitRoom(room);
   });
 
