@@ -1,7 +1,7 @@
 // A match that runs entirely in the browser: practice against bots.
 // Same rules code as the server, so it plays exactly like an online match.
 
-import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, MAX_PLAYERS, ITEM_LOCK_TICKS, TEAM_SLOTS } from '/shared/config.js';
+import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, MAX_PLAYERS, ITEM_LOCK_TICKS, TEAM_SLOTS, BOMB_END_TICKS, FLAG_CAP_TICKS } from '/shared/config.js';
 import { Sim, standings, makeTeams } from '/shared/sim.js';
 import { makeBot, botThink, prepareBots } from '/shared/bots.js';
 
@@ -65,7 +65,8 @@ export class LocalGame {
       duration: this.duration,
       twist: 'none',
       cup: null,
-      it: this.startIt,
+      it: this.teams ? -1 : this.startIt,
+      bombs: this.teams ? this.sim.bombPlan : null, // team battle: who starts with a bomb
       teams: this.teams,
       cols: this.cols,
       countdown: this.countdownMs,
@@ -95,7 +96,7 @@ export class LocalGame {
         sim.start(this.startIt);
         this.endTick = sim.tick + this.duration * TICK_RATE;
         sim.endsAt = this.endTick;
-        this.onEvent('go', sim.it);
+        this.onEvent('go', sim.it, sim.bombs());
       }
     }
 
@@ -112,6 +113,11 @@ export class LocalGame {
           for (let s = 1; s < MAX_PLAYERS; s++) if (this.bots[s]) inputs[s] = botThink(sim, s, this.bots[s]);
         }
         sim.step(inputs);
+        if (this.phase === 'playing' && sim.tick >= this.endTick && !sim.over) {
+          // the buzzer: in a team battle the bombs go off now, and there is a moment to see it
+          sim.finish();
+          this.doneTick = sim.tick + (sim.teams ? BOMB_END_TICKS : 0);
+        }
         for (const e of sim.events) {
           if (e.type === 'tag') this.onEvent('tag', e.from, e.to);
           else if (e.type === 'block') this.onEvent('block', e.from, e.to);
@@ -119,7 +125,7 @@ export class LocalGame {
           else if (e.type !== 'spawn') this.onEvent(e.type, e); // items going off, the bomb, flags
         }
         sim.events.length = 0;
-        if (this.phase === 'playing' && sim.tick >= this.endTick) {
+        if (this.phase === 'playing' && sim.over && sim.tick >= this.doneTick) {
           this.phase = 'over';
           const { rows, winners, loser, score, win } = standings(sim, this.names, this.mode);
           this.onEvent('end', {
@@ -129,7 +135,7 @@ export class LocalGame {
             loser,
             cup: null,
             team: this.teams ? { score, win, total: null } : null,
-            rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: 0, team: r.team })),
+            rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: 0, team: r.team, boom: !!r.boom, caps: r.caps || 0 })),
           });
           break;
         }
@@ -150,6 +156,7 @@ export class LocalGame {
         name: this.names[p.slot],
         col: this.cols ? this.cols[p.slot] : p.slot,
         team: p.team,
+        bomb: p.bomb,
         x: smooth ? pr.x + (s.x - pr.x) * a : s.x,
         y: smooth ? pr.y + (s.y - pr.y) * a : s.y,
         vx: s.vx,
@@ -195,7 +202,7 @@ export class LocalGame {
       players,
       boxes: sim.boxes,
       goo: sim.goo.map((g) => [g.x, g.y]),
-      team: sim.teams ? { score: sim.score, fuse: sim.fuse, flags: sim.flags } : null,
+      team: sim.teams ? { score: sim.score, over: sim.over, flags: sim.flags.map((f) => ({ x: f.x, y: f.y, owner: f.owner, fill: f.m / FLAG_CAP_TICKS })) } : null,
       me: this.phase === 'playing' ? { spd: me.s.spd, jmp: me.s.jmp, shd: me.s.shd, slw: me.s.slw, item: me.item, arm: me.arm, locked: this.endTick - sim.tick <= ITEM_LOCK_TICKS } : null,
       code: null,
       ping: null,

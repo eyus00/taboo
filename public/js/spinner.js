@@ -84,7 +84,10 @@ function build(root, info, opts, T) {
   const nameOf = (slot) => players.find((p) => p.slot === slot)?.name || `Player ${slot + 1}`;
   const team = info.mode === 'team' && Array.isArray(info.teams);
   const cup = info.cup || null;
-  const hasIt = players.some((p) => p.slot === info.it);
+  // team battle: several players start with a bomb; the reel lands on the first of them
+  const bombs = team ? (info.bombs || []).filter((slot) => players.some((p) => p.slot === slot)) : [];
+  const itSlot = team ? (bombs[0] ?? -1) : info.it;
+  const hasIt = players.some((p) => p.slot === itSlot);
   const leader = !team && cup && cup.leader >= 0 && cup.leader === info.it;
   const spinA = full && ARENAS.length > 1 && !!(info.random?.arena || cup);
   const spinS = full && THEMES.length > 1 && !!(info.random?.theme || cup);
@@ -150,13 +153,17 @@ function build(root, info, opts, T) {
       if (team) d.style.setProperty('--side', TEAM_COLORS[info.teams[p.slot]] || 'transparent');
       return d;
     };
-    const land = players.find((p) => p.slot === info.it);
-    const w = reel(team ? 'who sided' : 'who', team ? 'First bomb' : leader ? 'The leader is it' : 'Who is it?', players, land, whoCell, spinW, start + 180, tW);
+    const land = players.find((p) => p.slot === itSlot);
+    const w = reel(team ? 'who sided' : 'who', team ? (bombs.length > 1 ? 'Bombs' : 'The bomb') : leader ? 'The leader is it' : 'Who is it?', players, land, whoCell, spinW, start + 180, tW);
     stamp(w, team ? 'dark big' : 'seal big', spinW ? tW + 30 : 0, team ? '<svg class="ic" aria-hidden="true"><use href="#i-bomb" /></svg>' : '\u9b3c');
     rack.append(w);
-    const mine = info.it === opts.me;
-    if (team) verdict = mine ? 'You carry the first bomb!' : `${land.name} carries the first bomb`;
-    else verdict = mine ? 'You are it!' : `${land.name} is it!`;
+    const mine = team ? bombs.includes(opts.me) : info.it === opts.me;
+    if (team) {
+      const and = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] || '');
+      const others = bombs.filter((slot) => slot !== opts.me).map(nameOf);
+      if (mine) verdict = others.length ? `You carry a bomb - so ${others.length > 1 ? 'do' : 'does'} ${and(others)}` : 'You carry the bomb!';
+      else verdict = `${and(others)} ${others.length > 1 ? 'carry the bombs' : 'carries the bomb'}`;
+    } else verdict = mine ? 'You are it!' : `${land.name} is it!`;
     root.classList.toggle('mine', mine);
   }
   board.append(rack);
@@ -168,7 +175,18 @@ function build(root, info, opts, T) {
       const side = el('div', 'side');
       side.style.setProperty('--side', TEAM_COLORS[t]);
       side.append(el('b', '', TEAM_NAMES[t]));
-      for (const p of players) if (info.teams[p.slot] === t) side.append(el('span', p.slot === opts.me ? 'me' : '', p.name));
+      for (const p of players) {
+        if (info.teams[p.slot] !== t) continue;
+        const who = el('span', p.slot === opts.me ? 'me' : '', p.name);
+        // a bomb beside everyone who starts with one (it appears when the reel stops)
+        if (bombs.includes(p.slot)) {
+          const mark = el('i', 'carries');
+          mark.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-bomb" /></svg>';
+          mark.style.setProperty('--at', `${Math.round(spinW ? tW + 60 : doors ? tOpen + 380 : 0)}ms`);
+          who.append(mark);
+        }
+        side.append(who);
+      }
       sides.append(side);
       if (t === 0) sides.append(el('i', '', 'vs'));
     });

@@ -10,7 +10,7 @@
 //   demos.start()       run the ones that are on screen (about 30 frames a second)
 //   demos.stop()        stop everything
 
-import { PW, PH, TICK_MS, MAX_PLAYERS, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_FUSE_TICKS, BOMB_POINTS, FLAG_POINTS } from '/shared/config.js';
+import { PW, PH, TICK_MS, MAX_PLAYERS, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_POINTS, FLAG_PAY_TICKS, FLAG_CAP_TICKS, TICK_RATE } from '/shared/config.js';
 import { Sim } from '/shared/sim.js';
 import { makeBot, botThink } from '/shared/bots.js';
 import { Renderer } from './renderer.js';
@@ -417,44 +417,44 @@ const SCENES = {
     },
   },
 
-  // team bomb: pass the bomb, watch it blow, then steal the flag
+  // team bomb: pass your bomb on, take a flag by standing in its ring, and see what the buzzer does
   team: {
-    arena: world('team', { platforms: [floor(), ledge(170, 270, 150), ledge(400, 160, 150)], bases: [[52, FLOOR], [508, FLOOR]] }),
-    keys: 'lrj',
+    arena: world('team', { platforms: [floor(), ledge(60, 200, 150)], bases: [[420, FLOOR]] }),
+    keys: 'lr',
     *play(d) {
-      const me = d.cast(
-        [{ name: 'You', x: 130, team: 0 }, { name: 'Taro', x: 360, team: 1, face: -1 }, { name: 'Nori', x: 60, team: 0 }, { name: 'Mox', x: 470, y: 160, team: 1, face: -1 }],
-        { it: 0, teams: true },
-      );
+      const me = d.cast([{ name: 'You', x: 120, team: 0 }, { name: 'Taro', x: 300, team: 1, face: -1 }], { it: 0, teams: true });
       const sim = d.sim;
-      const taro = d.p(1).s;
-      sim.rnd = () => 0.99; // the next bomb goes to Nori, so your hands stay free for the flag
-      sim.fuse = 250;
-      d.say('You carry the bomb. Stick it on an enemy!');
-      d.ai[1] = pace(300, 420);
+      const you = d.p(0);
+      const taro = d.p(1);
+      // one bomb for the two of you, and it starts in your hands
+      you.bomb = true;
+      taro.bomb = false;
+      d.clock = 20;
+      d.say('You carry a bomb. Stick it on an enemy!');
+      d.ai[1] = pace(250, 380);
       yield* hold(0, 50);
-      yield* until(() => steer(me, cx(taro), 2), () => sim.it !== 0, 240);
-      d.ai[1] = chase(0, false);
-      d.say('Now it is theirs - and the fuse is still burning');
-      yield* runTo(me, 262);
-      yield L | J;
-      yield* airTo(me, 232, J);
-      yield* until(0, () => sim.it < 0, 260);
+      yield* until(() => steer(me, cx(taro.s), 2), () => !you.bomb, 240);
+      d.clock = 14;
+      d.say('Now it is theirs. Hands free: go and stand in the ring of a flag');
+      d.ai[1] = pace(40, 150); // (Taro wanders off - a real enemy would come straight back at you)
+      yield* runTo(me, 420);
+      d.say('Stay there, and the flag fills with your colour...');
+      d.clock = 9;
+      yield* until(0, () => sim.flags[0].owner === 0, FLAG_CAP_TICKS + 60);
+      sim.flags[0].pay = 70; // (in a match the first point takes a little longer)
+      d.say(`...then it is yours, and pays ${TEAM_NAMES[0]} ${FLAG_POINTS} point${FLAG_POINTS > 1 ? 's' : ''} every ${Math.round(FLAG_PAY_TICKS / TICK_RATE)} seconds`);
+      yield* until(0, () => sim.score[0] > 0, 120);
+      d.clock = 3;
+      yield* hold(0, 50);
+      d.clock = 2;
+      yield* hold(0, 40);
+      d.clock = 1;
+      yield* hold(0, 40);
+      d.clock = 0;
       d.ai[1] = null;
-      d.say(`BOOM! It blew up on ${TEAM_NAMES[1]}: ${BOMB_POINTS} points for ${TEAM_NAMES[0]}`);
-      yield* hold(0, 100);
-      d.say('Hands free? Steal their flag...');
-      yield* runTo(me, 350);
-      yield* until(R, () => sim.flags[1].carrier === 0, 240);
-      yield* hold(0, 10);
-      d.say('...and carry it home. An enemy who touches you sends it back');
-      yield* until(L, () => cx(me) - cx(taro) < 112 || sim.flags[1].carrier !== 0, 240);
-      yield L | J;
-      yield* until(L | J, () => me.vy > 0, 60);
-      yield* until(L, () => me.ground, 120);
-      yield* until(L, () => sim.flags[1].carrier !== 0, 200);
-      d.say(sim.score[0] > BOMB_POINTS ? `Captured! ${FLAG_POINTS} points for ${TEAM_NAMES[0]}` : 'Saved by the defender - the flag goes home');
-      yield* hold(0, 150);
+      sim.finish(); // the buzzer
+      d.say(`Time! The bomb goes off on ${TEAM_NAMES[1]}: ${BOMB_POINTS} points for ${TEAM_NAMES[0]}`);
+      yield* hold(0, 190);
     },
   },
 };
@@ -619,6 +619,7 @@ class Run {
         name: this.names[p.slot],
         col: this.cols ? this.cols[p.slot] : p.slot,
         team: p.team,
+        bomb: p.bomb,
         x: smooth ? pr.x + (s.x - pr.x) * a : s.x,
         y: smooth ? pr.y + (s.y - pr.y) * a : s.y,
         vx: s.vx,
@@ -655,7 +656,7 @@ class Run {
       players,
       boxes: sim.boxes,
       goo: sim.goo.map((g) => [g.x, g.y]),
-      team: sim.teams ? { score: sim.score, fuse: sim.fuse, flags: sim.flags } : null,
+      team: sim.teams ? { score: sim.score, over: sim.over, flags: sim.flags.map((f) => ({ x: f.x, y: f.y, owner: f.owner, fill: f.m / FLAG_CAP_TICKS })) } : null,
       me: null,
       code: null,
       ping: null,
@@ -813,6 +814,7 @@ class Demo {
         else if (e.type === 'use') R0.itemFx(e, ITEM_KINDS[e.kind]);
         else if (e.type === 'slip') R0.slipFx(e);
         else if (e.type === 'boom') R0.boomFx(e);
+        else if (e.type === 'flag' && e.what !== 'lose') R0.flagFx(e.i, e.team, e.what === 'pay');
       }
       run.fx.length = 0;
       R0.draw(run.view(Math.min(1, this.acc / TICK_MS)), now);
@@ -854,7 +856,7 @@ class Demo {
       const sig = `${sim.score[0]}-${sim.score[1]}`;
       if (!this.team) {
         this.team = el('div', 'demo-score');
-        this.team.innerHTML = '<b></b><span class="fuse"><i></i></span><b></b>';
+        this.team.innerHTML = '<b></b><b></b>';
         [0, 1].forEach((t) => (this.team.querySelectorAll('b')[t].style.background = TEAM_COLORS[t]));
         this.hud.append(this.team);
       }
@@ -863,13 +865,6 @@ class Demo {
         const [a, b] = this.team.querySelectorAll('b');
         a.textContent = `${TEAM_NAMES[0]} ${sim.score[0]}`;
         b.textContent = `${sim.score[1]} ${TEAM_NAMES[1]}`;
-      }
-      const f = sim.it >= 0 ? Math.round(Math.max(0, Math.min(1, sim.fuse / BOMB_FUSE_TICKS)) * 50) : 0;
-      if (f !== s.fuse) {
-        s.fuse = f;
-        const bar = this.team.querySelector('.fuse i');
-        bar.style.transform = `scaleX(${f / 50})`;
-        bar.classList.toggle('hot', sim.fuse < 240);
       }
     }
     if (run.clock !== s.clock) {

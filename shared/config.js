@@ -105,19 +105,24 @@ export const GOO_TICKS = 780; // a puddle lasts 13 s
 export const GOO_MAX = 5;
 export const GOO_STUN_TICKS = 42;
 
-// --- Team battle: the bomb and the flags ----------------------------------------
-// Two teams. One bomb is in play: whoever carries it must stick it on an ENEMY
-// by touching them. When the fuse runs out it blows up on its carrier and the
-// other team scores. Each team also has a flag: grab the enemy's and carry it
-// home for points - but any enemy who touches you sends it back.
-export const BOMB_FUSE_TICKS = 14 * 60;
-export const BOMB_MIN_FUSE = 150; // a fresh carrier always gets at least 2.5 s
-export const BOMB_REST_TICKS = 110; // pause between an explosion and the next bomb
+// --- Team battle: bombs and flags -------------------------------------------------
+// Two teams.
+// Bombs: one for every two players, dealt out at GO starting with a random
+// player of each team. A carrier gets rid of theirs by touching an ENEMY whose
+// hands are free (nobody carries two). The bombs burn for the whole round and
+// go off at the buzzer: every bomb scores for the team that is NOT holding it.
+// Flags: a flag is a spot on the map. Stand in its ring and it fills with your
+// colour; full, it is yours, and it pays your team a point every few seconds
+// until the other side stands there long enough to turn it.
+export const BOMB_POINTS = 10; // to the other team, for each bomb that goes off (as much as a flag pays in 50 s)
 export const BOMB_STUN_TICKS = 80;
-export const BOMB_POINTS = 2;
-export const FLAG_POINTS = 3;
-export const FLAG_R = 34; // how close you have to be to a flag or a base
-export const FLAG_LOCK_TICKS = 75; // a flag that was just sent home cannot be taken again straight away
+export const BOMB_END_TICKS = 84; // the moment after the buzzer in which the bombs go off, before the result
+export const FLAG_HALF = 96; // half the width of a flag's ring
+export const FLAG_UP = 120; // and how far above the ground it reaches (a hop on the spot still counts)
+export const FLAG_CAP_TICKS = 150; // standing there alone: 2.5 s to take a free flag (twice that to turn an enemy one)
+export const FLAG_CROWD = 2; // more of you fill it faster, up to this many times as fast
+export const FLAG_PAY_TICKS = 300; // a flag in your colour pays every 5 s...
+export const FLAG_POINTS = 1; // ...this much
 export const TEAM_NAMES = ['Sun', 'Moon'];
 export const TEAM_COLORS = ['#e2543f', '#3f7fe2'];
 // colour slots handed out by team, so one side is warm and the other cool
@@ -133,7 +138,7 @@ export const DEFAULT_DURATION = 60;
 export const MODES = [
   { id: 'potato', name: 'Hot Potato', blurb: 'Whoever is it when time runs out loses.' },
   { id: 'time', name: 'Least Time', blurb: 'Least total time as it wins.' },
-  { id: 'team', name: 'Team Bomb', blurb: 'Two teams. Stick the bomb on an enemy before it blows; steal their flag.' },
+  { id: 'team', name: 'Team Bomb', blurb: 'Two teams. Hold the flags; do not be holding a bomb when the clock stops.' },
 ];
 export const MODE_IDS = MODES.map((m) => m.id);
 

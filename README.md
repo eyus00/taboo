@@ -2,7 +2,7 @@
 
 *Onigokko* (鬼ごっこ) is Japanese for tag; whoever is it is the *oni*. This is real-time multiplayer tag for 2&ndash;6 players, in the browser. Everyone plays on their own device. **Host** a game, find a **Public** one in the list, or type the 4-digit code of a **Private** one (an invite link works too).
 
-- **Three ways to play.** *Hot Potato* (whoever is the oni when the clock hits zero loses), *Least Time* (every second as the oni counts against you), and *Team Bomb* (two teams, one bomb, two flags). Any of them as a quick match or a tournament of 3, 5 or 7 rounds.
+- **Three ways to play.** *Hot Potato* (whoever is the oni when the clock hits zero loses), *Least Time* (every second as the oni counts against you), and *Team Bomb* (two teams, flags to hold, and bombs that go off at the buzzer). Any of them as a quick match or a tournament of 3, 5 or 7 rounds.
 - **Lucky boxes.** Touch one and you get a random item to keep: set it off when it hurts most. A Blast that hurls everyone on screen away, a Swap that trades places with someone, a Storm that puts everyone else in slow motion, Goo to slip on, Frost, Ward, Swift and Spring. Nothing works in the last 10 seconds, so nobody can sit on one for the buzzer.
 - **Close-up camera** that follows you, with a minimap for everyone you cannot see. Each round opens on the whole arena, then zooms in on you.
 - **Movement with weight**: you build up speed, skid when you turn round, and jump in a floaty arc. Five actions &ndash; left, right, jump, down, use item.
@@ -97,8 +97,9 @@ You hold one item at a time and choose when to use it. Items stop working (and b
 ### Team Bomb
 
 - Two teams, Sun (warm colours) and Moon (cool colours): 1 v 1 up to 3 v 3, as even as the room allows.
-- One bomb is in play. Its carrier must stick it on an **enemy** by touching them; team mates are safe. When the fuse (14 s) runs out it blows up on whoever carries it and the **other** team scores 2. A fresh carrier always gets at least 2.5 s. The next bomb goes to the team that just scored.
-- Each team has a flag at its base. Stand on the enemy flag to take it and carry it to your own base for 3 points. Any enemy who touches you sends it home; so does a Blast, a slip in Goo, or being handed the bomb. The bomb carrier cannot pick up a flag.
+- **Bombs.** One for every two players (1, 2 or 3), handed out at GO starting with a random player of each team. A carrier gets rid of theirs by touching an **enemy** whose hands are free; team mates are safe and nobody carries two. The bombs burn for the whole round and all go off when the clock stops: each one scores 10 for the team that is *not* holding it.
+- **Flags.** A flag is a spot on the map with a ring around it (there is one near each side's start). Stand in the ring and it fills with your colour: 2.5 s alone to take a free flag, twice that to turn an enemy one, faster with a team mate. With as many enemies as friends in the ring nothing moves. A flag in your colour pays your team 1 point every 5 seconds, whether you stay or not.
+- So: the flags decide the round while it runs, and the bombs can turn it over in the last second.
 - Items only hit the other team.
 
 ### Tournaments

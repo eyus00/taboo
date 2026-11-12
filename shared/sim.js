@@ -30,14 +30,14 @@ import {
   GOO_TICKS,
   GOO_MAX,
   GOO_STUN_TICKS,
-  BOMB_FUSE_TICKS,
-  BOMB_MIN_FUSE,
-  BOMB_REST_TICKS,
   BOMB_STUN_TICKS,
   BOMB_POINTS,
+  FLAG_HALF,
+  FLAG_UP,
+  FLAG_CAP_TICKS,
+  FLAG_CROWD,
+  FLAG_PAY_TICKS,
   FLAG_POINTS,
-  FLAG_R,
-  FLAG_LOCK_TICKS,
   SAFE_BONUS,
 } from './config.js';
 import { makeState, stepPlayer } from './physics.js';
@@ -50,7 +50,7 @@ export class Sim {
     this.arena = arena;
     this.rnd = rnd;
     this.players = new Array(MAX_PLAYERS).fill(null); // indexed by slot
-    this.it = -1; // who is it - in a team battle, who carries the bomb (-1: nobody right now)
+    this.it = -1; // who is it (always -1 in a team battle: there, players carry bombs - see `bomb` on each player)
     this.tick = 0;
     this.live = false; // true from GO: before that nobody is it and nothing happens
     this.events = []; // filled during a tick, drained by the owner
@@ -64,10 +64,11 @@ export class Sim {
     // team battle (null teams = everyone for themselves)
     this.teams = null; // team (0 or 1) of each slot
     this.score = [0, 0];
-    this.fuse = 0; // ticks until the bomb goes off
-    this.rest = 0; // ticks until the next bomb appears
-    this.nextTeam = 0; // which team the next bomb goes to
-    this.flags = null; // flags[t] belongs to team t: { home: [x, y], x, y, carrier }
+    // flags: spots on the map. m is how far the flag is filled, from -FLAG_CAP_TICKS
+    // (all team 0) to +FLAG_CAP_TICKS (all team 1); owner is -1 until one side has filled it
+    this.flags = null; // [{ x, y, owner, m, pay }]
+    this.bombPlan = null; // who gets a bomb at GO (drawn when the teams are set, so it can be shown beforehand)
+    this.over = false; // the buzzer has gone and the bombs have blown: nothing counts any more
     // Lag compensation: how many ticks in the past each player sees the others.
     // 0 everywhere for local play; the server fills it in from measured latency.
     this.rewind = new Array(MAX_PLAYERS).fill(0);
@@ -78,7 +79,8 @@ export class Sim {
   add(slot, spawnIndex = slot) {
     const sp = this.arena.spawns[spawnIndex % this.arena.spawns.length];
     // item: 0 or 1 + index into ITEM_KINDS; arm: ticks until it can be used; ub: was USE held last tick
-    this.players[slot] = { slot, s: makeState(sp[0], sp[1]), immune: 0, itTicks: 0, tags: 0, item: 0, arm: 0, ub: 0, team: -1 };
+    // bomb: carrying one (team battle); boom: it went off on them; caps: flags they helped to take
+    this.players[slot] = { slot, s: makeState(sp[0], sp[1]), immune: 0, itTicks: 0, tags: 0, item: 0, arm: 0, ub: 0, team: -1, bomb: false, boom: false, caps: 0 };
     this.hx[slot].fill(sp[0]);
     this.hy[slot].fill(sp[1]);
     return this.players[slot];
@@ -88,22 +90,59 @@ export class Sim {
   setTeams(teams) {
     this.teams = teams;
     for (const p of this.players) if (p) p.team = teams[p.slot] ?? 0;
-    this.flags = this.arena.bases.map(([x, y]) => ({ home: [x, y], x, y: y - PH, carrier: -1, lock: 0 }));
+    this.flags = this.arena.bases.map(([x, y]) => ({ x, y, owner: -1, m: 0, pay: 0 }));
+    this.bombPlan = this.pickBombs();
   }
 
-  // Remove a player (disconnect). If they were "it", someone else gets it.
+  // Who starts with a bomb: one bomb for every two players, handed out to the
+  // two teams in turn (a random one first), to a random player each time.
+  pickBombs() {
+    const all = this.active();
+    const sides = [0, 1].map((t) => {
+      const list = all.filter((p) => p.team === t).map((p) => p.slot);
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(this.rnd() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+      }
+      return list;
+    });
+    const want = Math.max(1, Math.floor(all.length / 2));
+    const out = [];
+    let t = this.rnd() < 0.5 ? 0 : 1;
+    while (out.length < want && (sides[0].length || sides[1].length)) {
+      if (sides[t].length) out.push(sides[t].shift());
+      t = 1 - t;
+    }
+    return out;
+  }
+
+  // is this player it (or, in a team battle, carrying a bomb)?
+  isIt(p) {
+    return !!p && (p.slot === this.it || p.bomb);
+  }
+
+  // slots of everyone carrying a bomb
+  bombs() {
+    return this.players.filter((p) => p && p.bomb).map((p) => p.slot);
+  }
+
+  // Remove a player (disconnect). If they were "it", someone else gets it; a
+  // bomb they were carrying goes to one of their own team.
   remove(slot) {
     const gone = this.players[slot];
     if (!gone) return;
     this.players[slot] = null;
-    if (this.flags) for (const f of this.flags) if (f.carrier === slot) this.sendHome(f);
-    if (this.it === slot) {
-      this.it = -1;
-      if (this.teams) this.rest = 30;
-      else {
-        this.pickIt();
-        if (this.it >= 0) this.events.push({ type: 'it', to: this.it });
+    if (gone.bomb && !this.over) {
+      const pool = this.players.filter((p) => p && p.team === gone.team && !p.bomb);
+      const heir = pool[Math.floor(this.rnd() * pool.length)];
+      if (heir) {
+        heir.bomb = true;
+        this.events.push({ type: 'it', to: heir.slot });
       }
+    }
+    if (this.it === slot) {
+      this.pickIt();
+      if (this.it >= 0) this.events.push({ type: 'it', to: this.it });
     }
   }
 
@@ -120,12 +159,15 @@ export class Sim {
   // GO: choose who is "it" (or use the one given) and start the box clock.
   start(itSlot = -1) {
     this.live = true;
-    if (itSlot >= 0 && this.players[itSlot]) this.it = itSlot;
+    if (this.teams) {
+      // the bombs go out as drawn - or are drawn again if somebody left meanwhile
+      this.it = -1;
+      let plan = (this.bombPlan || []).filter((slot) => this.players[slot]);
+      if (plan.length !== Math.max(1, Math.floor(this.active().length / 2))) plan = this.pickBombs();
+      this.bombPlan = plan;
+      for (const slot of plan) this.players[slot].bomb = true;
+    } else if (itSlot >= 0 && this.players[itSlot]) this.it = itSlot;
     else this.pickIt();
-    if (this.teams && this.it >= 0) {
-      this.fuse = BOMB_FUSE_TICKS;
-      this.nextTeam = 1 - this.players[this.it].team;
-    }
     this.nextBox = this.tick + Math.round(BOX_FIRST_TICKS / this.twist.items);
   }
 
@@ -140,20 +182,21 @@ export class Sim {
     const use = bits & IN_USE;
     if (use && !pl.ub) this.useItem(pl);
     pl.ub = use;
-    stepPlayer(pl.s, bits, this.arena, slot === this.it, this.twist);
+    stepPlayer(pl.s, bits, this.arena, slot === this.it || pl.bomb, this.twist);
   }
 
   // Call once per tick after every player has been stepped.
   endTick() {
     this.updateBoxes();
     this.updateGoo();
-    this.checkTag();
-    if (this.teams && this.live) this.updateTeams(); // no bomb and no flags before GO
-    const cur = this.players[this.it];
-    if (cur) cur.itTicks++;
+    if (!this.over) {
+      this.checkTag();
+      if (this.teams && this.live) this.updateFlags(); // nothing counts before GO
+    }
     const i = this.tick % HIST;
     for (const o of this.players) {
       if (!o) continue;
+      if (this.isIt(o) && !this.over) o.itTicks++; // time as it, or with a bomb in hand
       if (o.immune > 0) o.immune--;
       if (o.arm > 0) o.arm--;
       this.hx[o.slot][i] = o.s.x;
@@ -167,8 +210,13 @@ export class Sim {
     return !this.teams || a.team !== b.team;
   }
 
+  // Everyone who is it (one player) or carries a bomb (several) gets a chance to pass it on.
   checkTag() {
-    const it = this.players[this.it];
+    if (!this.teams) return this.tagFrom(this.players[this.it]);
+    for (const o of this.players) if (o && o.bomb) this.tagFrom(o);
+  }
+
+  tagFrom(it) {
     if (!it || it.s.dead > 0 || it.s.stun > 0 || it.s.frz > 0 || it.s.orb > 0) return;
     // "It" sees everyone else slightly in the past (network delay + smoothing),
     // so also accept a touch against where the target was on the tagger's screen.
@@ -178,7 +226,7 @@ export class Sim {
     let bestD = Infinity;
     for (const o of this.players) {
       if (!o || o === it || o.s.dead > 0 || o.immune > 0 || o.s.orb > 0) continue; // nobody is tagged mid-portal
-      if (!this.enemies(it, o)) continue; // the bomb only sticks to the other team
+      if (!this.enemies(it, o) || o.bomb) continue; // a bomb only sticks to the other team, and nobody carries two
       let hit = touching(it.s.x, it.s.y, o.s.x, o.s.y);
       if (!hit && i >= 0) hit = touching(it.s.x, it.s.y, this.hx[o.slot][i], this.hy[o.slot][i]);
       if (!hit) continue;
@@ -204,11 +252,10 @@ export class Sim {
     it.immune = IMMUNE_TICKS; // no tag-backs
     it.tags++;
     best.s.stun = STUN_TICKS; // brief freeze so the old "it" can get away
-    this.it = best.slot;
     if (this.teams) {
-      this.fuse = Math.max(this.fuse, BOMB_MIN_FUSE);
-      this.dropFlag(best.slot); // hands full
-    }
+      it.bomb = false;
+      best.bomb = true;
+    } else this.it = best.slot;
     this.events.push({ type: 'tag', from: it.slot, to: best.slot });
   }
 
@@ -247,7 +294,7 @@ export class Sim {
 
   // What comes out of a box. Whoever is it has no use for a shield.
   rollItem(o) {
-    const pool = ITEM_KINDS.filter((k) => !(k === 'shield' && o.slot === this.it));
+    const pool = ITEM_KINDS.filter((k) => !(k === 'shield' && this.isIt(o)));
     return kindId(pool[Math.floor(this.rnd() * pool.length)]);
   }
 
@@ -269,7 +316,7 @@ export class Sim {
     if (kind === 'speed') s.spd = SPEED_BUFF_TICKS;
     else if (kind === 'jump') s.jmp = JUMP_BUFF_TICKS;
     else if (kind === 'shield') {
-      if (o.slot === this.it) s.spd = SPEED_BUFF_TICKS; // no use to "it": becomes a burst of speed
+      if (this.isIt(o)) s.spd = SPEED_BUFF_TICKS; // no use to "it": becomes a burst of speed
       else s.shd = SHIELD_TICKS;
     } else if (kind === 'freeze') {
       // a runner stops "it"; "it" stops every runner; in a team battle, the whole enemy team
@@ -278,7 +325,7 @@ export class Sim {
         else if (t.slot === this.it) t.s.frz = Math.max(t.s.frz, FREEZE_IT_TICKS);
       }
     } else if (kind === 'blast') {
-      // a shockwave: hurled away, stunned, and anything carried is dropped
+      // a shockwave: hurled away and stunned (which also clears them off a flag)
       for (const t of this.targets(o)) {
         if (t.s.orb > 0) continue;
         const dx = t.s.x + PW / 2 - cx;
@@ -290,7 +337,6 @@ export class Sim {
         t.s.vy = -420 - 300 * k;
         t.s.ground = false;
         t.s.stun = Math.max(t.s.stun, BLAST_STUN_TICKS);
-        this.dropFlag(t.slot);
       }
     } else if (kind === 'swap') {
       // trade places with someone on the other side (nothing happens if there is nobody)
@@ -336,7 +382,6 @@ export class Sim {
         o.s.vy = -300;
         o.s.vx *= 0.4;
         o.s.ground = false;
-        this.dropFlag(o.slot);
         this.events.push({ type: 'slip', slot: o.slot, x: g.x, y: g.y });
         this.goo.splice(k, 1);
         break;
@@ -345,94 +390,64 @@ export class Sim {
   }
 
   // --- team battle -----------------------------------------------------------------
-  updateTeams() {
-    if (this.it >= 0) {
-      if (--this.fuse <= 0) this.explode();
-    } else if (--this.rest <= 0) this.giveBomb();
-    this.updateFlags();
-  }
-
-  // The fuse ran out: the carrier's team loses, the other team scores.
-  explode() {
-    const p = this.players[this.it];
-    if (!p) return;
-    const scorer = 1 - p.team;
-    this.score[scorer] += BOMB_POINTS;
-    p.s.stun = BOMB_STUN_TICKS;
-    p.s.vy = -640;
-    p.s.ground = false;
-    p.immune = BOMB_STUN_TICKS + 30;
-    this.events.push({ type: 'boom', slot: p.slot, team: scorer, x: p.s.x + PW / 2, y: p.s.y + PH / 2 });
-    this.it = -1;
-    this.rest = BOMB_REST_TICKS;
-    this.nextTeam = scorer; // the side that just scored carries the next one
-  }
-
-  giveBomb() {
-    let pool = this.active().filter((p) => p.team === this.nextTeam && p.s.dead === 0);
-    if (!pool.length) pool = this.active();
-    if (!pool.length) return;
-    const p = pool[Math.floor(this.rnd() * pool.length)];
-    this.it = p.slot;
-    this.fuse = BOMB_FUSE_TICKS;
-    p.immune = 0;
-    this.dropFlag(p.slot);
-    this.events.push({ type: 'it', to: p.slot });
-  }
-
-  sendHome(f) {
-    f.carrier = -1;
-    f.x = f.home[0];
-    f.y = f.home[1] - PH;
-    f.lock = FLAG_LOCK_TICKS;
-  }
-
-  // If this player is carrying a flag, it goes back to its base.
-  dropFlag(slot) {
-    if (!this.flags) return;
-    this.flags.forEach((f, team) => {
-      if (f.carrier !== slot) return;
-      this.sendHome(f);
-      this.events.push({ type: 'flag', what: 'back', team, slot });
-    });
-  }
-
+  // Flags: whichever side has more players standing in a flag's ring fills it
+  // with its colour (equal numbers: nothing moves). Full, the flag is theirs
+  // and pays them a point every few seconds. Emptied back to nothing by the
+  // other side, it is nobody's again.
   updateFlags() {
-    this.flags.forEach((f, team) => {
-      const near = (o, x, y) => Math.abs(o.s.x + PW / 2 - x) < FLAG_R && Math.abs(o.s.y + PH - y) < FLAG_R + 14;
-      if (f.carrier < 0) {
-        if (f.lock > 0) return void f.lock--; // just sent home: hands off for a moment
-        // at home: an enemy with free hands (not the bomb carrier) takes it
-        for (const o of this.players) {
-          if (!o || o.team === team || o.slot === this.it || o.s.dead > 0 || o.s.orb > 0 || o.s.stun > 0) continue;
-          if (this.flags.some((g) => g.carrier === o.slot) || !near(o, f.home[0], f.home[1])) continue;
-          f.carrier = o.slot;
-          this.events.push({ type: 'flag', what: 'take', team, slot: o.slot });
-          break;
-        }
-        return;
-      }
-      const c = this.players[f.carrier];
-      if (!c || c.s.dead > 0) return this.sendHome(f);
-      f.x = c.s.x + PW / 2;
-      f.y = c.s.y;
-      if (c.s.orb > 0) return; // safe while flying through a portal
-      // any defender who touches the carrier sends the flag home
+    const CAP = FLAG_CAP_TICKS;
+    this.flags.forEach((f, i) => {
+      const n = [0, 0];
+      const there = [];
       for (const o of this.players) {
-        if (!o || o.team !== team || o.s.dead > 0 || o.s.orb > 0 || o.s.stun > 0 || o.s.frz > 0) continue;
-        if (!touching(o.s.x, o.s.y, c.s.x, c.s.y)) continue;
-        this.sendHome(f);
-        this.events.push({ type: 'flag', what: 'save', team, slot: o.slot });
-        return;
+        if (!o || o.s.dead > 0 || o.s.orb > 0) continue;
+        const feet = o.s.y + PH;
+        if (Math.abs(o.s.x + PW / 2 - f.x) > FLAG_HALF || feet > f.y + 6 || feet < f.y - FLAG_UP) continue;
+        n[o.team]++;
+        there.push(o);
       }
-      // carried all the way to the carrier's own base: points
-      const base = this.flags[1 - team].home;
-      if (near(c, base[0], base[1])) {
-        this.score[c.team] += FLAG_POINTS;
-        this.sendHome(f);
-        this.events.push({ type: 'flag', what: 'capture', team: c.team, slot: c.slot });
+      const d = n[1] - n[0];
+      if (d !== 0) f.m = Math.max(-CAP, Math.min(CAP, f.m + Math.sign(d) * Math.min(FLAG_CROWD, Math.abs(d))));
+      else if (!n[0]) {
+        // nobody there: a flag settles back to where it belongs (its owner's colour, or nothing)
+        const rest = f.owner < 0 ? 0 : f.owner === 0 ? -CAP : CAP;
+        if (f.m !== rest) f.m += Math.sign(rest - f.m);
+      }
+      const full = f.m <= -CAP ? 0 : f.m >= CAP ? 1 : -1;
+      if (full >= 0 && full !== f.owner) {
+        f.owner = full;
+        f.pay = FLAG_PAY_TICKS;
+        for (const o of there) if (o.team === full) o.caps++;
+        this.events.push({ type: 'flag', what: 'take', team: full, i });
+      } else if (f.owner >= 0 && (f.owner === 0 ? f.m >= 0 : f.m <= 0)) {
+        this.events.push({ type: 'flag', what: 'lose', team: f.owner, i });
+        f.owner = -1;
+      }
+      if (f.owner >= 0 && --f.pay <= 0) {
+        f.pay = FLAG_PAY_TICKS;
+        this.score[f.owner] += FLAG_POINTS;
+        this.events.push({ type: 'flag', what: 'pay', team: f.owner, i });
       }
     });
+  }
+
+  // The buzzer. In a team battle every bomb goes off on whoever holds it, and
+  // the other team scores. After this nothing counts: no tags, no flags.
+  finish() {
+    if (this.over) return;
+    this.over = true;
+    if (!this.teams) return;
+    for (const p of this.players) {
+      if (!p || !p.bomb) continue;
+      const scorer = 1 - p.team;
+      this.score[scorer] += BOMB_POINTS;
+      p.bomb = false;
+      p.boom = true;
+      p.s.stun = BOMB_STUN_TICKS;
+      p.s.vy = -640;
+      p.s.ground = false;
+      this.events.push({ type: 'boom', slot: p.slot, team: scorer, x: p.s.x + PW / 2, y: p.s.y + PH / 2 });
+    }
   }
 
   // Convenience for local play: one input per slot.
@@ -451,7 +466,7 @@ export function touching(ax, ay, bx, by) {
 // Final standings.
 //   potato: whoever is "it" at the end loses, everyone else wins
 //   time:   least time as "it" wins; exact ties share the win
-//   team:   the team with more points wins (a draw is shared)
+//   team:   the team with more points wins (a draw is shared). Call sim.finish() first: the bombs score at the buzzer.
 export function standings(sim, names = [], mode = 'potato') {
   const rows = sim.active().map((p) => ({
     slot: p.slot,
@@ -459,6 +474,8 @@ export function standings(sim, names = [], mode = 'potato') {
     ticks: p.itTicks,
     tags: p.tags,
     team: p.team,
+    boom: p.boom, // team battle: a bomb went off on them
+    caps: p.caps, // and how many flags they helped to take
   }));
   if (mode === 'team') {
     const [a, b] = sim.score;

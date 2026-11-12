@@ -14,6 +14,7 @@ import { Server } from 'socket.io';
 
 import {
   TICK_RATE,
+  BOMB_END_TICKS,
   TICK_MS,
   SNAP_EVERY,
   COUNTDOWN_MS,
@@ -169,7 +170,8 @@ function roundInfo(room) {
     mode: g.mode,
     duration: g.duration,
     twist: g.twist,
-    it: g.startIt, // who starts as it (or carries the first bomb)
+    it: g.startIt, // who starts as it (-1 in a team battle)
+    bombs: g.teams ? g.sim.bombPlan : null, // team battle: who starts with a bomb
     random: { arena: room.settings.arena === 'random', theme: room.settings.theme === 'random' }, // what was left to chance
     teams: g.teams, // team battle: team (0 or 1) of each slot; otherwise null
     cols: g.cols, // which player colour each slot is drawn in this round
@@ -213,7 +215,9 @@ function leaveRoom(socket) {
   if (g && player.playing) {
     g.sim.remove(player.slot); // hands "it" to someone else if needed
     flushEvents(room);
-    if (g.sim.active().length < 2) {
+    // nobody left to play against (in a team battle: a whole side has gone)
+    const left = g.sim.active();
+    if (left.length < 2 || (g.sim.teams && !(left.some((p) => p.team === 0) && left.some((p) => p.team === 1)))) {
       finishRound(room, 'forfeit');
       return;
     }
@@ -318,12 +322,10 @@ function startRound(room) {
     net[p.slot] = { q: [], recv: 0, lastSeq: 0, budget: 0, idle: 0, win: 0, spare: Infinity, late: 0, trimmed: 0, skipped: 0, id: p.id };
   }
   if (teams) {
-    sim.setTeams(teams);
-    startIt = -1; // the leader rule is for free-for-all tournaments
+    sim.setTeams(teams); // (this also draws who starts with a bomb)
+    startIt = -1; // nobody is "it" in a team battle, and the leader rule is for free-for-all tournaments
     if (info) info.leader = -1;
-  }
-  // who is it (or carries the first bomb) is drawn now, so every screen can show the draw
-  if (startIt < 0) startIt = pick(everyone.map((p) => p.slot));
+  } else if (startIt < 0) startIt = pick(everyone.map((p) => p.slot)); // drawn now, so every screen can show the draw
   room.game = {
     sim,
     net,
@@ -360,6 +362,7 @@ function finishRound(room, reason) {
   const cup = room.cup;
   const forfeit = reason === 'forfeit';
   const team = g.mode === 'team';
+  if (!forfeit) g.sim.finish(); // (already done when the clock ran out; this is for safety)
   let { rows, winners, loser, score, win } = standings(g.sim, names, team ? 'team' : cup ? 'time' : g.mode);
   if (cup && !team) loser = g.sim.it;
   if (forfeit) {
@@ -383,7 +386,8 @@ function finishRound(room, reason) {
     mode: team ? 'team' : cup ? 'cup' : g.mode,
     winners, // slots
     loser, // slot of whoever was "it" at the end, or -1
-    rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: gained[r.slot] || 0, team: r.team })),
+    // ms: time as it (team battle: with a bomb in hand); tags: tags made (bombs passed); boom: a bomb went off on them; caps: flags taken
+    rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: gained[r.slot] || 0, team: r.team, boom: !!r.boom, caps: r.caps || 0 })),
     team: team ? { score, win, total: null } : null, // team battle: this round's score, who won it (-1: a draw)
     cup: null,
   };
@@ -518,7 +522,7 @@ function tickRoom(room) {
       sim.start(g.startIt);
       g.endTick = sim.tick + g.duration * TICK_RATE;
       sim.endsAt = g.endTick; // items lock shortly before this
-      io.to(room.code).emit('go', sim.it);
+      io.to(room.code).emit('go', sim.it, sim.bombs());
       emitRoom(room);
     }
   } else {
@@ -532,8 +536,13 @@ function tickRoom(room) {
       sim.rewind[slot] = Math.min(40, Math.round(rtt / TICK_MS) + VIEW_DELAY_TICKS + n.q.length);
     }
     sim.endTick();
+    if (sim.tick >= g.endTick && !sim.over) {
+      // the buzzer: in a team battle the bombs go off now, and everyone gets a moment to see it
+      sim.finish();
+      g.doneTick = sim.tick + (sim.teams ? BOMB_END_TICKS : 0);
+    }
     flushEvents(room);
-    if (sim.tick >= g.endTick) {
+    if (sim.over && sim.tick >= g.doneTick) {
       sendSnapshot(room);
       finishRound(room, 'time');
       return;
@@ -548,7 +557,7 @@ function tickRoom(room) {
 //   boxes:  indices of the box spots that have a box
 //   mine:   [ackSeq, ...packState(mine)] or 0 for spectators
 //   goo:    [x, y] of every puddle
-//   team:   0, or [score0, score1, fuse, flag0 x, y, carrier, flag1 x, y, carrier]
+//   team:   0, or [score0, score1, bombs (one bit per slot), over, then for each flag: fill (-cap..cap), owner (-1, 0, 1)]
 function sendSnapshot(room) {
   const g = room.game;
   const sim = g.sim;
@@ -559,12 +568,14 @@ function sendSnapshot(room) {
     ps.push([pl.slot, s.x, s.y, s.vx, s.vy, publicFlags(s), pl.immune, pl.itTicks, pl.tags, pl.item + (pl.arm > 0 ? 16 : 0)]);
   }
   const playing = g.state === 'playing';
-  const left = playing ? g.endTick - sim.tick : Math.max(0, g.goAt - Date.now());
+  const left = playing ? Math.max(0, g.endTick - sim.tick) : Math.max(0, g.goAt - Date.now());
   const goo = sim.goo.map((p) => [Math.round(p.x), Math.round(p.y)]);
   let team = 0;
   if (sim.teams) {
-    const [a, b] = sim.flags;
-    team = [sim.score[0], sim.score[1], Math.max(0, sim.fuse), Math.round(a.x), Math.round(a.y), a.carrier, Math.round(b.x), Math.round(b.y), b.carrier];
+    let mask = 0;
+    for (const pl of sim.players) if (pl && pl.bomb) mask |= 1 << pl.slot;
+    team = [sim.score[0], sim.score[1], mask, sim.over ? 1 : 0];
+    for (const f of sim.flags) team.push(f.m, f.owner);
   }
   const head = [sim.tick, playing ? 1 : 0, sim.it, left, ps, sim.boxes];
   for (const p of room.players.values()) {

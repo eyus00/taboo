@@ -7,7 +7,7 @@
 // one panel at a time. Every screen can be driven with the keyboard alone
 // (arrows + Enter, Esc to go back, a letter or number for most things).
 
-import { MODES, DURATIONS, DEFAULT_DURATION, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, BOMB_FUSE_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, ITEM_LOCK_TICKS } from '/shared/config.js';
+import { MODES, DURATIONS, DEFAULT_DURATION, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, FLAG_PAY_TICKS, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, ITEM_LOCK_TICKS } from '/shared/config.js';
 import { ARENAS } from '/shared/arenas.js';
 import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
@@ -472,7 +472,9 @@ $('btn-help-back').addEventListener('click', closeHelp);
 
 // numbers in the rules come from the game's own settings
 const orList = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}` : String(items[0]));
-for (const [key, value] of Object.entries({ fuse: Math.round(BOMB_FUSE_TICKS / TICK_RATE), bomb: `${BOMB_POINTS} points`, flag: `${FLAG_POINTS} points`, lock: Math.round(ITEM_LOCK_TICKS / TICK_RATE), rounds: orList(CUP_ROUNDS) })) {
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const flagPay = `${plural(FLAG_POINTS, 'point')} every ${Math.round(FLAG_PAY_TICKS / TICK_RATE)} seconds`;
+for (const [key, value] of Object.entries({ bomb: plural(BOMB_POINTS, 'point'), flagpay: flagPay, flagtime: (FLAG_CAP_TICKS / TICK_RATE).toFixed(1).replace('.0', ''), lock: Math.round(ITEM_LOCK_TICKS / TICK_RATE), rounds: orList(CUP_ROUNDS) })) {
   for (const e of document.querySelectorAll(`[data-n="${key}"]`)) e.textContent = value;
 }
 for (const k of ITEM_KINDS) {
@@ -974,7 +976,7 @@ function showResults(res) {
     const tally = cup && team.total ? team.total : team.score;
     const lead = final ? team.win : tally[0] === tally[1] ? -1 : tally[0] > tally[1] ? 0 : 1;
     const side = (t) => (t === mine ? 'Your team' : TEAM_NAMES[t]);
-    const points = `A bomb that goes off scores ${BOMB_POINTS} for the other team, a captured flag ${FLAG_POINTS}.`;
+    const points = `A flag in your colour pays ${flagPay}. A bomb still in someone's hands at the buzzer scores ${BOMB_POINTS} for the other team.`;
     if (cup) {
       kicker = cup.final ? 'Tournament over - Team Bomb' : `Round ${cup.round} of ${cup.rounds} - Team Bomb`;
       if (cup.final) {
@@ -1018,6 +1020,7 @@ function showResults(res) {
   $('res-sub').textContent = sub;
   $('res-teams').hidden = !team;
   $('res-table').hidden = !!team;
+  $('s-results').classList.toggle('teams', !!team);
   if (team) paintSides(res, mySlot);
   else paintTable(res, mySlot);
 
@@ -1085,7 +1088,7 @@ function paintSides(res, mySlot) {
     side.append(head);
     const ul = el('ul');
     const hd = el('li', 'hd');
-    hd.append(el('span', '', 'Player'), el('span', '', 'Bomb held'), el('span', '', 'Passed'));
+    hd.append(el('span', '', 'Player'), el('span', '', 'Bomb'), el('span', '', 'Passed'), el('span', '', 'Flags'));
     ul.append(hd);
     for (const r of res.rows) {
       if (r.team !== t) continue;
@@ -1094,7 +1097,14 @@ function paintSides(res, mySlot) {
       chip.style.background = play.colorOf(r.slot);
       const who = el('span', 'who');
       who.append(chip, r.name);
-      li.append(who, el('span', '', secs(r.ms)), el('span', '', String(r.tags)));
+      // a bomb went off in their hands
+      if (r.boom) {
+        const blown = el('span', 'mark blown');
+        blown.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-bomb" /></svg>';
+        blown.title = 'A bomb went off in their hands';
+        who.append(blown);
+      }
+      li.append(who, el('span', '', secs(r.ms)), el('span', '', String(r.tags)), el('span', '', String(r.caps || 0)));
       ul.append(li);
     }
     side.append(ul);

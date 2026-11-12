@@ -11,7 +11,7 @@
 // The view is close in on your own player and follows them. While a round is
 // being introduced, and when it is over, it pulls back to show the whole arena.
 
-import { ART_W, ART_H, PW, PH, MAX_PLAYERS, TEAM_COLORS, BLAST_RADIUS } from '/shared/config.js';
+import { ART_W, ART_H, PW, PH, MAX_PLAYERS, TEAM_COLORS, BLAST_RADIUS, FLAG_HALF, FLAG_UP } from '/shared/config.js';
 import { LEDGE_H } from '/shared/arenas.js';
 import { THEME_MAP } from './themes/index.js';
 import { clamp, mulberry32, hashStr, hash1, rgba, rr, KIND_COLORS, PORTAL_COLORS } from './util.js';
@@ -578,6 +578,37 @@ export class Renderer {
     for (let i = 0; i < 12; i++) this.emit({ x: e.x + (Math.random() - 0.5) * 30, y: e.y - 4, vx: (Math.random() - 0.5) * 260, vy: -120 - Math.random() * 200, g: 900, life: 0.5, size: 2.5 + Math.random() * 2.5, color: KIND_COLORS.goo });
   }
 
+  // Who to keep an eye on: whoever is it; in a team battle, the nearest enemy
+  // with a bomb (nobody, while you are carrying one yourself).
+  chaser(pvs, me) {
+    if (!me || me.team < 0) return pvs.find((p) => p.isIt) || null;
+    if (me.isIt) return null;
+    let best = null;
+    let bestD = Infinity;
+    for (const p of pvs) {
+      if (!p.isIt || p.team === me.team) continue;
+      const d = (p.cx - me.cx) ** 2 + (p.y - me.y) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  // a flag changed hands (a burst in the new colour), or paid its team a point (a few sparks)
+  flagFx(i, team, pay) {
+    const b = this.arena?.bases[i];
+    if (!b) return;
+    const color = TEAM_COLORS[team];
+    if (pay) {
+      for (let k = 0; k < 5; k++) this.emit({ x: b[0] + (Math.random() - 0.5) * 30, y: b[1] - 66, vx: (Math.random() - 0.5) * 50, vy: -70 - Math.random() * 70, g: -30, life: 0.7 + Math.random() * 0.3, size: 3 + Math.random() * 2, color });
+      return;
+    }
+    for (let k = 0; k < 2; k++) this.emit({ x: b[0], y: b[1] - 40, life: 0.5 + k * 0.12, size: 14, grow: 300 - k * 90, shape: 'ring', width: 7 - k * 3, color: k ? '#ffffff' : color });
+    for (let k = 0; k < 16; k++) this.emit({ x: b[0] + (Math.random() - 0.5) * FLAG_HALF * 2, y: b[1] - 6, vx: (Math.random() - 0.5) * 120, vy: -160 - Math.random() * 260, g: 500, life: 0.6 + Math.random() * 0.4, size: 3 + Math.random() * 3, color });
+  }
+
   // the bomb went off
   boomFx(e) {
     this.flash('#ff6a2b', 0.34);
@@ -723,7 +754,7 @@ export class Renderer {
         cx = me.cx + clamp(me.vx * 0.3, -110, 110); // look a little ahead
         cy = me.y + PH / 2 - vh * 0.04;
         // lean towards whoever is it, without ever losing sight of yourself
-        const it = pvs.find((p) => p.isIt);
+        const it = this.chaser(pvs, me);
         if (it && it !== me) {
           cx += clamp((it.cx - me.cx) * 0.35, -vw * 0.2, vw * 0.2);
           cy += clamp((it.y - me.y) * 0.35, -vh * 0.18, vh * 0.18);
@@ -831,38 +862,54 @@ export class Renderer {
         g.fill();
       }
     }
-    // team battle: each side's base, and its flag (at home, or on the back of whoever took it)
+    // team battle: the flags. Each is a ring on the ground with a pole in it: the
+    // strip along the ground fills with the colour of whoever is taking it, and
+    // the pennant flies the colour of whoever holds it (pale: nobody).
     if (view.team) {
-      view.team.flags.forEach((f, team) => {
-        const home = A.bases[team];
-        const col = TEAM_COLORS[team];
-        g.fillStyle = '#201408';
-        g.fillRect(home[0] - 22, home[1] - 5, 44, 5);
+      view.team.flags.forEach((f, i) => {
+        const x = f.x;
+        const y = f.y;
+        const side = f.fill < 0 ? 0 : 1;
+        const amount = Math.min(1, Math.abs(f.fill));
+        const col = f.owner >= 0 ? TEAM_COLORS[f.owner] : '#e9e2cf';
+        // the space that counts, faintly
+        g.globalAlpha = f.owner >= 0 ? 0.13 + 0.04 * Math.sin(t * 3 + i) : 0.07;
+        g.fillStyle = f.owner >= 0 ? col : amount > 0 ? TEAM_COLORS[side] : '#ffffff';
+        g.fillRect(x - FLAG_HALF, y - FLAG_UP, FLAG_HALF * 2, FLAG_UP - 7);
+        g.globalAlpha = 1;
+        // its two edges
         g.fillStyle = col;
-        g.fillRect(home[0] - 19, home[1] - 4, 38, 3);
-        let x = home[0];
-        let y = home[1];
-        const c = f.carrier >= 0 ? pvs.find((p) => p.id === f.carrier) : null;
-        if (c) {
-          x = c.cx - c.face * 12;
-          y = c.y + 6;
+        g.fillRect(x - FLAG_HALF - 2, y - 30, 4, 30);
+        g.fillRect(x + FLAG_HALF - 2, y - 30, 4, 30);
+        // the strip: dark, filling from the middle outwards
+        g.fillStyle = 'rgba(20, 14, 8, 0.7)';
+        g.fillRect(x - FLAG_HALF, y - 7, FLAG_HALF * 2, 7);
+        if (amount > 0) {
+          g.fillStyle = TEAM_COLORS[side];
+          g.fillRect(x - FLAG_HALF * amount, y - 6, FLAG_HALF * 2 * amount, 5);
         }
-        const wave = Math.sin(t * 6 + team) * 3;
+        // pole and pennant, with the flag's letter
+        const wave = Math.sin(t * 6 + i) * 3;
         g.strokeStyle = '#201408';
-        g.lineWidth = 3;
+        g.lineWidth = 4;
         g.beginPath();
-        g.moveTo(x, y);
-        g.lineTo(x, y - 46);
+        g.moveTo(x, y - 6);
+        g.lineTo(x, y - 78);
         g.stroke();
         g.fillStyle = col;
         g.beginPath();
-        g.moveTo(x + 1, y - 46);
-        g.lineTo(x + 27, y - 39 + wave);
-        g.lineTo(x + 1, y - 29);
+        g.moveTo(x + 2, y - 78);
+        g.lineTo(x + 38, y - 68 + wave);
+        g.lineTo(x + 2, y - 54);
         g.closePath();
         g.fill();
-        g.lineWidth = 1.6;
+        g.lineWidth = 2;
         g.stroke();
+        g.fillStyle = f.owner >= 0 ? '#ffffff' : '#201408';
+        g.font = '800 15px system-ui, sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText('ABCD'[i], x + 13, y - 66 + wave * 0.3);
       });
     }
 
@@ -902,7 +949,7 @@ export class Renderer {
         vy: p.vy,
         ground: p.ground,
         face: p.face,
-        isIt: view.it === p.slot,
+        isIt: view.it === p.slot || !!p.bomb, // it - or, in a team battle, carrying a bomb
         immune: p.immune > 0,
         stunned: p.stun > 0,
         frozen: !!p.frz,
@@ -1222,9 +1269,9 @@ export class Renderer {
       if (pv.isIt && view.phase !== 'countdown') {
         const bob = Math.round(Math.sin(t * 5) * 2 * px);
         if (view.team) {
-          // the bomb: its spark flickers faster as the fuse runs down
+          // the bomb: it burns for the whole round, and its spark flickers faster as the clock runs down
           const y = top - 14 * px + bob;
-          const hot = view.team.fuse < 240;
+          const hot = view.phase === 'playing' && view.timeLeft <= 10;
           g.fillStyle = hot && Math.floor(t * 10) % 2 ? '#ff4d3d' : '#16110d';
           g.strokeStyle = '#ffffff';
           g.lineWidth = 2 * px;
@@ -1280,7 +1327,7 @@ export class Renderer {
       }
     }
     if (!this.follow) return;
-    const it = pvs.find((p) => p.isIt);
+    const it = this.chaser(pvs, pvs.find((p) => p.local));
     const w = this.fg.width;
     const h = this.fg.height;
     if (!it || it.local) return;

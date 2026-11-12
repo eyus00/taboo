@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, MOVE_SPEED, IMMUNE_TICKS, STUN_TICKS, RESPAWN_TICKS,
   SPEED_BUFF_MUL, TOUCH, AIR_JUMPS, twistById, IN_USE, ITEM_KINDS, BOX_FIRST_TICKS, ITEM_ARM_TICKS, STORM_SPEED, IT_SPEED_MUL,
-  BLAST_RADIUS, BOMB_FUSE_TICKS, BOMB_MIN_FUSE, BOMB_POINTS, BOMB_REST_TICKS, FLAG_LOCK_TICKS, FLAG_POINTS, LAUNCH_VX, LAUNCH_VY,
+  BLAST_RADIUS, BOMB_POINTS, FLAG_POINTS, FLAG_CAP_TICKS, FLAG_PAY_TICKS, FLAG_HALF, FLAG_UP, LAUNCH_VX, LAUNCH_VY,
 } from '../shared/config.js';
 import { ARENAS } from '../shared/arenas.js';
 import { makeState, stepPlayer, packState, unpackState, STATE_LEN } from '../shared/physics.js';
@@ -484,79 +484,200 @@ test('lucky boxes: you get an item to keep and set it off yourself - one at a ti
   assert.ok(b.item > 0 && b.s.spd === 0, 'items are locked near the end of a round');
 });
 
-test('team battle: the bomb only sticks to enemies and blows up for points; flags are captured or saved', () => {
+test('team battle: a bomb for every two players, passed only to enemies with free hands; they all go off at the buzzer', () => {
   const sim = new Sim(box, () => 0.1);
   const p = [0, 1, 2, 3].map((i) => sim.add(i));
   const park = () => p.forEach((q, i) => {
-    q.s.x = [1300, 1900, 2300, 2500][i];
+    q.s.x = [1300, 1900, 2300, 2500][i]; // nobody near anybody, and nobody on a flag
     q.s.y = floorY;
     q.s.vx = q.s.vy = q.s.stun = 0;
     q.immune = 0;
   });
   park();
   sim.setTeams([0, 0, 1, 1]);
+  // who starts with one is drawn with the teams: two bombs for four players, one a side
+  assert.equal(sim.bombPlan.length, 2);
+  assert.deepEqual(sim.bombPlan.map((slot) => p[slot].team).sort(), [0, 1]);
   for (let i = 0; i < 30; i++) sim.step([]); // the countdown: the sim runs, but nothing is in play yet
-  assert.equal(sim.it, -1, 'no bomb before GO');
+  assert.deepEqual(sim.bombs(), [], 'no bombs before GO');
   assert.ok(p.every((q) => q.itTicks === 0), 'and nobody clocks up time');
-  sim.start(0);
-  assert.equal(sim.it, 0);
-  assert.equal(sim.fuse, BOMB_FUSE_TICKS);
+  sim.start();
+  assert.equal(sim.it, -1, 'nobody is "it" in a team battle');
+  assert.deepEqual(sim.bombs().sort(), sim.bombPlan.slice().sort(), 'the bombs go out as drawn');
+  // a known layout: 0 (team 0) and 2 (team 1) carry
+  const give = (...slots) => p.forEach((q) => (q.bomb = slots.includes(q.slot)));
+  give(0, 2);
   p[1].s.x = p[0].s.x + PW; // a team mate: nothing happens
   sim.step([]);
-  assert.equal(sim.it, 0, 'the bomb does not stick to your own team');
+  assert.deepEqual(sim.bombs(), [0, 2], 'a bomb does not stick to your own team');
   park();
-  sim.fuse = 20;
-  p[2].s.x = p[0].s.x + PW; // an enemy
+  p[2].s.x = p[0].s.x + PW; // an enemy who already carries one: nothing happens either way
   sim.step([]);
-  assert.equal(sim.it, 2, 'stuck on an enemy');
-  assert.ok(sim.fuse >= BOMB_MIN_FUSE - 1, 'a fresh carrier gets a moment to react');
+  assert.deepEqual(sim.bombs(), [0, 2], 'nobody carries two');
   park();
-  sim.fuse = 2;
+  p[3].s.x = p[0].s.x + PW; // an enemy with free hands
   sim.events.length = 0;
   sim.step([]);
-  sim.step([]);
-  assert.equal(sim.it, -1, 'the bomb went off');
-  assert.deepEqual(sim.score, [BOMB_POINTS, 0], 'and the other team scored');
-  assert.ok(sim.events.some((e) => e.type === 'boom' && e.slot === 2) && p[2].s.stun > 0);
-  for (let i = 0; i <= BOMB_REST_TICKS; i++) sim.step([]);
-  assert.ok(sim.it === 0 || sim.it === 1, 'the next bomb goes to the team that scored');
-  // flags: player 3 (team 1) takes team 0's flag from its base and carries it home
+  assert.deepEqual(sim.bombs(), [2, 3], 'stuck on an enemy');
+  assert.ok(sim.events.some((e) => e.type === 'tag' && e.from === 0 && e.to === 3));
+  assert.ok(p[3].s.stun > 0 && p[0].immune > 0 && p[0].tags === 1, 'the new carrier is held a moment and cannot hand it straight back');
+  for (let i = 0; i < 5; i++) sim.step([]);
+  assert.deepEqual(sim.bombs(), [2, 3]);
+  // carriers run a touch faster, like whoever is it
   park();
-  sim.it = 0;
-  sim.fuse = 9999;
-  p[0].s.x = 1300;
-  p[3].s.x = box.bases[0][0] - PW / 2;
-  sim.step([]);
-  assert.equal(sim.flags[0].carrier, 3, 'took the flag');
-  p[3].s.x = box.bases[1][0] - PW / 2;
-  sim.step([]);
-  assert.equal(sim.flags[0].carrier, -1);
-  assert.deepEqual(sim.score, [BOMB_POINTS, FLAG_POINTS], 'captured');
-  // ... and again, but this time a defender touches the carrier.
-  // A flag that has just come home cannot be taken again for a moment.
-  p[3].s.x = box.bases[0][0] - PW / 2;
-  sim.step([]);
-  assert.equal(sim.flags[0].carrier, -1, 'not straight away');
-  for (let i = 0; i < FLAG_LOCK_TICKS; i++) sim.step([]);
-  assert.equal(sim.flags[0].carrier, 3);
-  p[3].s.x = 1000;
-  p[1].s.x = 1000 + PW;
-  sim.step([]);
-  assert.equal(sim.flags[0].carrier, -1, 'saved: the flag is back home');
-  assert.deepEqual(sim.score, [BOMB_POINTS, FLAG_POINTS], 'no points for that');
-  // the bomb carrier cannot pick up a flag
-  park();
-  sim.it = 3;
-  p[3].s.x = box.bases[0][0] - PW / 2;
-  for (let i = 0; i <= FLAG_LOCK_TICKS; i++) sim.step([]);
-  assert.equal(sim.flags[0].carrier, -1);
+  const lane = { ...box, ramps: [], lifts: [], platforms: [box.platforms[0]] };
+  const fast = makeState(1200, floorY);
+  const slow = makeState(1200, floorY);
+  for (let i = 0; i < 90; i++) {
+    stepPlayer(fast, IN_RIGHT, lane, true);
+    stepPlayer(slow, IN_RIGHT, lane, false);
+  }
+  assert.ok(fast.x > slow.x + 10);
+  // nothing goes off during the round, however long it lasts; time with a bomb is counted
+  sim.events.length = 0;
+  for (let i = 0; i < 1200; i++) sim.step([]);
+  assert.ok(!sim.events.some((e) => e.type === 'boom'));
+  assert.deepEqual(sim.score, [0, 0]);
+  assert.ok(p[2].itTicks > 1200 && p[3].itTicks >= 1200 && p[1].itTicks === 0);
+  // the buzzer: both bombs are on team 1, so team 0 scores twice
+  sim.finish();
+  assert.ok(sim.over);
+  assert.deepEqual(sim.score, [2 * BOMB_POINTS, 0]);
+  assert.deepEqual(sim.events.filter((e) => e.type === 'boom').map((e) => [e.slot, e.team]), [[2, 0], [3, 0]]);
+  assert.ok(p[2].boom && p[3].boom && !p[0].boom && p[2].s.stun > 0);
+  assert.deepEqual(sim.bombs(), []);
+  sim.finish();
+  assert.deepEqual(sim.score, [2 * BOMB_POINTS, 0], 'only once');
   const res = standings(sim, ['A', 'B', 'C', 'D'], 'team');
-  assert.equal(res.win, 1);
-  assert.deepEqual(res.winners.sort(), [2, 3]);
+  assert.equal(res.win, 0);
+  assert.deepEqual(res.winners.sort(), [0, 1]);
+  assert.deepEqual(res.rows.filter((r) => r.boom).map((r) => r.slot).sort(), [2, 3]);
+  // how many bombs, and how they are shared out
+  for (const [n, want] of [[2, 1], [3, 1], [4, 2], [5, 2], [6, 3]]) {
+    for (let seed = 1; seed <= 6; seed++) {
+      let x = seed * 7919;
+      const m = new Sim(box, () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296));
+      for (let i = 0; i < n; i++) m.add(i);
+      m.setTeams(Array.from({ length: n }, (_, i) => i % 2));
+      m.start();
+      const held = m.bombs();
+      assert.equal(held.length, want, `${n} players: ${want} bombs`);
+      const share = [0, 1].map((t) => held.filter((slot) => m.players[slot].team === t).length);
+      assert.ok(Math.abs(share[0] - share[1]) <= 1, `${n} players: shared ${share}`);
+      if (n >= 4) assert.ok(share[0] >= 1 && share[1] >= 1, 'each side starts with one');
+    }
+  }
+  // a carrier who leaves hands the bomb to one of their own side
+  const m = new Sim(box, () => 0.3);
+  for (let i = 0; i < 4; i++) m.add(i);
+  m.setTeams([0, 0, 1, 1]);
+  m.start();
+  m.active().forEach((q) => (q.bomb = q.slot === 0 || q.slot === 2));
+  m.remove(0);
+  assert.deepEqual(m.bombs(), [1, 2]);
   // teams are as even as they can be
   assert.deepEqual(makeTeams([0, 1, 2, 3, 4, 5]).map((t) => t.length), [3, 3]);
   assert.deepEqual(makeTeams([0, 1, 2, 3, 4]).map((t) => t.length), [3, 2]);
   assert.deepEqual(makeTeams([0, 1]).map((t) => t.length), [1, 1]);
+});
+
+test('team battle: a flag fills with the colour of whoever stands in its ring, pays its holders, and can be turned', () => {
+  const sim = new Sim(box, () => 0.1);
+  const p = [0, 1, 2, 3].map((i) => sim.add(i));
+  const away = [1300, 1420, 2300, 2420];
+  const park = () => p.forEach((q, i) => {
+    q.s.x = away[i];
+    q.s.y = floorY;
+    q.s.vx = q.s.vy = q.s.stun = 0;
+    q.immune = 0;
+  });
+  const stand = (q, f, dx = 0) => ((q.s.x = f.x + dx - PW / 2), (q.s.y = floorY));
+  const run = (n) => { for (let i = 0; i < n; i++) sim.step([]); };
+  park();
+  sim.setTeams([0, 0, 1, 1]);
+  const [fa, fb] = sim.flags;
+  assert.deepEqual([fa.x, fa.y, fb.x, fb.y], [...box.bases[0], ...box.bases[1]], 'the flags stand on the bases');
+  stand(p[2], fa);
+  run(60);
+  assert.equal(fa.m, 0, 'nothing counts before GO');
+  sim.start();
+  p.forEach((q) => (q.bomb = false)); // (bombs are another test)
+  park();
+  run(120);
+  assert.deepEqual([fa.owner, fa.m, fb.owner, fb.m], [-1, 0, -1, 0], 'nobody there: nobody\'s');
+  // one player of team 1 stands in the ring of flag A
+  stand(p[2], fa);
+  run(FLAG_CAP_TICKS - 1);
+  assert.deepEqual([fa.owner, fa.m], [-1, FLAG_CAP_TICKS - 1], 'filling...');
+  sim.events.length = 0;
+  run(1);
+  assert.deepEqual([fa.owner, fa.m], [1, FLAG_CAP_TICKS], 'full: it is theirs');
+  assert.ok(sim.events.some((e) => e.type === 'flag' && e.what === 'take' && e.team === 1 && e.i === 0));
+  assert.equal(p[2].caps, 1);
+  // it pays its holders, whether they stay or not
+  park();
+  assert.deepEqual(sim.score, [0, 0]);
+  run(FLAG_PAY_TICKS);
+  assert.deepEqual(sim.score, [0, FLAG_POINTS]);
+  run(FLAG_PAY_TICKS);
+  assert.deepEqual(sim.score, [0, 2 * FLAG_POINTS]);
+  // two together fill a flag twice as fast
+  stand(p[0], fb, -30);
+  stand(p[1], fb, 30);
+  run(FLAG_CAP_TICKS / 2);
+  assert.equal(fb.owner, 0);
+  assert.ok(p[0].caps === 1 && p[1].caps === 1);
+  // equal numbers in the ring: nothing moves
+  park();
+  const before = sim.score.slice();
+  stand(p[0], fa, -40);
+  stand(p[2], fa, 40);
+  run(100);
+  assert.deepEqual([fa.owner, fa.m], [1, FLAG_CAP_TICKS], 'contested: held');
+  // alone, the other side empties it (nobody's), then fills it (theirs)
+  p[2].s.x = away[2];
+  sim.events.length = 0;
+  run(FLAG_CAP_TICKS);
+  assert.deepEqual([fa.owner, fa.m], [-1, 0]);
+  assert.ok(sim.events.some((e) => e.type === 'flag' && e.what === 'lose' && e.team === 1 && e.i === 0));
+  run(FLAG_CAP_TICKS);
+  assert.deepEqual([fa.owner, fa.m], [0, -FLAG_CAP_TICKS]);
+  assert.ok(sim.score[0] > before[0] || sim.score[1] > before[1], 'flags kept paying meanwhile');
+  // half way and then walking off: the flag settles back
+  park();
+  stand(p[3], fa);
+  run(60);
+  assert.deepEqual([fa.owner, fa.m], [0, -FLAG_CAP_TICKS + 60]);
+  park();
+  run(60);
+  assert.deepEqual([fa.owner, fa.m], [0, -FLAG_CAP_TICKS]);
+  // the ring: its width, a hop on the spot counts, standing on something above it does not
+  stand(p[3], fa, FLAG_HALF + 2);
+  run(10);
+  assert.equal(fa.m, -FLAG_CAP_TICKS, 'just outside');
+  stand(p[3], fa, FLAG_HALF - 2);
+  run(10);
+  assert.equal(fa.m, -FLAG_CAP_TICKS + 10, 'just inside');
+  park();
+  run(10);
+  stand(p[3], fa);
+  for (let i = 0; i < 30; i++) sim.step([0, 0, 0, i < 2 ? IN_JUMP : 0]);
+  assert.ok(p[3].s.y < floorY - 20, 'in the air');
+  assert.equal(fa.m, -FLAG_CAP_TICKS + 30, 'a hop still counts');
+  park();
+  run(30);
+  p[3].s.x = fa.x - PW / 2;
+  p[3].s.y = floorY - FLAG_UP - 40;
+  sim.step([]);
+  assert.equal(fa.m, -FLAG_CAP_TICKS, 'above the ring does not');
+  // after the buzzer nothing moves and nothing pays
+  park();
+  sim.finish();
+  const end = sim.score.slice();
+  stand(p[3], fa);
+  run(FLAG_PAY_TICKS + 10);
+  assert.deepEqual([fa.owner, fa.m], [0, -FLAG_CAP_TICKS]);
+  assert.deepEqual(sim.score, end);
 });
 
 test('launchers fling you across the arena; thorns sting once and throw you back', () => {
@@ -744,7 +865,7 @@ function botMatch(arena, n, teams, seconds = 120) {
   }
   if (teams) sim.setTeams(Array.from({ length: n }, (_, i) => i % 2));
   sim.start();
-  const out = { tags: 0, booms: 0, worst: 0, falls: 0, stings: 0, takes: 0, captures: 0, saves: 0, idle: 0, tagged: new Array(n).fill(0), score: sim.score };
+  const out = { tags: 0, booms: 0, worst: 0, falls: 0, stings: 0, takes: 0, turned: 0, idle: 0, tagged: new Array(n).fill(0), score: sim.score, flags: 0 };
   let gap = 0;
   // "idle": the longest anyone stayed within 60px of one spot
   const anchor = mem.map(() => [0, 0]);
@@ -757,11 +878,10 @@ function botMatch(arena, n, teams, seconds = 120) {
       if (e.type === 'tag') {
         out.tags++;
         out.tagged[e.to]++;
-      } else if (e.type === 'boom') out.booms++;
-      else if (e.type === 'flag' && e.what === 'take') out.takes++;
-      else if (e.type === 'flag' && e.what === 'capture') out.captures++;
-      else if (e.type === 'flag' && e.what === 'save') out.saves++;
-      if (e.type === 'tag' || e.type === 'boom') {
+      } else if (e.type === 'flag' && e.what === 'take') out.takes++;
+      else if (e.type === 'flag' && e.what === 'lose') out.turned++;
+      else if (e.type === 'flag' && e.what === 'pay') out.flags++;
+      if (e.type === 'tag') {
         out.worst = Math.max(out.worst, gap);
         gap = 0;
       }
@@ -779,6 +899,10 @@ function botMatch(arena, n, teams, seconds = 120) {
     }
   }
   out.worst = Math.max(out.worst, gap);
+  // the buzzer: in a team battle the bombs go off now
+  sim.events.length = 0;
+  sim.finish();
+  out.booms = sim.events.filter((e) => e.type === 'boom').length;
   return out;
 }
 
@@ -806,35 +930,33 @@ test('bots play every arena with 2, 4 and 6: tags keep happening, nobody stands 
   assert.ok(falls / minutes < 0.02, `${falls} pit falls in ${minutes} bot-minutes`);
 });
 
-test('bots play team battles: the bomb is passed or goes off, flags are stolen and brought home, nobody stands about', () => {
+test('bots play team battles: flags are taken and turned, bombs change hands and go off at the buzzer, nobody stands about for long', () => {
   let falls = 0;
   let minutes = 0;
-  let captures = 0;
   const log = [];
   for (const arena of ARENAS) {
     let passes = 0;
+    let turned = 0;
     for (const n of [2, 4, 6]) {
-      const r = botMatch(arena, n, true);
+      const r = botMatch(arena, n, true, 90);
       const who = `${arena.id} ${n}p teams`;
-      log.push(`${who} ${r.score.join('-')} (${r.tags} passes, ${r.booms} bombs, flags: ${r.takes} taken ${r.captures} home ${r.saves} saved, ${r.falls} falls)`);
-      // a bomb lasts 14 s and the next one follows 2 s later: about seven in two minutes
-      assert.ok(r.booms >= 5, `${who}: ${r.booms} bombs went off`);
-      assert.ok(r.worst < 60 * 17, `${who}: ${Math.round(r.worst / 60)}s with nothing happening to the bomb`);
-      if (n > 2) assert.ok(r.takes >= 4, `${who}: the flags were taken only ${r.takes} times`);
-      assert.ok(r.score[0] + r.score[1] >= 12, `${who}: score ${r.score}`);
-      assert.ok(r.idle < 60 * 10, `${who}: a bot stood still for ${Math.round(r.idle / 60)}s`);
+      log.push(`${who} ${r.score.join('-')} (${r.tags} passes, ${r.booms} bombs, flags: ${r.takes} taken ${r.turned} lost, ${r.flags} points; idle ${Math.round(r.idle / 60)}s, ${r.falls} falls)`);
+      assert.equal(r.booms, Math.max(1, Math.floor(n / 2)), `${who}: every bomb goes off at the buzzer`);
+      assert.ok(r.takes >= 2, `${who}: flags were taken only ${r.takes} times`);
+      assert.ok(r.flags >= 10, `${who}: the flags paid only ${r.flags} points`);
+      // taking a flag means standing in its ring; nobody should stand anywhere for much longer than that takes
+      assert.ok(r.idle < 60 * 14, `${who}: a bot stood still for ${Math.round(r.idle / 60)}s`);
       assert.ok(r.falls <= 3, `${who}: ${r.falls} falls into a pit in one match`);
       passes += r.tags;
-      captures += r.captures;
+      turned += r.turned;
       falls += r.falls;
-      minutes += 2 * n;
+      minutes += 1.5 * n;
     }
-    assert.ok(passes >= 10, `${arena.id}: the bomb was passed only ${passes} times in three team matches`);
+    assert.ok(passes >= 3, `${arena.id}: bombs changed hands only ${passes} times in three team matches`);
+    log.push(`[${arena.id}: ${passes} passes, ${turned} flags lost]`);
   }
   console.log(`      ${log.join('; ')}`);
-  // flags do get brought home, if not in every match (a keeper who stays put is hard to beat)
-  assert.ok(captures >= 20, `only ${captures} flags brought home in ${ARENAS.length * 3} team matches`);
-  assert.ok(falls / minutes < 0.02, `${falls} pit falls in ${minutes} bot-minutes`);
+  assert.ok(falls / minutes < 0.03, `${falls} pit falls in ${minutes} bot-minutes`);
 });
 
 console.log(`sim: ${passed} tests passed`);

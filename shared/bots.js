@@ -5,7 +5,7 @@
 // stealing a flag - and then follows the route there one move at a time,
 // pressing the same buttons a person would.
 
-import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS } from './config.js';
+import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, FLAG_HALF, FLAG_UP, FLAG_CAP_TICKS } from './config.js';
 import { buildNav, surfaceAt, surfaceNear, drive, walk } from './nav.js';
 
 function rng(seed) {
@@ -35,9 +35,10 @@ export function makeBot(seed = 1) {
     nerve: 1, // 1 = wide awake; lower = slower to notice and to react
     itWho: -1, // who was it when we last looked, and since when
     itSince: 0,
-    hadFlag: false, // team battle: were we carrying their flag last tick?
-    flagWait: 0, // ticks to keep clear of their flag after having it taken back off us
-    awayUntil: 0, // their flag is guarded: no point trying again before this tick
+    hadBomb: false, // team battle: were we carrying a bomb last time we looked?
+    stall: 0, // ...how long we have stood on a flag that will not move (as many of them as of us)
+    offFlag: -1, // ...a flag to leave alone for now, until offUntil
+    offUntil: 0,
     rest: 0, // ticks of standing around
     roaming: false,
     stuck: 0,
@@ -107,47 +108,14 @@ export function botThink(sim, slot, mem) {
   }
   mem.lastX = s.x;
 
-  // Team battle: a defender just took their flag back off us. Standing there
-  // only gets it taken back again and again: jump clear and stay away a moment.
-  let hop = false;
-  if (sim.flags) {
-    const theirs = sim.flags[1 - me.team];
-    const home = sim.flags[me.team].home;
-    const has = theirs.carrier === slot;
-    if (mem.hadFlag && !has && Math.hypot(cx - home[0], feet - home[1]) > 80) {
-      mem.flagWait = 150;
-      mem.think = 0;
-      hop = s.ground;
-    }
-    mem.hadFlag = has;
-    if (mem.flagWait > 0) mem.flagWait--;
-  }
-
   // decide what to do next (but never half way through a jump we planned)
   if (--mem.think <= 0 && (s.ground || !mem.plan || mem.airT > 150)) {
-    mem.think = Math.round((5 + rnd() * 5) / (slot === sim.it ? 1 : mem.nerve));
+    mem.think = Math.round((5 + rnd() * 5) / (sim.isIt(me) ? 1 : mem.nerve));
     decide(sim, me, mem, nav);
   }
   if (mem.snubT > 0 && --mem.snubT === 0) mem.snub = -1;
 
   let bits = mem.direct ? pursue(sim, me, mem, nav) : travel(sim, me, mem, nav);
-  if (hop) bits |= IN_JUMP;
-  if (sim.flags && !mem.hadFlag && sim.it !== slot && s.ground) {
-    // about to step onto their flag stand with one of them close enough to touch us: don't
-    const [hx, hy] = sim.flags[1 - me.team].home;
-    if (sim.flags[1 - me.team].carrier < 0 && Math.abs(cx - hx) < 80 && Math.abs(feet - hy) < 60) {
-      for (const o of sim.players) {
-        if (!o || o.team === me.team || o.s.dead > 0 || o.s.stun > 0 || o.s.frz > 0) continue;
-        if (Math.abs(o.s.x - s.x) < 110 && Math.abs(o.s.y - s.y) < 90) {
-          bits = dirBits(cx - hx || 1);
-          mem.flagWait = Math.max(mem.flagWait, 90);
-          mem.awayUntil = Math.max(mem.awayUntil, sim.tick + 200);
-          mem.think = 0;
-          break;
-        }
-      }
-    }
-  }
 
   // Floating in an updraft we never meant to ride (or hanging in the air for
   // ages): steer out sideways.
@@ -199,29 +167,20 @@ function wantsToUse(sim, me, mem) {
   const kind = ITEM_KINDS[me.item - 1];
   let nearest = Infinity;
   for (const o of sim.targets(me)) nearest = Math.min(nearest, gap(o, me));
-  if (me.slot === sim.it) {
+  if (sim.isIt(me)) {
     // chasing: anything that slows them down or speeds us up, once someone is in reach
     if (kind === 'swap') return nearest > 500;
     if (kind === 'goo') return nearest < 200;
     return nearest < (kind === 'blast' ? 600 : 480);
   }
-  const it = sim.players[sim.it];
-  let danger = it && sim.enemies(me, it) ? gap(it, me) : Infinity;
-  if (sim.flags) {
-    const mine = sim.flags[me.team];
-    const theirs = sim.flags[1 - me.team];
-    if (theirs.carrier === me.slot) danger = Math.min(danger, nearest); // carrying their flag: any of them will do
-    // their flag is guarded and we are close: knock the guard out of the way
-    if (theirs.carrier < 0 && Math.hypot(theirs.home[0] - me.s.x, theirs.home[1] - me.s.y) < 320 && (kind === 'freeze' || kind === 'blast' || kind === 'storm')) {
-      if (sim.targets(me).some((o) => Math.hypot(o.s.x - theirs.home[0], o.s.y + PH - theirs.home[1]) < 110)) return true;
-    }
-    const thief = sim.players[mine.carrier];
-    if (thief) {
-      // someone is running off with ours: stop them
-      const d = gap(thief, me);
-      if (kind === 'blast') return d < 700; // makes them drop it
-      if (kind === 'freeze' || kind === 'storm') return d < 900;
-      if (kind === 'speed') return d < 900;
+  const it = chaserOf(sim, me);
+  let danger = it ? gap(it, me) : Infinity;
+  if (sim.flags && (kind === 'freeze' || kind === 'blast' || kind === 'storm')) {
+    // one of them is standing on a flag, and we are close enough to make use of the moment
+    for (const f of sim.flags) {
+      if (f.owner === 1 - me.team && Math.abs(f.m) >= FLAG_CAP_TICKS) continue; // theirs already, nothing to stop
+      if (Math.hypot(f.x - me.s.x, f.y - me.s.y) > 560) continue;
+      if (sim.targets(me).some((o) => inRing(o, f))) return true;
     }
   }
   if (kind === 'swap') return danger < 200; // let someone else stand here
@@ -234,6 +193,16 @@ function wantsToUse(sim, me, mem) {
 // ----------------------------------------------------------------------------
 function decide(sim, me, mem, nav) {
   mem.direct = null;
+  if (sim.teams && sim.flags) {
+    if (me.bomb && !mem.hadBomb && mem.itWho >= 0) {
+      // just had a bomb stuck on us: go after somebody else for a while, not straight back at whoever did it
+      mem.snub = mem.itWho;
+      mem.snubT = 60 * 4;
+    }
+    if (me.bomb !== mem.hadBomb) mem.itSince = sim.tick; // how long we have been carrying it - or been free of one
+    mem.hadBomb = me.bomb;
+    return decideTeam(sim, me, mem, nav);
+  }
   if (sim.it === me.slot && mem.itWho !== me.slot) {
     // just been tagged: go after somebody else for a while, not straight back at whoever did it
     if (mem.itWho >= 0) {
@@ -243,7 +212,6 @@ function decide(sim, me, mem, nav) {
     mem.itWho = me.slot;
     mem.itSince = sim.tick;
   }
-  if (sim.teams && sim.flags) return decideTeam(sim, me, mem, nav);
   if (sim.it === me.slot) {
     const prey = sim.players.filter((o) => o && o !== me && o.s.dead === 0);
     if (!hunt(sim, me, mem, nav, prey)) wander(sim, me, mem, nav, null);
@@ -254,55 +222,85 @@ function decide(sim, me, mem, nav) {
   if (!evade(sim, me, mem, nav, it)) wander(sim, me, mem, nav, it);
 }
 
-// Team battle: the bomb to get rid of, their flag to steal, ours to keep.
+// Who is after us: whoever is it; in a team battle, the nearest enemy carrying a
+// bomb (nobody, while we carry one ourselves - then we are the one chasing).
+function chaserOf(sim, me) {
+  if (!sim.teams) {
+    const it = sim.players[sim.it];
+    return it && it !== me ? it : null;
+  }
+  if (me.bomb) return null;
+  let best = null;
+  let bestD = Infinity;
+  for (const o of sim.players) {
+    if (!o || !o.bomb || o.team === me.team || o.s.dead > 0) continue;
+    const d = gap(o, me);
+    if (d < bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return best;
+}
+
+// Is this player standing in a flag's ring?
+function inRing(o, f) {
+  const feet = o.s.y + PH;
+  return o.s.dead === 0 && Math.abs(o.s.x + PW / 2 - f.x) <= FLAG_HALF && feet <= f.y + 6 && feet >= f.y - FLAG_UP;
+}
+
+// Team battle. With a bomb: stick it on one of them (whoever is busy on a flag
+// first). Without: keep clear of their bombs when one comes close, and
+// otherwise go and stand on the flag that most needs it.
 function decideTeam(sim, me, mem, nav) {
-  const bomber = sim.players[sim.it] || null;
-  const mine = sim.flags[me.team];
-  const theirs = sim.flags[1 - me.team];
   const foes = sim.players.filter((o) => o && o.team !== me.team && o.s.dead === 0);
-  if (bomber === me) {
-    // stick it on an enemy: the nearest, or better still the one running off with our flag
-    if (!hunt(sim, me, mem, nav, foes, (o) => (mine.carrier === o.slot ? -450 : 0))) wander(sim, me, mem, nav, null);
-    return;
+  if (me.bomb) {
+    const free = foes.filter((o) => !o.bomb);
+    const busy = (o) => (sim.flags.some((f) => inRing(o, f)) ? -320 : 0);
+    if (free.length && hunt(sim, me, mem, nav, free, busy)) return;
+    // every one of them has a bomb already: nothing to pass it to, so make ourselves useful
+  } else mem.target = -1;
+  const threat = chaserOf(sim, me);
+  mem.itWho = threat ? threat.slot : -1;
+  const here = sim.flags.find((f) => inRing(me, f) && (f.owner !== me.team || Math.abs(f.m) < FLAG_CAP_TICKS));
+  // (in the middle of taking a flag we hold our ground a little longer)
+  if (threat && evade(sim, me, mem, nav, threat, here ? 260 : 420)) return;
+  // As many of them as of us in the same ring gets nobody anywhere: after a few
+  // seconds of that, go and do something else for a while.
+  const mates = (f) => sim.players.filter((o) => o && o.team === me.team && inRing(o, f)).length;
+  const stuck = sim.flags.findIndex((f) => inRing(me, f) && foes.filter((o) => inRing(o, f)).length === mates(f));
+  mem.stall = stuck >= 0 ? mem.stall + 8 : 0;
+  if (mem.stall > 200) {
+    mem.stall = 0;
+    mem.offFlag = stuck;
+    mem.offUntil = sim.tick + 300 + Math.floor(mem.rnd() * 300);
   }
-  mem.target = -1;
-  const threat = bomber && bomber.team !== me.team ? bomber : null;
-  // an enemy with the bomb close by: get away first, whatever else is going on
-  // (but there is work to do, so not from as far off as in a plain game of tag -
-  // and with their flag in hand, only when they are nearly on top of us)
-  if (threat && evade(sim, me, mem, nav, threat, theirs.carrier === me.slot ? 300 : 420)) return;
-  // their flag in our hands: take it home
-  if (theirs.carrier === me.slot) return headFor(mem, nav, mine.home);
-  // Jobs are shared out among those without the bomb, and swap round every so
-  // often: one (two in a team of three) goes for their flag, the last one minds ours.
-  const crew = sim.players.filter((o) => o && o.team === me.team && o !== bomber).sort((a, b) => a.slot - b.slot);
-  const turn = (crew.indexOf(me) + Math.floor(sim.tick / 1500)) % crew.length;
-  const around = (o, [x, y], r) => Math.hypot(o.s.x + PW / 2 - x, o.s.y + PH - y) < r;
-  // (someone on their own goes for the flag, unless one of them is already near ours and we are the nearer to it)
-  const lone = crew.length === 1;
-  const attacker = lone
-    ? !(foes.some((o) => o !== bomber && around(o, mine.home, 700)) && Math.hypot(me.s.x - mine.home[0], me.s.y - mine.home[1]) < Math.hypot(me.s.x - theirs.home[0], me.s.y - theirs.home[1]))
-    : turn === 0 || (crew.length > 2 && turn === 1);
-  // somebody is running off with our flag: run into them (the keeper always, the others if they are close)
-  const thief = mine.carrier >= 0 ? sim.players[mine.carrier] : null;
-  if (thief && thief.s.dead === 0 && (!attacker || lone || gap(thief, me) < 520) && hunt(sim, me, mem, nav, [thief])) return;
-  if (attacker && theirs.carrier < 0) {
-    // go and take it - unless one of them is standing right on it, or right
-    // beside us as we get there (they would only take it straight back): then
-    // go and do something else for a few seconds and try again
-    if (sim.tick < mem.awayUntil) return wander(sim, me, mem, nav, threat);
-    const guarded = mem.flagWait > 0 || foes.some((o) => o.s.stun === 0 && o.s.frz === 0 && (around(o, theirs.home, 150) || (gap(o, me) < 210 && around(o, theirs.home, 430))));
-    if (!guarded || !around(me, theirs.home, 330)) return headFor(mem, nav, theirs.home);
-    mem.awayUntil = sim.tick + 240 + Math.floor(mem.rnd() * 240);
-    return wander(sim, me, mem, nav, threat);
+  // which flag? the nearest one that is not safely ours; a flag a team mate is
+  // already standing on (with nobody arguing) can be left to them
+  let best = null;
+  let bestScore = Infinity;
+  for (const f of sim.flags) {
+    const ours = f.owner === me.team && Math.abs(f.m) >= FLAG_CAP_TICKS;
+    const raided = foes.some((o) => inRing(o, f));
+    if (ours && !raided) continue;
+    if (sim.flags[mem.offFlag] === f && sim.tick < mem.offUntil) continue;
+    const others = mates(f) - (inRing(me, f) ? 1 : 0);
+    let score = Math.hypot(f.x - me.s.x, (f.y - me.s.y) * 1.3);
+    if (others && !raided) score += 1400 * others;
+    if (raided) score -= 250; // somebody has to see them off
+    if (inRing(me, f)) score -= 500; // finish what we started
+    if (score < bestScore) {
+      bestScore = score;
+      best = f;
+    }
   }
-  // the keeper: when one of them comes sniffing round our flag, go and pace up and down beside it
-  if (!attacker && mine.carrier < 0 && foes.some((o) => o !== bomber && around(o, mine.home, 600))) {
-    if (mem.goalX == null || Math.abs(mem.goalX - mine.home[0]) > 140 || Math.abs(s0(me) - mem.goalX) < 16) headFor(mem, nav, [mine.home[0] + (mem.rnd() - 0.5) * 260, mine.home[1]]);
-    return;
+  if (best) {
+    // stand a little off the pole, each bot on its own spot
+    const side = ((me.slot * 37) % 100) / 100 - 0.5;
+    return headFor(mem, nav, [best.x + side * FLAG_HALF * 1.2, best.y]);
   }
-  // nothing pressing: boxes, and a wander - the keeper stays on our side of the arena
-  wander(sim, me, mem, nav, threat, attacker ? null : mine.home);
+  // every flag is ours: boxes, and a wander
+  wander(sim, me, mem, nav, threat);
 }
 
 const s0 = (o) => o.s.x + PW / 2;
@@ -395,13 +393,14 @@ function evade(sim, me, mem, nav, it, reach = 540) {
   // Nobody stays sharp for ever: the longer we have been hounded, and the longer
   // the same player has been it, the later we notice them coming and the slower
   // we react - so chases end.
-  if (sim.it !== mem.itWho) {
+  if (!sim.teams && sim.it !== mem.itWho) {
     mem.itWho = sim.it;
     mem.itSince = sim.tick;
   }
+  // (in a team battle the clock starts when we last got rid of a bomb, and
+  // guards drop sooner: there are flags to think about)
   const bored = (sim.tick - mem.itSince) / 60;
-  // (a bomb only lasts 14 s, so in a team battle guards drop much sooner)
-  const nerve = (mem.nerve = clamp(1.2 - mem.fear / 600, 0.38, 1) * clamp(1.6 - bored / (sim.teams ? 9 : 30), 0.4, 1));
+  const nerve = (mem.nerve = clamp(1.2 - mem.fear / 600, 0.38, 1) * clamp(1.6 - bored / (sim.teams ? 14 : 30), 0.4, 1));
   if (dist > reach * nerve || (calm && dist > 170)) {
     mem.fear = Math.max(0, mem.fear - 4);
     return false;

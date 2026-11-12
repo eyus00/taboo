@@ -9,7 +9,7 @@
 //   play.finish() / play.stop() / play.hold(true|false)
 //   play.nameOf(slot), play.mySlot(), play.colors(), play.el.spin
 
-import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, BOMB_FUSE_TICKS, PW, PH } from '/shared/config.js';
+import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, FLAG_PAY_TICKS, PW, PH } from '/shared/config.js';
 import { ARENA_IDS, arenaById } from '/shared/arenas.js';
 import { Renderer } from './renderer.js';
 import { Input } from './input.js';
@@ -68,7 +68,7 @@ export const play = {
         <ul id="pills" aria-label="Players"></ul>
         <div class="clock">
           <div class="scoreline"><b id="team-a" hidden></b><div id="timer" aria-label="Seconds left">60</div><b id="team-b" hidden></b></div>
-          <div id="fuse" hidden><i></i></div>
+          <div id="flags" hidden></div>
           <div id="round-label"></div>
         </div>
         <button id="btn-pause" class="hud-btn" aria-label="Menu (Esc)">${icon('menu')}</button>
@@ -89,7 +89,7 @@ export const play = {
           <button class="t-jump" data-bit="4" aria-label="Jump">${icon('up')}</button>
         </div>
       </div>`;
-    for (const id of ['stage', 'pills', 'timer', 'team-a', 'team-b', 'fuse', 'round-label', 'btn-pause', 'minimap', 'itemslot', 'buffs', 'banner', 'count', 'hint', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
+    for (const id of ['stage', 'pills', 'timer', 'team-a', 'team-b', 'flags', 'round-label', 'btn-pause', 'minimap', 'itemslot', 'buffs', 'banner', 'count', 'hint', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
     this.root = root;
     this.isTouch = opts.isTouch;
     // on touch screens the view can scroll a little past the floor, so the buttons never cover you
@@ -103,7 +103,7 @@ export const play = {
     this.el.btnPause.addEventListener('click', () => opts.onPause?.());
     const s = opts.socket;
     s.on('s', (m) => this.game === this.net && this.net.onSnap(m));
-    s.on('go', (it) => this.game === this.net && this.net.onGo(it));
+    s.on('go', (it, bombs) => this.game === this.net && this.net.onGo(it, bombs));
     s.on('tag', (from, to) => this.game === this.net && this.onEvent('tag', from, to));
     s.on('block', (from, to) => this.game === this.net && this.onEvent('block', from, to));
     s.on('pick', (slot, k) => this.game === this.net && this.onEvent('pick', slot, k));
@@ -164,7 +164,22 @@ export const play = {
       this.el[id].hidden = !team;
       this.el[id].style.background = TEAM_COLORS[t];
     }
-    this.el.fuse.hidden = !team;
+    this.el.flags.hidden = !team;
+    this.el.flags.textContent = '';
+    h.flagEls = [];
+    if (team) {
+      // one marker per flag, in the order they stand on the map: a letter, and a bar that fills with a team's colour
+      arena.bases.forEach((_, i) => {
+        const chip = el('div', 'flagchip');
+        chip.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#pi-flag"/></svg>';
+        const bar = el('span', 'meter');
+        const fill = el('i');
+        bar.append(fill);
+        chip.append(el('b', '', 'ABCD'[i]), bar);
+        this.el.flags.append(chip);
+        h.flagEls.push({ chip, fill, sig: '' });
+      });
+    }
     const mode = MODES.find((m) => m.id === info.mode)?.name || '';
     let label = this.kind === 'practice' ? `Practice - ${mode}` : mode;
     let hint = '';
@@ -177,7 +192,7 @@ export const play = {
       }
       if (info.cup.leader >= 0) hint += `${this.nameOf(info.cup.leader)} leads, so starts as it.`;
     }
-    if (!hint && team) hint = 'Stick the bomb on an enemy before it blows. Steal their flag and carry it home.';
+    if (!hint && team) hint = `Stand in a flag's ring to turn it your colour: it pays a point every ${Math.round(FLAG_PAY_TICKS / TICK_RATE)} s. Bombs go off at the buzzer - pass yours to an enemy.`;
     // the first few matches on a keyboard start with a reminder of the keys
     let played = 0;
     try {
@@ -259,25 +274,38 @@ export const play = {
       }
       const text = `${Math.floor((p.itTicks || 0) / TICK_RATE)}s`;
       if (text !== pill.text) pill.val.textContent = pill.text = text;
-      const it = view.it === p.slot;
+      const it = view.it === p.slot || !!p.bomb;
       if (it !== pill.it) pill.li.classList.toggle('it', (pill.it = it));
     }
     h.pills.forEach((pill, slot) => pill && pill.li.classList.toggle('gone', !seen[slot]));
     E.pills.classList.toggle('many', view.players.length > 4); // five or six: two columns
     E.pills.classList.toggle('bomb', !!view.team);
 
-    // team battle: the score either side of the clock, and the fuse under it
+    // team battle: the score either side of the clock (with a bomb for every one that side is holding), the flags under it
     if (view.team) {
       const t = view.team;
-      const sig = `${t.score[0]}-${t.score[1]}`;
+      const held = [0, 0];
+      for (const p of view.players) if (p.bomb && p.team >= 0) held[p.team]++;
+      const sig = `${t.score[0]}-${t.score[1]}-${held[0]}-${held[1]}`;
       if (sig !== h.teams) {
         h.teams = sig;
-        E.teamA.textContent = `${TEAM_NAMES[0]} ${t.score[0]}`;
-        E.teamB.textContent = `${t.score[1]} ${TEAM_NAMES[1]}`;
+        const bombs = (n) => '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#pi-bomb"/></svg>'.repeat(n);
+        E.teamA.innerHTML = `${TEAM_NAMES[0]} ${t.score[0]}<span class="held">${bombs(held[0])}</span>`;
+        E.teamB.innerHTML = `<span class="held">${bombs(held[1])}</span>${t.score[1]} ${TEAM_NAMES[1]}`;
       }
-      const f = view.it >= 0 ? Math.max(0, Math.min(1, t.fuse / BOMB_FUSE_TICKS)) : 0;
-      E.fuse.firstChild.style.transform = `scaleX(${f.toFixed(3)})`;
-      E.fuse.classList.toggle('hot', view.it >= 0 && t.fuse < 240);
+      t.flags.forEach((f, i) => {
+        const e = h.flagEls[i];
+        if (!e) return;
+        const side = f.fill < 0 ? 0 : 1; // whose colour is in the bar
+        const amount = Math.round(Math.min(1, Math.abs(f.fill)) * 40) / 40;
+        const fsig = `${f.owner}/${side}/${amount}`;
+        if (fsig === e.sig) return;
+        e.sig = fsig;
+        e.fill.style.transform = `scaleX(${amount})`;
+        e.fill.style.background = TEAM_COLORS[side];
+        e.chip.style.color = f.owner >= 0 ? TEAM_COLORS[f.owner] : '';
+        e.chip.classList.toggle('held', f.owner >= 0);
+      });
     }
 
     // the item in your hands
@@ -402,11 +430,12 @@ export const play = {
       if (pt) g.fillRect(pt.x * k - 1.5, pt.y * k - 1.500, 3, 3);
     }
     if (view.team) {
-      view.team.flags.forEach((f, t) => {
-        g.fillStyle = TEAM_COLORS[t];
-        g.fillRect(f.x * k - 1, f.y * k - 4, 2, 7);
-        g.fillRect(f.x * k, f.y * k - 4, 5, 3.500);
-      });
+      // flags: a pole and a pennant in the colour of whoever holds it (pale: nobody's)
+      for (const f of view.team.flags) {
+        g.fillStyle = f.owner >= 0 ? TEAM_COLORS[f.owner] : '#e9e2cf';
+        g.fillRect(f.x * k - 1, f.y * k - 9, 2, 9);
+        g.fillRect(f.x * k, f.y * k - 9, 6, 4);
+      }
     }
     // never hide your own player: the map turns faint while you are underneath it
     const me = cam && view.players.find((p) => p.local);
@@ -437,7 +466,7 @@ export const play = {
         g.lineWidth = 1.500;
         g.stroke();
       }
-      if (view.it === p.slot) {
+      if (view.it === p.slot || p.bomb) {
         g.strokeStyle = '#ff4d3d';
         g.lineWidth = 1.500;
         g.beginPath();
@@ -456,7 +485,7 @@ export const play = {
     if (type === 'tag') {
       R.tagFx(a, b);
       sfx.play(b === me ? 'tagged' : 'tag');
-      if (team) this.banner(b === me ? 'The bomb is on YOU!' : a === me ? `You stuck it on ${this.nameOf(b)}!` : `${this.nameOf(b)} has the bomb`, b === me);
+      if (team) this.banner(b === me ? 'A bomb is on YOU - pass it on!' : a === me ? `You stuck it on ${this.nameOf(b)}!` : `${this.nameOf(b)} has a bomb now`, b === me);
       else if (b === me) this.banner("You're it!", true);
       else if (a === me) this.banner(`You tagged ${this.nameOf(b)}!`);
       else this.banner(`${this.nameOf(b)} is it`);
@@ -472,8 +501,12 @@ export const play = {
       this.hud.count = 0;
       this.pop('GO!');
       setTimeout(() => this.el.count.textContent === 'GO!' && (this.el.count.textContent = ''), 900);
-      if (team) this.banner(a === me ? 'You carry the bomb - stick it on an enemy!' : `${this.nameOf(a)} carries the bomb`, a === me);
-      else this.banner(a === me ? "You're it - catch someone!" : `${this.nameOf(a)} is it - run!`, a === me);
+      if (team) {
+        // b: who starts with a bomb
+        const mine = (b || []).includes(me);
+        const who = (b || []).map((slot) => this.nameOf(slot));
+        this.banner(mine ? 'You carry a bomb - stick it on an enemy!' : `${who.length > 1 ? `${who.slice(0, -1).join(', ')} and ${who[who.length - 1]} carry bombs` : `${who[0] || 'Someone'} carries the bomb`} - keep away!`, mine);
+      } else this.banner(a === me ? "You're it - catch someone!" : `${this.nameOf(a)} is it - run!`, a === me);
       R.shake(4);
     } else if (type === 'tick') sfx.play('tick');
     else if (type === 'end') this.opts.onEnd?.(a);
@@ -493,17 +526,19 @@ export const play = {
     } else if (type === 'boom') {
       R.boomFx(a);
       sfx.play('boom');
-      this.banner(`BOOM! ${TEAM_NAMES[a.team]} score`, this.game?.teamOf?.(me) !== a.team);
+      this.banner(a.slot === me ? `BOOM! Your bomb gives ${TEAM_NAMES[a.team]} ${BOMB_POINTS} points` : `BOOM! ${this.nameOf(a.slot)} blows up: ${BOMB_POINTS} points to ${TEAM_NAMES[a.team]}`, this.game?.teamOf?.(me) !== a.team);
     } else if (type === 'it') {
-      if (team) this.banner(a.to === me ? 'A new bomb - and it is yours!' : `${this.nameOf(a.to)} has a new bomb`, a.to === me);
+      if (team) this.banner(a.to === me ? 'A bomb has been handed to you!' : `${this.nameOf(a.to)} has a bomb now`, a.to === me);
     } else if (type === 'flag') {
-      const who = a.slot === me ? 'You' : this.nameOf(a.slot);
-      if (a.what === 'take') this.banner(`${who} took the ${TEAM_NAMES[a.team]} flag!`, this.game?.teamOf?.(me) === a.team);
-      else if (a.what === 'capture') {
-        this.banner(`${who} captured the flag! ${TEAM_NAMES[a.team]} score`, this.game?.teamOf?.(me) !== a.team);
-        sfx.play('win');
-        R.shake(5);
-      } else if (a.what === 'save') this.banner(`${who} saved the flag`);
+      // a = { what: take | lose | pay, team, i }
+      const mine = this.game?.teamOf?.(me) === a.team;
+      const letter = 'ABCD'[a.i];
+      if (a.what === 'take') {
+        this.banner(`${TEAM_NAMES[a.team]} hold flag ${letter}!`, !mine && me >= 0);
+        sfx.play(mine ? 'pick' : 'block', 0.9);
+        R.flagFx?.(a.i, a.team);
+      } else if (a.what === 'lose') this.banner(`Flag ${letter} is up for grabs`);
+      else if (a.what === 'pay') R.flagFx?.(a.i, a.team, `+${FLAG_POINTS}`);
     }
   },
 };

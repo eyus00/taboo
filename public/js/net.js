@@ -9,7 +9,7 @@
 //   * everyone else is drawn slightly in the past, gliding between the last
 //     few snapshots, so 30 updates a second looks smooth at 60+ fps.
 
-import { TICK_MS, TICK_RATE, MAX_PLAYERS, ITEM_LOCK_TICKS, twistById } from '/shared/config.js';
+import { TICK_MS, TICK_RATE, MAX_PLAYERS, ITEM_LOCK_TICKS, FLAG_CAP_TICKS, twistById } from '/shared/config.js';
 import { stepPlayer, unpackState, PF_GROUND, PF_FACE, PF_STUN, PF_FROZEN, PF_ORB, PF_SPEED, PF_JUMP, PF_SHIELD, PF_DEAD, PF_SLOW } from '/shared/physics.js';
 
 const INTERP_TICKS = 6; // draw other players ~100 ms behind the newest snapshot
@@ -37,7 +37,7 @@ export class NetGame {
     this.it = -1;
     this.boxes = []; // box spots that have a lucky box
     this.goo = []; // puddles
-    this.teamState = 0; // team battle: scores, fuse, flags
+    this.teamState = 0; // team battle: [score0, score1, bombs (a bit per slot), over, then fill and owner of each flag]
     this.countdownEnd = 0;
     this.goTime = null;
     this.lastCount = 4;
@@ -71,10 +71,10 @@ export class NetGame {
     this.countdownEnd = performance.now() + msg.countdown;
   }
 
-  onGo(it) {
+  onGo(it, bombs) {
     this.it = it;
     this.startPlaying();
-    this.onEvent('go', it);
+    this.onEvent('go', it, bombs || []);
   }
 
   onEnd() {
@@ -242,6 +242,7 @@ export class NetGame {
           arm: latest.arm,
           col: this.cols ? this.cols[slot] : slot,
           team: this.teams ? this.teams[slot] : -1,
+          bomb: !!(this.teamState && (this.teamState[2] >> slot) & 1), // team battle: carrying a bomb
           local: slot === this.mySlot,
         };
         if (slot === this.mySlot && this.predicting) {
@@ -301,7 +302,8 @@ export class NetGame {
       players,
       boxes: this.boxes,
       goo: this.goo,
-      team: ts ? { score: [ts[0], ts[1]], fuse: ts[2], flags: [{ x: ts[3], y: ts[4], carrier: ts[5] }, { x: ts[6], y: ts[7], carrier: ts[8] }] } : null,
+      // team battle: the score, and each flag: where it is, whose it is (-1: nobody's), how full (-1 all team 0 ... 1 all team 1)
+      team: ts ? { score: [ts[0], ts[1]], over: !!ts[3], flags: this.arena.bases.map(([x, y], i) => ({ x, y, owner: ts[5 + i * 2] ?? -1, fill: (ts[4 + i * 2] || 0) / FLAG_CAP_TICKS })) } : null,
       me: this.phase === 'playing' ? me : null,
       code: this.code,
       ping: this.ping,

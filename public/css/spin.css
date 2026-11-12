@@ -100,6 +100,8 @@
 .draw .side b { font: 800 11px/1 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; }
 .draw .side span { font: 400 clamp(15px, 3vmin, 21px)/1.15 var(--brush); white-space: nowrap; }
 .draw .side .me { text-decoration: underline; text-underline-offset: 3px; }
+.draw .side .carries { display: inline-block; vertical-align: -2px; margin-left: 4px; font-size: 0.8em; color: #140c08; animation: verdict 0.3s cubic-bezier(0.2, 1.4, 0.4, 1) var(--at, 0s) both; }
+.draw.still .side .carries { animation: none; }
 
 /* and the news, in brush letters */
 .draw .verdict {

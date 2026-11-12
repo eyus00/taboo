@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { io } from 'socket.io-client';
-import { IN_LEFT, IN_RIGHT, IN_JUMP, TICK_RATE } from '../shared/config.js';
+import { IN_LEFT, IN_RIGHT, IN_JUMP, TICK_RATE, BOMB_POINTS } from '../shared/config.js';
 import { STATE_LEN, stepPlayer, unpackState, packState } from '../shared/physics.js';
 import { arenaById } from '../shared/arenas.js';
 
@@ -34,7 +34,10 @@ function client(name) {
     c.snap = null;
   });
   socket.on('s', (s) => (c.snap = s));
-  socket.on('go', (it) => (c.go = it));
+  socket.on('go', (it, bombs) => {
+    c.go = it;
+    c.goBombs = bombs;
+  });
   socket.on('tag', (from, to) => c.tags.push([from, to]));
   socket.on('pick', (slot, kind) => c.picks.push([slot, kind]));
   socket.on('end', (e) => {
@@ -312,7 +315,7 @@ try {
     assert.equal(a.room.phase, 'results', 'no fourth round');
   });
 
-  await test('team battle: two sides in warm and cool colours, a bomb, flags, and a team result', async () => {
+  await test('team battle: two sides in warm and cool colours, a bomb that goes off at the buzzer, flags, and a team result', async () => {
     a.socket.emit('lobby');
     await until(() => a.room.phase === 'lobby', 'back to lobby');
     a.socket.emit('settings', { game: 'quick', mode: 'team', arena: 'dojo', duration: SHORT });
@@ -327,12 +330,18 @@ try {
       const warm = [0, 3, 5].includes(a.round.cols[sl]);
       assert.equal(warm, a.round.teams[sl] === 0, 'one side wears warm colours, the other cool ones');
     }
-    assert.ok(slots.includes(a.round.it), 'who carries the first bomb is known before GO');
+    assert.equal(a.round.it, -1, 'nobody is "it" in a team battle');
+    assert.equal(a.round.bombs.length, 1, 'three players: one bomb');
+    assert.ok(slots.includes(a.round.bombs[0]), 'who starts with it is known before GO');
     await until(() => a.go !== null && c.go !== null, 'go', 9000);
-    assert.equal(a.go, a.round.it);
+    assert.equal(a.go, -1);
+    assert.deepEqual(a.goBombs, a.round.bombs, 'and it goes out as drawn');
     await until(() => a.snap && a.snap[1] === 1 && a.snap[8], 'team snapshot');
-    assert.equal(a.snap[8].length, 9, 'scores, fuse and both flags');
-    assert.ok(a.snap[8][2] > 0, 'the fuse is burning');
+    assert.equal(a.snap[8].length, 8, 'scores, who carries a bomb, whether it is over, and fill + owner of both flags');
+    const mask = a.snap[8][2];
+    assert.ok(mask > 0 && (mask & (mask - 1)) === 0 && slots.some((sl) => mask === 1 << sl), 'exactly one player carries the bomb');
+    assert.equal(a.snap[8][3], 0);
+    assert.deepEqual(a.snap[8].slice(4), [0, -1, 0, -1], 'the flags start as nobody\'s');
     assert.ok(Array.isArray(a.snap[5]) && Array.isArray(a.snap[7]), 'boxes and puddles are lists');
     assert.equal(a.snap[4][0].length, 10, 'every player entry says what item they hold');
     startChasing([a, b, c]);
@@ -341,6 +350,11 @@ try {
     const e = a.end;
     assert.equal(e.mode, 'team');
     assert.equal(e.team.score.length, 2);
+    // the bomb went off on whoever held it when the clock stopped, and the other side scored
+    const blown = e.rows.filter((r) => r.boom);
+    assert.equal(blown.length, 1, 'one bomb, one explosion');
+    assert.ok(e.team.score[1 - blown[0].team] >= BOMB_POINTS, `score ${e.team.score}`);
+    assert.ok(e.rows.every((r) => typeof r.caps === 'number'));
     const win = e.team.score[0] === e.team.score[1] ? -1 : e.team.score[0] > e.team.score[1] ? 0 : 1;
     assert.equal(e.team.win, win);
     assert.deepEqual(e.winners.slice().sort(), e.rows.filter((r) => win < 0 || r.team === win).map((r) => r.slot).sort());
