@@ -93,7 +93,8 @@ export const play = {
     this.root = root;
     this.isTouch = opts.isTouch;
     // on touch screens the view can scroll a little past the floor, so the buttons never cover you
-    this.renderer = new Renderer(this.el.stage, { padBottom: opts.isTouch ? 104 : 0 });
+    // room under the arena: for the thumb buttons on a phone, for the item plaque on a computer
+    this.renderer = new Renderer(this.el.stage, { padBottom: opts.isTouch ? 104 : 24, touch: !!opts.isTouch });
     this.input = new Input();
     this.sfx = new Sfx();
     this.net = new NetGame(opts.socket, this.input, (t, a, b) => this.onEvent(t, a, b));
@@ -407,6 +408,22 @@ export const play = {
         g.fillRect(f.x * k, f.y * k - 4, 5, 3.500);
       });
     }
+    // never hide your own player: the map turns faint while you are underneath it
+    const me = cam && view.players.find((p) => p.local);
+    let under = false;
+    if (me) {
+      const now = performance.now();
+      if (!m.rect || now - m.rectAt > 1000) {
+        const a = this.el.stage.getBoundingClientRect();
+        const b = c.getBoundingClientRect();
+        m.rect = { x0: b.left - a.left - 36, y0: b.top - a.top - 56, x1: b.right - a.left + 36, y1: b.bottom - a.top + 36, w: a.width, h: a.height };
+        m.rectAt = now;
+      }
+      const sx = ((me.x + PW / 2 - cam.x) / cam.w) * m.rect.w;
+      const sy = ((me.y + PH / 2 - cam.y) / cam.h) * m.rect.h;
+      under = sx > m.rect.x0 && sx < m.rect.x1 && sy > m.rect.y0 && sy < m.rect.y1;
+    }
+    if (under !== m.under) c.classList.toggle('aside', (m.under = under));
     for (const p of view.players) {
       if (p.dead > 0) continue;
       const x = (p.x + PW / 2) * k;

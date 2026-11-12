@@ -26,7 +26,8 @@ const LABEL_PX = 12;
 export class Renderer {
   // stage: an element to put the canvases in, or null to draw off screen (opts.size = [w, h]).
   // opts.whole: always show the whole arena. opts.zoom / opts.focus: fixed zoom and centre.
-  // opts.padBottom: CSS px the following view may scroll below the arena (room for touch buttons).
+  // opts.padBottom: CSS px the following view may scroll below the arena (room for touch buttons or the item plaque).
+  // opts.touch: wording for thumbs rather than keys.
   // opts.plain: do not dim the area outside the arena (menu pictures).
   constructor(stage, opts = {}) {
     this.stage = stage;
@@ -36,11 +37,19 @@ export class Renderer {
     this.bg.className = 'layer bg';
     this.fg.className = 'layer fg';
     this.bgx = this.bg.getContext('2d', { alpha: false });
-    this.fgx = this.fg.getContext('2d');
+    // A view that stays put shows the scenery as its own layer underneath, which
+    // costs nothing per frame. A view that follows a player copies the part of
+    // the scenery it can see into the one visible canvas instead: a plain copy
+    // is cheap everywhere, while sliding a very large layer about is slow on
+    // machines whose browser composes the page without the graphics card.
+    this.flat = !!stage && !opts.whole;
+    this.fgx = this.fg.getContext('2d', this.flat ? { alpha: false } : undefined);
+    this.back = this.bg; // what the copy is taken from (a smaller copy at reduced detail)
     if (stage) {
       this.flashEl = document.createElement('div');
       this.flashEl.className = 'flash';
-      stage.append(this.bg, this.fg, this.flashEl);
+      if (this.flat) stage.append(this.fg, this.flashEl);
+      else stage.append(this.bg, this.fg, this.flashEl);
     }
     this.lo = document.createElement('canvas'); // low-res buffer for pixel-art styles
     this.scratch = document.createElement('canvas');
@@ -130,7 +139,7 @@ export class Renderer {
     this.bg.height = Math.round(bhCss * s);
     this.fg.width = Math.max(1, Math.round(cssW * s * this.q));
     this.fg.height = Math.max(1, Math.round(cssH * s * this.q));
-    if (this.stage) {
+    if (this.stage && !this.flat) {
       this.bg.style.width = `${bwCss}px`;
       this.bg.style.height = `${bhCss}px`;
       this.bg.style.transformOrigin = '0 0';
@@ -144,6 +153,63 @@ export class Renderer {
       this.cam.x = -this.ox / this.kDev;
       this.cam.y = -this.oy / this.kDev;
     }
+    // at reduced detail the copy comes from a scenery picture of the same reduced size, so it stays a plain copy
+    this.back = this.bg;
+    if (this.flat && this.q !== 1) {
+      const c = (this.bgq ||= document.createElement('canvas'));
+      c.width = Math.max(1, Math.round(this.bg.width * this.q));
+      c.height = Math.max(1, Math.round(this.bg.height * this.q));
+      const g = c.getContext('2d', { alpha: false });
+      g.imageSmoothingEnabled = true;
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(this.bg, 0, 0, c.width, c.height);
+      this.back = c;
+    } else if (this.bgq) this.bgq.width = this.bgq.height = 1;
+    this.overZ = 0; // the shrunken whole-arena copy is out of date
+  }
+
+  // Following view: copy the visible part of the scenery onto the canvas.
+  paintBack(g, cam, z) {
+    const W = this.fg.width;
+    const H = this.fg.height;
+    const src = this.back;
+    const k = this.kf; // scenery pixels per world unit (of the copy we take from)
+    const sx = cam.x * k;
+    const sy = cam.y * k;
+    const x0 = Math.max(0, sx);
+    const y0 = Math.max(0, sy);
+    const x1 = Math.min(src.width, sx + W / z);
+    const y1 = Math.min(src.height, sy + H / z);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    if (x0 > sx + 0.5 || y0 > sy + 0.5 || x1 < sx + W / z - 0.5 || y1 < sy + H / z - 0.5) {
+      g.fillStyle = this.theme.letterbox || '#000';
+      g.fillRect(0, 0, W, H);
+    }
+    if (x1 <= x0 || y1 <= y0) return;
+    if (z !== 1 && z === this.zFit) {
+      // the whole-arena view (before a round and after it) holds still: shrink
+      // the scenery once and copy from that, rather than shrinking it every frame
+      let o = this.over;
+      if (!o || this.overZ !== z || this.overSrc !== src || this.overW !== src.width) {
+        o = this.over ||= document.createElement('canvas');
+        o.width = Math.max(1, Math.round(src.width * z));
+        o.height = Math.max(1, Math.round(src.height * z));
+        const og = o.getContext('2d', { alpha: false });
+        og.imageSmoothingEnabled = true;
+        og.imageSmoothingQuality = 'high';
+        og.drawImage(src, 0, 0, o.width, o.height);
+        this.overZ = z;
+        this.overSrc = src;
+        this.overW = src.width;
+      }
+      g.imageSmoothingEnabled = false;
+      g.drawImage(o, Math.round(-sx * z), Math.round(-sy * z));
+      return;
+    }
+    g.imageSmoothingEnabled = z !== 1;
+    if (z === 1) g.drawImage(src, Math.round(x0), Math.round(y0), Math.round(x1 - x0), Math.round(y1 - y0), Math.round(x0 - sx), Math.round(y0 - sy), Math.round(x1 - x0), Math.round(y1 - y0));
+    else g.drawImage(src, x0, y0, x1 - x0, y1 - y0, (x0 - sx) * z, (y0 - sy) * z, (x1 - x0) * z, (y1 - y0) * z);
   }
 
   // --- the static picture ----------------------------------------------------------
@@ -573,9 +639,12 @@ export class Renderer {
     const tx = -cam.x * kf;
     const ty = -cam.y * kf;
 
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.globalAlpha = 1;
-    g.clearRect(0, 0, this.fg.width, this.fg.height);
+    if (this.flat) this.paintBack(g, cam, z);
+    else {
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalAlpha = 1;
+      g.clearRect(0, 0, this.fg.width, this.fg.height);
+    }
     g.imageSmoothingEnabled = true;
 
     // ambient animation (petals, rain, twinkling stars...) on the art board
@@ -671,11 +740,15 @@ export class Renderer {
       const k = 1 - Math.exp(-dt * (z === 1 ? 6 : 9));
       cam.fx += (tx - cam.fx) * k;
       cam.fy += (ty - cam.fy) * k;
+      // never show past the arena's edge while the zoom is still catching up
+      cam.fx = vw >= A.w ? (A.w - vw) / 2 : clamp(cam.fx, 0, A.w - vw);
+      cam.fy = vh >= A.h + this.padB ? (A.h - vh) / 2 : clamp(cam.fy, 0, A.h + this.padB - vh);
     }
-    // whole background pixels (once the zoom has settled), so the two layers never shimmer against each other
-    cam.x = z === 1 ? Math.round(cam.fx * this.kDev) / this.kDev : cam.fx;
-    cam.y = z === 1 ? Math.round(cam.fy * this.kDev) / this.kDev : cam.fy;
-    if (this.stage) this.bg.style.transform = `translate3d(${(-cam.x * this.kCss * z).toFixed(2)}px,${(-cam.y * this.kCss * z).toFixed(2)}px,0) scale(${z.toFixed(4)})`;
+    // whole scenery pixels (once the zoom has settled): the scenery is then copied exactly, pixel for pixel
+    const kr = this.flat ? this.kf : this.kDev;
+    cam.x = z === 1 ? Math.round(cam.fx * kr) / kr : cam.fx;
+    cam.y = z === 1 ? Math.round(cam.fy * kr) / kr : cam.fy;
+    if (this.stage && !this.flat) this.bg.style.transform = `translate3d(${(-cam.x * this.kCss * z).toFixed(2)}px,${(-cam.y * this.kCss * z).toFixed(2)}px,0) scale(${z.toFixed(4)})`;
   }
 
   // What the view is showing, in world units (for the minimap).
@@ -1179,7 +1252,7 @@ export class Renderer {
       }
       if (pv.local && pv.orb && pv.canDrop) {
         // flying through a portal that lets you go early
-        const l = this.label(this.opts.padBottom ? 'JUMP: let go' : 'SPACE: let go', '#ffffff', lab.font);
+        const l = this.label(this.opts.touch ? 'JUMP: let go' : 'SPACE: let go', '#ffffff', lab.font);
         g.drawImage(l.c, clamp(sx - (l.w >> 1), 0, this.fg.width - l.w), top - l.h - 18 * px);
       }
       if (pv.local && pointYou) {
@@ -1246,7 +1319,7 @@ export class Renderer {
     g.fillRect(0, 0, c.width, c.height);
     const bx = this.follow ? -this.cam.x * this.kDev * k : 0;
     const by = this.follow ? -this.cam.y * this.kDev * k : 0;
-    g.drawImage(this.bg, bx, by, this.bg.width * k, this.bg.height * k);
+    if (!this.flat) g.drawImage(this.bg, bx, by, this.bg.width * k, this.bg.height * k); // (a following view already has the scenery in it)
     g.drawImage(this.fg, 0, 0);
     return c;
   }

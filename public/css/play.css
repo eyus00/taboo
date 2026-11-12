@@ -78,7 +78,8 @@ body.touch-on #hint { bottom: auto; top: max(92px, calc(env(safe-area-inset-top)
 #pills.bomb li.it::after { content: 'BOMB'; }
 
 /* the arena in miniature */
-#minimap { position: absolute; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); width: clamp(150px, 17vw, 240px); height: auto; aspect-ratio: 220 / 124; opacity: 0.94; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+#minimap { position: absolute; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); width: clamp(150px, 17vw, 240px); height: auto; aspect-ratio: 220 / 124; opacity: 0.94; transition: opacity 0.16s; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+#minimap.aside { opacity: 0.14; }
 body.touch-on #minimap { bottom: auto; top: max(58px, calc(env(safe-area-inset-top) + 52px)); width: clamp(120px, 20vw, 180px); }
 #spin { position: absolute; inset: 0; pointer-events: none; }
 
