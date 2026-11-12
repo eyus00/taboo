@@ -672,7 +672,11 @@ export function buildNav(arena) {
     const outs = beside(dz);
     if (!outs.length) return;
     for (const [a, dir] of beside(z)) {
-      for (const [b] of outs) if (tryEdge(a, b, { type: 'portal', x: p.cx, dir, exit: d.cx }, dir > 0 ? a.x1 - 4 : a.x0 + 4, 200)) break;
+      // you come out standing in the exit, a step from the ground on either side of it
+      let got = null;
+      for (const [b] of outs) if ((got = attempt(a, b, { type: 'portal', x: p.cx, dir }, dir > 0 ? a.x1 - 4 : a.x0 + 4, 200))) break;
+      if (!got) continue;
+      for (const [b, side] of outs) add(a, b, { type: 'portal', x: p.cx, dir, exit: d.cx, cost: got.ticks + 6, land: side > 0 ? b.x1 : b.x0 });
     }
   });
 

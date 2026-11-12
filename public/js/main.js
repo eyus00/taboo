@@ -515,7 +515,7 @@ const OPTIONS = [
   { id: 'rounds', key: 'rounds', hot: 'r', label: 'Rounds', only: 'online', type: 'seg', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup', hint: () => 'The last round counts double.' },
   { id: 'bots', key: 'bots', hot: 'b', label: 'Bots', only: 'practice', type: 'seg', values: [1, 2, 3, 4, 5].map((n) => [n, String(n)]) },
   { id: 'duration', key: 'duration', hot: 'l', label: 'Round length', type: 'seg', values: DURATIONS.map((d) => [d, `${d} s`]) },
-  { id: 'powerups', key: 'powerups', hot: 'p', label: 'Power-ups', type: 'seg', values: [[true, 'On'], [false, 'Off']] },
+  { id: 'powerups', key: 'powerups', hot: 'p', label: 'Lucky boxes', type: 'seg', values: [[true, 'On'], [false, 'Off']] },
 ];
 const settings = () => (kind === 'practice' ? practice : room.settings);
 const locked = () => kind === 'online' && !amHost();

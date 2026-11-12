@@ -62,7 +62,7 @@ export function botThink(sim, slot, mem) {
   if (!me) return 0;
   const s = me.s;
   if (s.dead > 0 || s.stun > 0 || s.frz > 0 || s.orb > 0) {
-    mem.plan = null;
+    if (!(s.orb > 0 && mem.plan && mem.plan.e.type === 'portal')) mem.plan = null; // (a portal we meant to take: remember where we were going)
     mem.pressed = 0;
     mem.rejump = 0;
     return 0;
@@ -76,7 +76,15 @@ export function botThink(sim, slot, mem) {
   // for a step or two: flipping between them means flipping between their plans.)
   if (s.ground) {
     const was = mem.surf >= 0 ? nav.surfaces[mem.surf] : null;
-    const cur = was && stillOn(nav, was, cx, feet, s.gk) ? was : surfaceAt(nav, cx, feet, s.gk);
+    let cur = was && stillOn(nav, was, cx, feet, s.gk) ? was : surfaceAt(nav, cx, feet, s.gk);
+    if (mem.plan && mem.plan.e.type === 'portal' && s.tp > 0) {
+      // just out of a portal, standing in its mouth: we are as good as on the ground we planned to step out onto
+      const out = nav.surfaces[mem.plan.e.to];
+      if (Math.abs(out.y - feet) <= 1 && cx > out.x0 - 48 && cx < out.x1 + 48) {
+        cur = out;
+        mem.surf = -1;
+      }
+    }
     const id = cur ? cur.id : -1;
     if (id !== mem.surf) {
       mem.surf = id;
@@ -384,7 +392,8 @@ function evade(sim, me, mem, nav, it, reach = 540) {
     mem.itSince = sim.tick;
   }
   const bored = (sim.tick - mem.itSince) / 60;
-  const nerve = (mem.nerve = clamp(1.2 - mem.fear / 600, 0.38, 1) * clamp(1.6 - bored / 30, 0.4, 1));
+  // (a bomb only lasts 14 s, so in a team battle guards drop much sooner)
+  const nerve = (mem.nerve = clamp(1.2 - mem.fear / 600, 0.38, 1) * clamp(1.6 - bored / (sim.teams ? 9 : 30), 0.4, 1));
   if (dist > reach * nerve || (calm && dist > 170)) {
     mem.fear = Math.max(0, mem.fear - 4);
     return false;

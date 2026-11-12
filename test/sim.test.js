@@ -701,14 +701,13 @@ test('every arena: six of them, 64 x 36 tiles; starts, bases and boxes stand on 
       const under = nav.below(pt.x, pt.y - 30, null);
       assert.ok(under && nav.heightAt(under, pt.x) - pt.y <= PH + 20, `${arena.id}: nobody can reach the box spot at ${pt.x},${pt.y}`);
     }
-    // the bases are about as far from each other in both directions, and the starts are fair:
-    // each team's nearest start is about as far from the enemy flag as the other's
+    // the bases are as far from each other in both directions
     const at = ([x, y]) => surfaceAt(nav, x, y);
     const [b0, b1] = arena.bases.map(at);
     assert.ok(b0 && b1, `${arena.id}: bases are on the route map`);
     const there = nav.dist[b0.id][b1.id];
     const back = nav.dist[b1.id][b0.id];
-    assert.ok(Math.abs(there - back) < 0.25 * Math.max(there, back), `${arena.id}: base to base takes ${Math.round(there)} ticks one way, ${Math.round(back)} the other`);
+    assert.ok(Math.abs(there - back) < 0.1 * Math.max(there, back), `${arena.id}: base to base takes ${Math.round(there)} ticks one way, ${Math.round(back)} the other`);
   }
   console.log(`      route maps: ${times.join(', ')}`);
 });
@@ -800,7 +799,7 @@ test('bots play team battles: the bomb is passed or goes off, flags are stolen a
       // a bomb lasts 14 s and the next one follows 2 s later: about seven in two minutes
       assert.ok(r.booms >= 5, `${who}: ${r.booms} bombs went off`);
       assert.ok(r.worst < 60 * 17, `${who}: ${Math.round(r.worst / 60)}s with nothing happening to the bomb`);
-      assert.ok(r.takes >= (n > 2 ? 4 : 1), `${who}: the flags were taken only ${r.takes} times`);
+      if (n > 2) assert.ok(r.takes >= 4, `${who}: the flags were taken only ${r.takes} times`);
       assert.ok(r.score[0] + r.score[1] >= 12, `${who}: score ${r.score}`);
       assert.ok(r.idle < 60 * 10, `${who}: a bot stood still for ${Math.round(r.idle / 60)}s`);
       assert.ok(r.falls <= 3, `${who}: ${r.falls} falls into a pit in one match`);

@@ -1,14 +1,16 @@
-# You're It!
+# Onigokko
 
-Real-time multiplayer tag for 2&ndash;6 players, in the browser. One player is "it"; touch someone and they are "it" instead. Everyone plays on their own device: one person creates a room, shares the 4-digit code (or the invite link), and friends join.
+*Onigokko* (鬼ごっこ) is Japanese for tag; whoever is it is the *oni*. This is real-time multiplayer tag for 2&ndash;6 players, in the browser. Everyone plays on their own device: one person opens a room, shares the 4-digit code (or the invite link), and friends join.
 
-- **Quick match or tournament.** A quick match is one round: *Hot Potato* (whoever is it when the clock hits zero loses) or *Least Time* (every second as it counts against you). A tournament is 3, 5 or 7 rounds for points.
-- **The whole arena on one screen**, with small characters, on anything laptop-sized or bigger. On a phone the view follows you instead and leans towards whoever is it.
-- **Movement with weight**: you build up speed, skid when you turn round, and jump in a floaty arc. Four actions only &ndash; left, right, jump, down.
-- **Arenas with slopes, trampolines, updrafts and portals** (a portal turns you into a spark and flies you to its partner), plus power-ups.
+- **Three ways to play.** *Hot Potato* (whoever is the oni when the clock hits zero loses), *Least Time* (every second as the oni counts against you), and *Team Bomb* (two teams, one bomb, two flags). Any of them as a quick match or a tournament of 3, 5 or 7 rounds.
+- **Lucky boxes.** Touch one and you get a random item to keep: set it off when it hurts most. A Blast that hurls everyone on screen away, a Swap that trades places with someone, a Storm that puts everyone else in slow motion, Goo to slip on, Frost, Ward, Swift and Spring. Nothing works in the last 10 seconds, so nobody can sit on one for the buzzer.
+- **Close-up camera** that follows you, with a minimap for everyone you cannot see. Each round opens on the whole arena, then zooms in on you.
+- **Movement with weight**: you build up speed, skid when you turn round, and jump in a floaty arc. Five actions &ndash; left, right, jump, down, use item.
+- **Six big arenas** full of slopes, trampolines, launchers, updrafts, thorns, pits and portals. A portal flies you over the map in an arc, and some let you drop out half way.
+- **A draw before every round**: reels spin for the arena, the art style and who starts as the oni.
 - **Seven art styles**: Ink & Sakura (the house style), Orbit, Xeno, Neon District, Nightmare, Sketchbook and Arcade.
-- **Practice against bots** (one to five of them) without anyone else online.
-- Menus drawn like a game, not a web page: brush lettering on hanging scrolls, with a picture card for every arena and every art style. They work with the keyboard alone; phones get on-screen controls and a built-in number pad for the room code.
+- **Practice against bots** (one to five of them), including team battles.
+- Menus drawn like a game: brush lettering on hanging scrolls, picture cards for arenas and styles, and a how-to-play page where every picture is the real game playing itself. Everything works with the keyboard alone; phones get on-screen controls and a built-in number pad for the room code.
 - No accounts, no database, no API keys. One small Node server.
 
 ## Run it on your computer
@@ -48,6 +50,7 @@ Any host that runs a long-lived Node process with WebSockets works the same way 
 | Run | &larr; / &rarr; or A / D | left thumb strip (slide to change direction) |
 | Jump &ndash; press again in the air for a second jump; tap for a short hop | &uarr;, W or Space | big button |
 | Drop through a thin ledge or slope, fall faster | &darr; or S | small button |
+| Use the item you are holding | E, X or Shift | item button |
 | Pause menu | Esc | menu button |
 
 Everything can be done without a mouse, and every screen shows its keys (on phones the cues are hidden):
@@ -56,54 +59,69 @@ Everything can be done without a mouse, and every screen shows its keys (on phon
 |---|---|
 | Any menu | &uarr; / &darr; move, &larr; / &rarr; change the choice you are on, Enter choose, Esc back |
 | Anywhere | M sound on / off, F full screen |
-| Title screen | 1 create a room, 2 join, 3 practice, H how to play, N change name |
-| Join | type the four digits, Backspace deletes, Enter joins |
-| Match setup | A next arena, S next style (Shift goes back), G game, R rules or rounds, L round length, P power-ups, B bots, Enter start, C copy the invite link |
+| Title screen | 1 play with friends, 2 practice, H how to play, N change name |
+| Rooms | C create a room, or type the four digits of a code (the fourth joins) |
+| Match setup | A next arena, S next style (Shift goes back), G game, R rules or rounds, T sides, L round length, P lucky boxes, B bots, Enter start, C copy the invite link |
 | In a match | Esc pause menu; there: Esc resume, H how to play, Q leave |
 | Results | Enter play again, Esc back |
 
 Keys that would throw you out of a game (Esc in a room, Q in the pause menu, Esc to end a tournament) have to be pressed twice.
 
-- "It" tags by touching another player. Grazing counts, and the server also accepts a touch against where the target was on the tagger's own screen, so lag does not rob you of a tag.
-- The tagged player is frozen for 0.4 s so the tagger can get away, and the tagger cannot be tagged back for 1 s (they flash while protected). "It" runs slightly faster than everyone else.
+- The oni tags by touching another player. Grazing counts, and the server also accepts a touch against where the target was on the tagger's own screen, so lag does not rob you of a tag.
+- The tagged player is frozen for 0.4 s so the tagger can get away, and the tagger cannot be tagged back for 1 s (they flash while protected). The oni runs slightly faster than everyone else.
 - Players pass through each other.
 - **Slopes** behave like tilted thin ledges: walk up and down them, jump up through them from below, hold down to drop through &ndash; or to walk under one from its low end.
-- **Trampolines** launch you about twelve tiles up. **Updrafts** are columns of rising air: step in, let go and ride. **Portals** come in coloured pairs: step into one and you fly to its partner as a spark, with no control and safe from tags until you arrive.
-- **Power-ups** appear every few seconds:
-
-  | | |
-  |---|---|
-  | Swift (bolt) | run faster for 6 s |
-  | Spring (chevrons) | jump higher for 7 s |
-  | Ward (shield) | blocks one tag and knocks "it" back; "it" cannot carry one |
-  | Frost (snowflake) | freezes the other side: a runner freezes "it", "it" freezes every runner |
-
-- Everyone needs a name before playing; two players with the same name in a room get a number.
+- **Trampolines** launch you straight up; **launchers** (the pads with arrows) fling you up and across. **Updrafts** are columns of rising air: step in, let go and ride. **Thorns** sting: a short stun, and you are thrown back off them.
+- **Portals** come in coloured pairs: step into one and you fly to its partner as a spark, in an arc over the map, safe from tags until you arrive. A portal with a small arrow badge lets you press jump to drop out wherever you are.
 - If you join while a round is running you watch it and play the next one.
-- The player who created the room is the host (picks the game, style, arena and round length; starts it). If they leave, the next player becomes host.
+- The player who opened the room is the host (picks the game, style, arena and round length; starts it). If they leave, the next player becomes host.
 
-### Tournament rules
+### Lucky boxes
 
-- Each round, players are ranked by time spent as it &ndash; least is best &ndash; and score one point for every player they beat: 5, 4, 3, 2, 1, 0 with six players, 3, 2, 1, 0 with four (equal times share the better place).
-- Everyone who is **not** it when the buzzer sounds gets 1 more point. So a tag in the last second matters even if your time is already the worst.
-- From round 2, the leader starts the round as it.
-- Every second round has a twist: *Moon Gravity* (everything floats), *Turbo* (everyone runs faster) or *Item Frenzy* (power-ups everywhere).
-- The last round counts double. Most points wins; a tie is broken by less total time as it.
-- With "Random" arena a tournament visits a different arena every round.
+Boxes appear around the arena every few seconds. Touch one with empty hands and, after a short draw, you hold one of:
+
+| | |
+|---|---|
+| Swift | run much faster for 6 s |
+| Spring | jump much higher for 7 s |
+| Ward | blocks the next tag and knocks the oni back (the oni gets a burst of speed instead) |
+| Frost | freezes the other side: a runner freezes the oni, the oni freezes every runner |
+| Blast | a shockwave: everyone else on screen is hurled away and stunned |
+| Swap | trade places with another player |
+| Storm | everyone else moves in slow motion for 3.5 s |
+| Goo | drop a puddle; the next player to step in it slips |
+
+You hold one item at a time and choose when to use it. Items stop working (and boxes stop appearing) for the last 10 seconds of a round.
+
+### Team Bomb
+
+- Two teams, Sun (warm colours) and Moon (cool colours): 1 v 1 up to 3 v 3, as even as the room allows.
+- One bomb is in play. Its carrier must stick it on an **enemy** by touching them; team mates are safe. When the fuse (14 s) runs out it blows up on whoever carries it and the **other** team scores 2. A fresh carrier always gets at least 2.5 s. The next bomb goes to the team that just scored.
+- Each team has a flag at its base. Stand on the enemy flag to take it and carry it to your own base for 3 points. Any enemy who touches you sends it home; so does a Blast, a slip in Goo, or being handed the bomb. The bomb carrier cannot pick up a flag.
+- Items only hit the other team.
+
+### Tournaments
+
+- **Teams** (the default): Team Bomb every round, the sides stay together, points add up, and the last round counts double.
+- **Free-for-all**: each round players are ranked by time spent as the oni &ndash; least is best &ndash; and score one point for every player they beat (5 down to 0 with six players; equal times share the better place). Everyone who is **not** the oni at the buzzer gets 1 more. From round 2 the leader starts as the oni. A tie at the end is broken by less total time as the oni.
+- Every second round has a twist: *Moon Gravity*, *Turbo* or *Item Frenzy*. With "Random" arena a tournament visits a different arena every round.
 
 ## How it works
 
 ```
 server.js            Express + Socket.io. Rooms, tournaments, and the real simulation of every match.
 shared/              Code that runs on BOTH the server and the browser:
-  config.js            every tunable number (speeds, jump, timers, power-ups, tournament rules)
-  physics.js           one player, one tick: movement, ledges, slopes, trampolines, updrafts, portals
-  sim.js               the rules: who is it, tagging, power-ups, scoring
+  config.js            every tunable number (speeds, jump, timers, items, team battle, tournament rules)
+  physics.js           one player, one tick: movement, ledges, slopes, trampolines, launchers, updrafts, thorns, portals
+  sim.js               the rules: who is it, tagging, lucky boxes and items, the team battle, scoring
   arenas.js            the maps, drawn as text
   nav.js, bots.js      route map of each arena and the computer players that use it
 public/
   index.html, css/     menus (hanging scrolls on an ink landscape), heads-up display, results
-  js/main.js           screens, keyboard navigation and wiring
+  js/main.js           menus: screens, keyboard navigation, lobby, results
+  js/play.js           the match on screen: frame loop, heads-up display, minimap, game events
+  js/spinner.js        the draw before each round
+  js/demo.js           the live demos on the how-to-play page
   js/net.js            online play: prediction, reconciliation, interpolation
   js/local.js          offline play against bots
   js/renderer.js       draws a match (see below)
@@ -123,7 +141,7 @@ test/                `npm test` - rules/physics checks and scripted online match
 
 **Smooth.** Drawing is built so that weak laptops hold their frame rate:
 
-- Everything that never moves &ndash; backdrop, platforms, slopes &ndash; is painted once into a background canvas. Showing a finished picture again costs the browser nothing.
+- Everything that never moves &ndash; backdrop, platforms, slopes &ndash; is painted once into a background canvas. Showing a finished picture again costs the browser nothing, and following the player just slides that picture around.
 - A transparent canvas on top is cleared and redrawn each frame with only the moving things: players, items, sparks. Anything fancy (glows, portals, name tags) is pre-rendered into small sprites.
 - The heads-up display is ordinary HTML, updated ten times a second.
 - Art styles are loaded only when a match needs them.
@@ -131,8 +149,8 @@ test/                `npm test` - rules/physics checks and scripted online match
 
 ## Changing things
 
-- **Feel** &ndash; speeds, acceleration, jump, gravity, tag protection, power-up strength and timing are all in `shared/config.js`.
-- **Maps** &ndash; `shared/arenas.js` holds every arena as a grid of characters (`#` solid, `=` ledge, `^` trampoline, `u` updraft, letters for portal pairs, `*` power-up spots, `1`&ndash;`4` spawns) plus a list of slopes. Edit one or add another and it shows up in the lobby; the bots work out their own routes. `npm test` checks that every surface can be reached and that bots can play it.
+- **Feel** &ndash; speeds, acceleration, jump, gravity, tag protection, item strength and timing are all in `shared/config.js`.
+- **Maps** &ndash; `shared/arenas.js` holds every arena as a grid of characters (`#` solid, `=` ledge, `^` trampoline, `<` `>` launchers, `u` updraft, `x` thorns, letters for portal pairs, `*` lucky-box spots, `1`&ndash;`6` starts, `7` `8` team bases) plus a list of slopes and of the portals you can drop out of. Edit one or add another and it shows up in the lobby; the bots work out their own routes. `npm test` checks that every surface can be reached and that bots can play it.
 - **New art style** &ndash; read `public/js/themes/README.md`, add a file next to the others and add it to `THEMES` in `shared/config.js`.
 
 Set `DEBUG_NET=1` when starting the server to print input-buffer statistics after each round.
