@@ -672,6 +672,7 @@ const el = (tag, cls, text) => {
   return e;
 };
 const icon = (name) => `<svg class="ic" aria-hidden="true"><use href="#i-${name}" /></svg>`;
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
 const KEY_ICONS = { l: ['left', L], r: ['right', R], j: ['up', J], d: ['down', D], u: ['use', U] };
 
 class Demo {
@@ -687,12 +688,15 @@ class Demo {
     this.cuts = this.run.cuts;
     this.wait = 0;
 
+    // the picture in a frame (stage, counters, keys), and one line underneath that says what is happening
     box.classList.add('demo');
     box.textContent = '';
+    const frame = el('div', 'demo-frame');
     this.stage = el('div', 'demo-stage');
     this.hud = el('div', 'demo-hud');
     this.cap = el('p', 'demo-cap');
-    box.append(this.stage, this.hud, this.cap);
+    frame.append(this.stage, this.hud);
+    box.append(frame, this.cap);
     if (scene.keys) {
       this.keys = el('div', 'demo-keys');
       this.keyEls = [...scene.keys].map((k) => {
@@ -703,7 +707,7 @@ class Demo {
         this.keys.append(key);
         return key;
       });
-      box.append(this.keys);
+      frame.append(this.keys);
     }
     if (scene.pips) {
       // items: one mark for each, lit while it is being shown; click one to see it now
@@ -719,11 +723,30 @@ class Demo {
       });
       this.chip = el('div', 'demo-item');
       this.chip.innerHTML = '<span class="pic"></span><span class="what"><b></b><small></small></span>';
-      box.append(this.pips, this.chip);
+      frame.append(this.pips, this.chip);
     }
-    this.sized = '';
-    this.ro = new ResizeObserver(() => (this.resized = true));
-    this.ro.observe(box);
+    // someone who has asked their device for less motion gets a still picture and a button to play it
+    this.held = calm.matches;
+    this.still = false;
+    if (this.held) {
+      box.classList.add('held');
+      const b = el('button', 'demo-play', 'Play');
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        this.held = !this.held;
+        this.still = false;
+        b.textContent = this.held ? 'Play' : 'Pause';
+        box.classList.toggle('held', this.held);
+        wake();
+      });
+      frame.append(b);
+    }
+    this.ro = new ResizeObserver(() => {
+      this.resized = true;
+      this.still = false;
+      if (this.held) wake(); // a held demo is redrawn once at its new size
+    });
+    this.ro.observe(frame);
   }
 
   // the renderer is only made when the demo first comes on screen
@@ -750,16 +773,22 @@ class Demo {
     this.stage.classList.add('cut');
   }
 
-  frame(dt, now) {
-    if (this.broken) return;
+  // budget.made: a renderer has already been set up this frame (one is enough work for one frame)
+  frame(dt, now, budget) {
+    if (this.broken || (this.held && this.still)) return;
     try {
-      this.ensure();
+      if (!this.r) {
+        if (budget.made) return;
+        budget.made = true;
+        this.ensure();
+      }
       if (this.resized) {
         this.resized = false;
         if (this.stage.clientWidth > 0) this.r.resize();
       }
       const run = this.run;
-      this.acc += dt;
+      if (this.held) this.still = true; // one frame to look at, nothing moves
+      else this.acc += dt;
       let steps = 0;
       while (this.acc >= TICK_MS && steps < 4) {
         this.acc -= TICK_MS;
@@ -866,13 +895,14 @@ let last = 0;
 function loop(now) {
   raf = 0;
   if (!running) return;
-  const live = all.filter((d) => d.visible && !d.broken);
+  const live = all.filter((d) => d.visible && !d.broken && !(d.held && d.still));
   if (!live.length) return; // nothing on screen: sleep until something scrolls into view
   raf = requestAnimationFrame(loop);
   const dt = now - last;
   if (dt < 30) return; // about thirty frames a second is plenty
   last = now;
-  for (const d of live) d.frame(Math.min(dt, 100), now);
+  const budget = { made: false };
+  for (const d of live) d.frame(Math.min(dt, 100), now, budget);
 }
 function wake() {
   if (running && !raf) {

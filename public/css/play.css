@@ -1,4 +1,4 @@
-/* You're It! - the match screen: canvases, heads-up display, touch controls. */
+/* Onigokko - the match screen: canvases, heads-up display, touch controls. */
 
 #game { position: fixed; inset: 0; background: #000; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
 #stage { position: absolute; inset: 0; overflow: hidden; }
@@ -91,6 +91,14 @@ body.touch-on #buffs { top: max(118px, calc(env(safe-area-inset-top) + 110px)); 
 
 @media (max-width: 760px) {
   #pills li { font-size: 12px; padding: 2px 13px 2px 10px; }
+}
+@media (max-width: 540px) {
+  /* a phone held upright: the item button sits above jump, clear of the run strip */
+  .touch .acts { display: grid; grid-template-columns: auto auto; gap: 10px; justify-items: end; align-items: end; }
+  .touch .t-use { grid-column: 2; grid-row: 1; justify-self: center; }
+  .touch .t-down { grid-column: 1; grid-row: 2; }
+  .touch .t-jump { grid-column: 2; grid-row: 2; }
+  .touch .pad { width: min(42vw, 200px); }
 }
 @media (max-height: 560px) {
   #pills { flex-direction: row; flex-wrap: wrap; max-width: 34vw; }

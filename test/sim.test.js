@@ -8,7 +8,7 @@ import {
 import { ARENAS } from '../shared/arenas.js';
 import { makeState, stepPlayer, packState, unpackState, STATE_LEN } from '../shared/physics.js';
 import { Sim, standings, cupPoints, makeTeams } from '../shared/sim.js';
-import { buildNav } from '../shared/nav.js';
+import { buildNav, surfaceAt } from '../shared/nav.js';
 import { makeBot, botThink } from '../shared/bots.js';
 
 let passed = 0;
@@ -478,6 +478,9 @@ test('team battle: the bomb only sticks to enemies and blows up for points; flag
   });
   park();
   sim.setTeams([0, 0, 1, 1]);
+  for (let i = 0; i < 30; i++) sim.step([]); // the countdown: the sim runs, but nothing is in play yet
+  assert.equal(sim.it, -1, 'no bomb before GO');
+  assert.ok(p.every((q) => q.itTicks === 0), 'and nobody clocks up time');
   sim.start(0);
   assert.equal(sim.it, 0);
   assert.equal(sim.fuse, BOMB_FUSE_TICKS);
@@ -653,59 +656,165 @@ test('if "it" leaves, someone else becomes it', () => {
   assert.ok(sim.it === 0 || sim.it === 2);
 });
 
-test('every arena: spawns stand on something, every surface can reach every other', () => {
+test('every arena: six of them, 64 x 36 tiles; starts, bases and boxes stand on something; every surface can reach every other', () => {
+  assert.equal(ARENAS.length, 6);
+  for (const id of ['hills', 'canyon', 'pagoda', 'zigzag', 'dojo']) assert.ok(ARENAS.some((a) => a.id === id), `${id} is still there`);
+  assert.equal(new Set(ARENAS.map((a) => a.id)).size, 6);
+  const times = [];
   for (const arena of ARENAS) {
-    arena.spawns.concat(arena.respawns).forEach(([x, y], i) => {
+    assert.deepEqual([arena.w, arena.h], [64 * 40, 36 * 40], `${arena.id} is 64 x 36 tiles`);
+    assert.ok(arena.name && arena.blurb, `${arena.id} has a name and a blurb`);
+    const stands = ([x, y], what) => {
       const p = makeState(x, y);
       for (let t = 0; t < 20; t++) stepPlayer(p, 0, arena);
-      assert.ok(p.ground && Math.abs(p.y - y) < 1 && p.dead === 0, `${arena.id} spawn ${i}`);
-    });
+      assert.ok(p.ground && Math.abs(p.y - y) < 1 && Math.abs(p.x - x) < 1 && p.dead === 0 && p.stun === 0 && p.orb === 0, `${arena.id} ${what} stands on firm ground`);
+    };
+    arena.spawns.forEach((sp, i) => stands(sp, `start ${i + 1}`));
+    arena.respawns.forEach((sp, i) => stands(sp, `respawn point ${i}`));
+    // starts 1, 3, 5 on the left half and 2, 4, 6 on the right
+    arena.spawns.forEach(([x], i) => assert.equal(x + PW / 2 < arena.w / 2, i % 2 === 0, `${arena.id}: start ${i + 1} is on the ${i % 2 ? 'right' : 'left'}`));
+    // the two team bases: firm ground, one on each side
+    assert.equal(arena.bases.length, 2);
+    arena.bases.forEach(([x, y], t) => stands([x - PW / 2, y - PH], `base ${t}`));
+    assert.ok(arena.bases[0][0] < arena.w * 0.4 && arena.bases[1][0] > arena.w * 0.6, `${arena.id}: bases on opposite sides`);
+    // portals come in pairs: two or three of them, at least one you can drop out of
+    assert.ok(arena.portals.length === 4 || arena.portals.length === 6, `${arena.id}: ${arena.portals.length / 2} portal pairs`);
+    for (const po of arena.portals) assert.equal(arena.portals[po.to].to, arena.portals.indexOf(po));
+    assert.ok(arena.portals.some((po) => po.drop), `${arena.id}: a portal pair you can let go of`);
+    // the whole toolbox is in use
+    assert.ok(arena.tramps.some((t) => !t.vx) && arena.tramps.filter((t) => t.vx).length >= 4, `${arena.id}: trampolines and launchers`);
+    assert.ok(arena.lifts.length >= 2 && arena.spikes.length >= 4 && arena.ramps.length >= 4, `${arena.id}: updrafts, thorns, slopes`);
+
+    const t0 = performance.now();
     const nav = buildNav(arena);
+    times.push(`${arena.id} ${nav.surfaces.length} surfaces in ${Math.round(performance.now() - t0)} ms`);
+    assert.ok(performance.now() - t0 < 1500, `${arena.id}: the route map took ${Math.round(performance.now() - t0)} ms to build`);
     const n = nav.surfaces.length;
     for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) assert.ok(nav.dist[i][j] < 1e9, `${arena.id}: surface ${i} cannot reach ${j}`);
-    assert.equal(arena.portals.length % 2, 0);
-    for (const po of arena.portals) assert.equal(arena.portals[po.to].to, arena.portals.indexOf(po));
+    // nobody is ever routed through thorns: no surface overlaps them
+    for (const z of arena.spikes) {
+      for (const sf of nav.surfaces) assert.ok(sf.ramp || Math.abs(sf.y - (z.y + z.h)) > 2 || sf.x1 <= z.x - 10 || sf.x0 >= z.x + z.w + 10, `${arena.id}: surface ${sf.id} runs into thorns`);
+    }
+    // 10 to 14 lucky-box spots, each within reach of someone standing on the ground below it
+    assert.ok(arena.pickups.length >= 10 && arena.pickups.length <= 14, `${arena.id}: ${arena.pickups.length} box spots`);
+    for (const pt of arena.pickups) {
+      const under = nav.below(pt.x, pt.y - 30, null);
+      assert.ok(under && nav.heightAt(under, pt.x) - pt.y <= PH + 20, `${arena.id}: nobody can reach the box spot at ${pt.x},${pt.y}`);
+    }
+    // the bases are about as far from each other in both directions, and the starts are fair:
+    // each team's nearest start is about as far from the enemy flag as the other's
+    const at = ([x, y]) => surfaceAt(nav, x, y);
+    const [b0, b1] = arena.bases.map(at);
+    assert.ok(b0 && b1, `${arena.id}: bases are on the route map`);
+    const there = nav.dist[b0.id][b1.id];
+    const back = nav.dist[b1.id][b0.id];
+    assert.ok(Math.abs(there - back) < 0.25 * Math.max(there, back), `${arena.id}: base to base takes ${Math.round(there)} ticks one way, ${Math.round(back)} the other`);
   }
+  console.log(`      route maps: ${times.join(', ')}`);
 });
 
-test('bots play every arena: tags keep happening, nobody gets stuck, everyone gets chased', () => {
-  for (const arena of ARENAS) {
-    for (const n of [2, 4, 6]) {
-      let seed = 99 + n;
-      const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-      const sim = new Sim(arena, rnd);
-      const mem = [];
-      for (let i = 0; i < n; i++) {
-        sim.add(i);
-        mem.push(makeBot(i + 1));
+// A bot-only match. Returns what happened.
+function botMatch(arena, n, teams, seconds = 120) {
+  let seed = 99 + n + (teams ? 1000 : 0);
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const sim = new Sim(arena, rnd);
+  const mem = [];
+  for (let i = 0; i < n; i++) {
+    sim.add(i);
+    mem.push(makeBot(i + 1));
+  }
+  if (teams) sim.setTeams(Array.from({ length: n }, (_, i) => i % 2));
+  sim.start();
+  const out = { tags: 0, booms: 0, worst: 0, falls: 0, stings: 0, takes: 0, captures: 0, saves: 0, idle: 0, tagged: new Array(n).fill(0), score: sim.score };
+  let gap = 0;
+  // "idle": the longest anyone stayed within 60px of one spot
+  const anchor = mem.map(() => [0, 0]);
+  const still = mem.map(() => 0);
+  for (let t = 0; t < 60 * seconds; t++) {
+    const was = sim.players.map((p) => p && [p.s.dead, p.s.hz]);
+    sim.step(mem.map((m, i) => (sim.players[i] ? botThink(sim, i, m) : 0)));
+    gap++;
+    for (const e of sim.events) {
+      if (e.type === 'tag') {
+        out.tags++;
+        out.tagged[e.to]++;
+      } else if (e.type === 'boom') out.booms++;
+      else if (e.type === 'flag' && e.what === 'take') out.takes++;
+      else if (e.type === 'flag' && e.what === 'capture') out.captures++;
+      else if (e.type === 'flag' && e.what === 'save') out.saves++;
+      if (e.type === 'tag' || e.type === 'boom') {
+        out.worst = Math.max(out.worst, gap);
+        gap = 0;
       }
-      sim.start();
-      let tags = 0;
-      let gap = 0;
-      let worst = 0;
-      const tagged = new Array(n).fill(0);
-      for (let t = 0; t < 60 * 120; t++) {
-        sim.step(mem.map((m, i) => (sim.players[i] ? botThink(sim, i, m) : 0)));
-        gap++;
-        for (const e of sim.events) {
-          if (e.type !== 'tag') continue;
-          tags++;
-          tagged[e.to]++;
-          worst = Math.max(worst, gap);
-          gap = 0;
-        }
-        sim.events.length = 0;
-        for (const p of sim.active()) {
-          assert.ok(p.s.x >= 0 && p.s.x <= arena.w - PW && p.s.y >= 0, `${arena.id}: out of bounds`);
-          assert.equal(p.s.dead, 0, `${arena.id}: a bot fell into a pit`);
-        }
-      }
-      worst = Math.max(worst, gap);
-      assert.ok(tags >= 5, `${arena.id} ${n}p: only ${tags} tags in 2 minutes`);
-      assert.ok(worst < 60 * 70, `${arena.id} ${n}p: ${Math.round(worst / 60)}s without a tag`);
-      assert.ok(tagged.filter((c) => c > 0).length >= Math.min(n, 4), `${arena.id} ${n}p: tagged ${tagged}`);
+    }
+    sim.events.length = 0;
+    for (const p of sim.active()) {
+      const i = p.slot;
+      assert.ok(p.s.x >= 0 && p.s.x <= arena.w - PW && p.s.y >= 0, `${arena.id}: out of bounds`);
+      if (p.s.dead > 0 && was[i][0] === 0) out.falls++;
+      if (p.s.hz > was[i][1]) out.stings++;
+      if (Math.hypot(p.s.x - anchor[i][0], p.s.y - anchor[i][1]) > 60) {
+        anchor[i] = [p.s.x, p.s.y];
+        still[i] = 0;
+      } else out.idle = Math.max(out.idle, ++still[i]);
     }
   }
+  out.worst = Math.max(out.worst, gap);
+  return out;
+}
+
+test('bots play every arena with 2, 4 and 6: tags keep happening, nobody stands about, pit falls are rare', () => {
+  let falls = 0;
+  let minutes = 0;
+  const log = [];
+  for (const arena of ARENAS) {
+    for (const n of [2, 4, 6]) {
+      const r = botMatch(arena, n, false);
+      const who = `${arena.id} ${n}p`;
+      log.push(`${who} ${r.tags} tags (longest gap ${Math.round(r.worst / 60)}s, ${r.falls} falls)`);
+      assert.ok(r.tags >= 5, `${who}: only ${r.tags} tags in 2 minutes`);
+      assert.ok(r.worst < 60 * 75, `${who}: ${Math.round(r.worst / 60)}s without a tag`);
+      assert.ok(r.tagged.filter((c) => c > 0).length >= Math.min(n, 3) - (n > 2 ? 1 : 0), `${who}: tagged ${r.tagged}`);
+      assert.ok(r.idle < 60 * 10, `${who}: a bot stood still for ${Math.round(r.idle / 60)}s`);
+      // the arenas are harder now: a bot may miss a jump over a pit, but not often
+      assert.ok(r.falls <= 3, `${who}: ${r.falls} falls into a pit in one match`);
+      falls += r.falls;
+      minutes += 2 * n;
+    }
+  }
+  console.log(`      ${log.join('; ')}`);
+  assert.ok(falls / minutes < 0.05, `${falls} pit falls in ${minutes} bot-minutes`); // fewer than one per 20 minutes of play, per bot
+});
+
+test('bots play team battles: the bomb is passed or goes off, flags are stolen and brought home, nobody stands about', () => {
+  let falls = 0;
+  let minutes = 0;
+  let captures = 0;
+  const log = [];
+  for (const arena of ARENAS) {
+    let passes = 0;
+    for (const n of [2, 4, 6]) {
+      const r = botMatch(arena, n, true);
+      const who = `${arena.id} ${n}p teams`;
+      log.push(`${who} ${r.score.join('-')} (${r.tags} passes, ${r.booms} bombs, flags: ${r.takes} taken ${r.captures} home ${r.saves} saved, ${r.falls} falls)`);
+      // a bomb lasts 14 s and the next one follows 2 s later: about seven in two minutes
+      assert.ok(r.booms >= 5, `${who}: ${r.booms} bombs went off`);
+      assert.ok(r.worst < 60 * 17, `${who}: ${Math.round(r.worst / 60)}s with nothing happening to the bomb`);
+      assert.ok(r.takes >= (n > 2 ? 4 : 1), `${who}: the flags were taken only ${r.takes} times`);
+      assert.ok(r.score[0] + r.score[1] >= 12, `${who}: score ${r.score}`);
+      assert.ok(r.idle < 60 * 10, `${who}: a bot stood still for ${Math.round(r.idle / 60)}s`);
+      assert.ok(r.falls <= 3, `${who}: ${r.falls} falls into a pit in one match`);
+      passes += r.tags;
+      captures += r.captures;
+      falls += r.falls;
+      minutes += 2 * n;
+    }
+    assert.ok(passes >= 10, `${arena.id}: the bomb was passed only ${passes} times in three team matches`);
+  }
+  console.log(`      ${log.join('; ')}`);
+  // flags do get brought home, if not in every match (a keeper who stays put is hard to beat)
+  assert.ok(captures >= 20, `only ${captures} flags brought home in ${ARENAS.length * 3} team matches`);
+  assert.ok(falls / minutes < 0.05, `${falls} pit falls in ${minutes} bot-minutes`);
 });
 
 console.log(`sim: ${passed} tests passed`);

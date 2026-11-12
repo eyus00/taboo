@@ -54,9 +54,14 @@ export function drive(nav, e, s, mem, tx = e.x) {
     mem.rejump = 0;
     switch (e.type) {
       case 'walk':
-        // up a slope from flat ground: you have to walk into its low end from outside
-        if (e.foot) bits = dirBits((cx - tx) * e.dir > -6 ? -e.dir : e.dir);
-        else bits = walk(a, cx, cx + e.dir * 400);
+        if (e.foot) {
+          // up a slope from flat ground: you have to walk into its low end from
+          // outside, so if we are under it (or too close for a run-up), back out first
+          const off = (cx - tx) * e.dir;
+          bits = dirBits(off > 24 || (off > -8 && s.vx * e.dir <= 0.1) ? -e.dir : e.dir);
+          // a steep one can slip past underneath at a full run: ease off for the last step
+          if (e.steep && off > -24 && off <= 2 && Math.abs(s.vx) > 180) bits = 0;
+        } else bits = walk(a, cx, cx + e.dir * 400);
         break;
       case 'fall':
         bits = walk(a, cx, tx + e.dir * 60);
@@ -73,11 +78,12 @@ export function drive(nav, e, s, mem, tx = e.x) {
         bits = Math.abs(cx - tx) > NEAR ? walk(a, cx, tx) : IN_JUMP;
         break;
       case 'drop':
-        bits = Math.abs(cx - tx) > NEAR ? walk(a, cx, tx) : IN_DOWN;
+        // (stop first: dropping through at a run drifts a long way before we are clear of the ledge)
+        bits = Math.abs(cx - tx) > NEAR ? walk(a, cx, tx) : Math.abs(s.vx) > 70 ? 0 : IN_DOWN;
         break;
       case 'portal':
         // a portal we just came out of will not take us until we step right out of it
-        bits = s.tp > 0 ? dirBits(-e.dir) : dirBits(tx - cx) || dirBits(e.dir);
+        bits = s.tp > 0 ? dirBits(-e.dir) : Math.abs(tx - cx) > 2 ? walk(a, cx, tx) : dirBits(e.dir);
         break;
       case 'lift':
         if (e.lip != null) {
@@ -87,7 +93,7 @@ export function drive(nav, e, s, mem, tx = e.x) {
         else bits = e.jump ? IN_JUMP : 0;
         break;
       default: // trampoline, launcher: just walk into it
-        bits = dirBits(tx - cx) || dirBits(e.dir);
+        bits = Math.abs(tx - cx) > 2 ? walk(a, cx, tx) : dirBits(e.dir);
     }
     if (mem.pressed & IN_JUMP) bits &= ~IN_JUMP; // a jump only counts when the button goes down
     return bits;
@@ -100,8 +106,9 @@ export function drive(nav, e, s, mem, tx = e.x) {
   const by = nav.heightAt(b, aim);
   const low = feet > by + 2 - (e.over || 0); // still below where we are going
   const z = nav.liftAt(cx, feet);
-  if (e.type === 'lift' && low) {
+  if (e.type === 'lift' && low && !(z && s.vy > -60 && feet < z.y + 40)) {
     // get into the column and stay there until it has carried us high enough
+    // (unless we are bobbing at the top of it: then it is time to jump out)
     const d = tx - (cx + coast);
     bits = Math.abs(d) > 6 ? dirBits(d) : 0;
     if (!z && s.vy < 0 && mem.pressed & IN_JUMP) bits |= IN_JUMP;
@@ -116,7 +123,7 @@ export function drive(nav, e, s, mem, tx = e.x) {
   if (mem.rejump > 0) {
     if (--mem.rejump === 0) bits |= IN_JUMP;
     else bits &= ~IN_JUMP;
-  } else if (s.air > 0 && !z && ((low && s.vy > -90) || (s.vy > 0 && feet > by - 36 && Math.abs(aim - cx) > 40))) {
+  } else if (s.air > 0 && (!z || feet < z.y + 40) && ((low && s.vy > -90) || (s.vy > 0 && feet > by - 36 && Math.abs(aim - cx) > 40))) {
     mem.rejump = 2;
     bits &= ~IN_JUMP;
   }
@@ -145,9 +152,9 @@ export function walk(surf, cx, x) {
 // How far each kind of move carries in open air, by height difference. Worked
 // out once by trying it; used to avoid testing moves that cannot possibly work.
 // ----------------------------------------------------------------------------
-const STEP = 40;
+const STEP = 80;
 const RISE_MAX = 720;
-const DROP_MAX = 1480;
+const DROP_MAX = 1440;
 let REACH = null;
 
 function measureReach() {
@@ -163,6 +170,10 @@ function measureReach() {
     const a = { id: 0, x0: 19002, x1: pad ? 19900 : 19998, y: y0, oneway: true };
     const tx = pad ? 19960 : 19998;
     for (let rise = RISE_MAX; rise >= -DROP_MAX; rise -= STEP) {
+      if ((kind === 'fall' && rise >= 0) || (kind === 'back' && rise < 0) || (kind === 'hop' && rise > 400)) {
+        kinds[kind].push(-Infinity); // cannot be done, or never asked for
+        continue;
+      }
       const far = kind === 'back' ? 100 : 39000;
       const b = { id: 1, x0: far, x1: far + 100, y: y0 - rise, oneway: true };
       const nav = { surfaces: [a, b], heightAt: (s) => s.y, liftAt: () => null };
@@ -211,6 +222,15 @@ export function buildNav(arena) {
   arena.portals.forEach((p, i) => zones.push({ y0: p.y + p.h, y1: p.y + p.h, x0: p.cx - 32, x1: p.cx + 32, kind: 'portal', i }));
   arena.lifts.forEach((z, i) => zones.push({ y0: z.y + 2, y1: z.y + z.h + PH - 2, x0: z.x - HALF - 4, x1: z.x + z.w + HALF + 4, kind: 'lift', i }));
   const zoneAt = (x, y) => zones.find((z) => y >= z.y0 - 1 && y <= z.y1 + 1 && x > z.x0 - 3 && x < z.x1 + 3);
+  // Where the low end of a slope rests on the ground, walking into it takes you
+  // up the slope. On a solid block you can hold down to pass underneath; on a
+  // thin ledge that would drop you through it, so there the ground is split in
+  // two at the foot and can only be walked across in the downhill direction.
+  // (`reach`: how far up the slope its end still catches a walker's feet)
+  const feet = arena.ramps.map((r) => {
+    const reach = (8 * (r.x1 - r.x0)) / Math.abs(r.y1 - r.y0) + 4;
+    return r.y0 > r.y1 ? { x: r.x0, y: r.y0, up: 1, reach } : { x: r.x1, y: r.y1, up: -1, reach };
+  });
 
   // 1. Standing surfaces: the top of every platform, minus the parts where a
   //    solid block or one of those zones is in the way. x0..x1 is where a
@@ -222,17 +242,18 @@ export function buildNav(arena) {
       segs = cut(segs, b.x - HALF, b.x + b.w + HALF);
     }
     for (const z of zones) if (p.y >= z.y0 - 1 && p.y <= z.y1 + 1) segs = cut(segs, z.x0, z.x1);
+    if (p.oneway) for (const f of feet) if (f.y <= p.y + 0.5 && p.y - f.y <= 8 && f.x > p.x + 18 && f.x < p.x + p.w - 18) segs = cut(segs, f.x - (f.up > 0 ? 1 : f.reach), f.x + (f.up > 0 ? f.reach : 1));
     // an end is "open" if you can walk or jump off it
     const blocked = (x) => x <= HALF + 1 || x >= arena.w - HALF - 1 || solids.some((b) => b !== p && b.y < p.y && b.y + b.h > p.y - PH + 1 && x >= b.x - HALF - 3 && x <= b.x + b.w + HALF + 3);
     for (const [x0, x1] of segs) {
-      if (x1 - x0 < 20) continue;
+      if (x1 - x0 < 12) continue;
       const n = Math.max(1, Math.ceil((x1 - x0) / PIECE));
       const run = runs++;
-      const feet = [];
+      const under = []; // feet of slopes on this ground
       for (let i = 0; i < n; i++) {
         surfaces.push({
           id: surfaces.length, run, y: p.y, x0: x0 + ((x1 - x0) * i) / n, x1: x0 + ((x1 - x0) * (i + 1)) / n,
-          oneway: p.oneway, ramp: null, wall: p.oneway ? null : [p.x, p.x + p.w], feet, edges: [],
+          oneway: p.oneway, ramp: null, wall: p.oneway ? null : [p.x, p.x + p.w], feet: under, edges: [],
           openL: i === 0 && !blocked(x0), openR: i === n - 1 && !blocked(x1), endL: i === 0, endR: i === n - 1,
         });
       }
@@ -308,12 +329,18 @@ export function buildNav(arena) {
     if (!p.ground || p.orb > 0) return null;
     const mem = { rejump: 0, pressed: 0 };
     let left = false;
+    let top = p.y; // the highest we have been, and when: hanging about in the air means it is not going to work
+    let topT = 0;
     for (let t = 1; t <= limit; t++) {
       const bits = drive(nav, e, p, mem, e.x);
       stepPlayer(p, bits, arena);
       mem.pressed = bits;
       steps++;
       if (p.dead > 0 || p.stun > 0 || p.hz > 0) return null;
+      if (p.y < top - 1) {
+        top = p.y;
+        topT = t;
+      } else if (t - topT > 45 && !p.ground && p.orb === 0 && Math.abs(p.vy) < 90) return null;
       if (p.orb > 0) {
         if (e.type !== 'portal') return null;
         left = true;
@@ -323,7 +350,7 @@ export function buildNav(arena) {
         left = true;
         continue;
       }
-      const s = surfaceAt(nav, p.x + HALF, p.y + PH, p.gk === 1);
+      const s = surfaceAt(nav, p.x + HALF, p.y + PH, p.gk);
       if (!left && (!s || s.run === a.run)) continue; // still on the way to the take-off
       if (!s || s.run !== b.run || s === a) return null;
       return { to: s, ticks: t, x: p.x + HALF };
@@ -356,11 +383,13 @@ export function buildNav(arena) {
       for (const s of surfaces) {
         if (s.ramp === r || Math.abs(heightAt(s, x) - y) > 12) continue;
         if (x < s.x0 - 46 || x > s.x1 + 46) continue;
-        const side = s.x0 > x ? 1 : s.x1 < x ? -1 : dir;
+        const side = s.x0 < x - 4 && s.x1 > x + 4 ? dir : mid(s) > x ? 1 : -1; // which way the flat ground lies
         const low = y >= Math.max(r.y0, r.y1) - 1; // the bottom end: you have to walk INTO it to go up
-        add(end, s, { type: 'walk', dir: side, cost: 8 });
-        add(s, end, { type: 'walk', dir: -dir, x, foot: low && !s.ramp, cost: 8 + Math.abs(mid(s) - x) / WALK });
-        if (low && !s.ramp && !s.oneway) s.feet.push({ x, up: -dir });
+        // walking off the end of a slope carries you on in the same direction - never back underneath it
+        if (side === dir) add(end, s, { type: 'walk', dir, cost: 8 });
+        const steep = Math.abs((r.y1 - r.y0) / (r.x1 - r.x0)) > 0.85;
+        if (low || side === dir) add(s, end, { type: 'walk', dir: -dir, x, foot: low && !s.ramp, steep, cost: 8 + Math.abs(mid(s) - x) / WALK });
+        if (low && !s.ramp && !s.oneway && !s.feet.some((f) => f.x === x)) s.feet.push({ x, up: -dir });
         if (dir < 0) end.joinL = true;
         else end.joinR = true;
       }
@@ -372,12 +401,66 @@ export function buildNav(arena) {
     for (const b of surfaces) {
       if (b.ramp || a.run === b.run || Math.abs(a.y - b.y) > 6) continue;
       const gap = b.x0 - a.x1;
-      if (gap < -1 || gap > 8 || !a.endR || !b.endL) continue; // (anything wider is a hole: that takes a hop)
-      add(a, b, { type: 'walk', dir: 1, cost: (mid(b) - mid(a)) / WALK });
-      add(b, a, { type: 'walk', dir: -1, cost: (mid(b) - mid(a)) / WALK });
+      const foot = feet.find((f) => f.x > a.x1 - 3 && f.x < b.x0 + 3 && Math.abs(f.y - a.y) <= 8);
+      if (gap < -1 || gap > (foot ? foot.reach + 4 : 8) || !a.endR || !b.endL) continue; // (anything wider is a hole: that takes a hop)
+      if (!foot || foot.up < 0) add(a, b, { type: 'walk', dir: 1, cost: (mid(b) - mid(a)) / WALK });
+      if (!foot || foot.up > 0) add(b, a, { type: 'walk', dir: -1, cost: (mid(b) - mid(a)) / WALK });
       a.joinR = b.joinL = true;
     }
   }
+
+  // Before trying a move out, a quick look at whether there is any way through
+  // at all: a coarse grid of the solid blocks, and a flood fill from the
+  // take-off to the landing that may wander a little way either side and a
+  // jump's height above. Walls and ceilings rule out most hopeless moves.
+  const G = 40;
+  const cols = Math.ceil(arena.w / G);
+  const rows = Math.ceil(arena.h / G);
+  const wallAt = new Uint8Array(cols * rows);
+  for (const q of solids) {
+    for (let r = Math.max(0, Math.round(q.y / G)); r < Math.min(rows, Math.round((q.y + q.h) / G)); r++) {
+      for (let c = Math.max(0, Math.round(q.x / G)); c < Math.min(cols, Math.round((q.x + q.w) / G)); c++) wallAt[r * cols + c] = 1;
+    }
+  }
+  const seen = new Uint16Array(cols * rows * 2);
+  const queue = new Int32Array(cols * rows * 2);
+  let stamp = 0;
+  //   arc: the move is one rise and one fall (a trampoline, a launcher, an
+  //   updraft): once the way through has started down it may not go up again
+  const wayThrough = (xa, ya, xb, yb, side = 3, up = 9, arc = false) => {
+    const ca = clamp(Math.floor(xa / G), 0, cols - 1);
+    const ra = clamp(Math.floor((ya - 20) / G), 0, rows - 1);
+    const cb = clamp(Math.floor(xb / G), 0, cols - 1);
+    const rb = clamp(Math.floor((yb - 20) / G), 0, rows - 1);
+    const c0 = Math.max(0, Math.min(ca, cb) - side);
+    const c1 = Math.min(cols - 1, Math.max(ca, cb) + side);
+    const r0 = Math.max(0, Math.min(ra, rb) - up);
+    const r1 = Math.min(rows - 1, Math.max(ra, rb) + 1);
+    if (++stamp > 65000) {
+      seen.fill(0);
+      stamp = 1;
+    }
+    const goal = rb * cols + cb;
+    const n = cols * rows; // cells n.. are the same cells again, "on the way down"
+    let head = 0;
+    let tail = 0;
+    queue[tail++] = ra * cols + ca;
+    seen[ra * cols + ca] = stamp;
+    while (head < tail) {
+      const q = queue[head++];
+      const down = q >= n ? n : 0;
+      const k = q - down;
+      if (k === goal) return true;
+      const c = k % cols;
+      const r = (k - c) / cols;
+      if (c > c0 && !wallAt[k - 1] && seen[q - 1] !== stamp) seen[(queue[tail++] = q - 1)] = stamp;
+      if (c < c1 && !wallAt[k + 1] && seen[q + 1] !== stamp) seen[(queue[tail++] = q + 1)] = stamp;
+      if (!down && r > r0 && !wallAt[k - cols] && seen[k - cols] !== stamp) seen[(queue[tail++] = k - cols)] = stamp;
+      const under = k + cols + (arc ? n : down);
+      if (r < r1 && !wallAt[k + cols] && seen[under] !== stamp) seen[(queue[tail++] = under)] = stamp;
+    }
+    return false;
+  };
 
   // 2b. Off the ends: step off, or jump - across a gap, over thorns, up onto a block
   for (const a of surfaces) {
@@ -388,6 +471,10 @@ export function buildNav(arena) {
       if (tx <= HALF + 1 || tx >= arena.w - HALF - 1) continue; // the wall of the arena
       const ay = heightAt(a, tx);
       const wet = zoneAt(tx + dir * 8, ay); // what the ground turns into right here, if anything
+      // under a low ceiling a jump is cut short: how far can a level hop get from here?
+      let room = 1e9;
+      for (const q of solids) if (q.x < tx + HALF && q.x + q.w > tx - HALF && q.y + q.h <= ay - PH + 1) room = Math.min(room, ay - PH - (q.y + q.h));
+      const levelReach = room < 200 ? WALK * 120 * (0.14 + Math.sqrt((2 * room) / 1300)) + 24 : 1e9;
       for (const list of byRun) {
         if (list[0].run === a.run) continue;
         // the nearest piece of that stretch that is within reach at all
@@ -399,13 +486,17 @@ export function buildNav(arena) {
           const gap = (ax - tx) * dir;
           if (gap < -20 || gap >= pickGap) continue;
           const rise = ay - heightAt(b, ax);
+          if (rise < -6) {
+            const first = below(ax, ay - 4, a); // lower down: only if nothing else would catch us first
+            if (!first || first.run !== b.run) continue;
+          }
           let way = '';
           if (!open) {
             if (rise > PH - 2 && gap <= 70 && gap <= reachOf('hop', rise)) way = 'hop'; // up the wall we are standing against
           } else if (rise < -10 && gap <= reachOf('fall', rise) + 6) way = 'fall';
           else if (Math.abs(rise) <= 6 && wet && wet.kind === 'lift' && gap < 200) way = 'fall'; // wade through the updraft
           else if (gap <= reachOf('hop', rise) + 6) way = 'hop';
-          if (!way) continue;
+          if (!way || (Math.abs(rise) <= 20 && gap > levelReach) || !wayThrough(tx, ay, ax, ay - rise, 1)) continue;
           pick = b;
           pickGap = gap;
           how = way;
@@ -501,6 +592,7 @@ export function buildNav(arena) {
     if (!sides.length) return;
     const sgn = Math.sign(t.vx);
     const py = t.y + t.h;
+    if (sgn) sides.sort((p, q) => q[1] * sgn - p[1] * sgn); // a launcher is tried from the side it throws away from
     let targets;
     if (!sgn) targets = nearestPieces(t.cx).filter((b) => py - b.y >= 40 && Math.abs(clamp(t.cx, b.x0 + 14, b.x1 - 14) - t.cx) <= reachOf('tramp', py - heightAt(b, clamp(t.cx, b.x0, b.x1))) + 10);
     else {
@@ -515,6 +607,8 @@ export function buildNav(arena) {
     const [first, firstDir] = sides[0];
     for (const b of targets) {
       if (b.run === first.run) continue;
+      const bx = clamp(t.cx, b.x0 + 14, b.x1 - 14);
+      if (!wayThrough(t.cx, py, bx, heightAt(b, bx), 4, sgn ? 12 : 18, true)) continue;
       const e = { type: 'pad', x: t.cx, dir: firstDir, pad: i };
       const got = attempt(first, b, e, clamp(t.cx - firstDir * 60, first.x0, first.x1), 320);
       if (!got) continue;
@@ -547,6 +641,8 @@ export function buildNav(arena) {
       if (zoneAt(lip + dir * 8, sy)) continue;
       ins.push([s, { type: 'lift', x: zx, dir, lip, jump: gap > 40 }, lip - dir * 4]);
     }
+    ins.sort((p, q) => heightAt(q[0], q[2]) - heightAt(p[0], p[2])); // lowest way in first
+    const dud = new Set();
     for (const [a, tpl, start] of ins) {
       const ay = heightAt(a, start);
       for (const b of nearestPieces(zx)) {
@@ -556,7 +652,14 @@ export function buildNav(arena) {
         const off = Math.abs(ax - zx);
         if (by > ay - 70 || by < lz.y - 300 || off > 380) continue;
         if (!b.oneway && off === 0) continue; // cannot rise through a solid block
-        if (!tryEdge(a, b, { ...tpl }, start, 400) && off > 150 && by > lz.y + 100) tryEdge(a, b, { ...tpl, over: 110 }, start, 400);
+        // a ceiling over the column below where we want to get off? no way round from it to the landing?
+        if (solids.some((q) => q.x < zx + HALF && q.x + q.w > zx - HALF && q.y + q.h > by - 60 && q.y + q.h <= ay - PH)) continue;
+        if (!wayThrough(zx, by, ax, by, 3, 8, true) || dud.has(b.id)) continue;
+        if (tryEdge(a, b, { ...tpl }, start, 400)) continue;
+        // into an opening in the wall of a shaft: ride up the side of the column nearest to it
+        if (off > 30 && off < 160 && tryEdge(a, b, { ...tpl, x: zx + Math.sign(ax - zx) * (lz.w / 2 + HALF - 10) }, start, 400)) continue;
+        if (off > 150 && by > lz.y + 100 && tryEdge(a, b, { ...tpl, over: 110 }, start, 400)) continue;
+        dud.add(b.id); // the ride is the same from every way in: no need to try this landing again from higher up
       }
     }
   });
@@ -618,23 +721,27 @@ export function buildNav(arena) {
 }
 
 // The surface a grounded player is standing on.
-// (solid = standing on a solid block, which rules out the slopes that end on it)
-export function surfaceAt(nav, cx, feet, solid = false) {
+//   gk - what the physics says is underfoot (state.gk): 1 a solid block, which
+//        rules out ledges and slopes; 2 a thin ledge or a slope, which rules out
+//        blocks; 0 if not known
+// Where a slope runs out onto a thin ledge, the ledge wins.
+export function surfaceAt(nav, cx, feet, gk = 0) {
   let best = null;
   let bestD = 40;
+  let slope = null;
   for (const s of nav.surfaces) {
     if (s.ramp) {
-      if (solid || cx < s.lo || cx > s.hi || Math.abs(rampY(s.ramp, cx) - feet) > 5) continue;
-      return s;
+      if (!slope && gk !== 1 && cx >= s.lo && cx <= s.hi && Math.abs(rampY(s.ramp, cx) - feet) <= 5) slope = s;
+      continue;
     }
-    if (Math.abs(s.y - feet) > 3) continue;
+    if (Math.abs(s.y - feet) > 1 || (gk === 1 && s.oneway) || (gk === 2 && !s.oneway)) continue; // (standing on it means exactly on it)
     const d = cx < s.x0 ? s.x0 - cx : cx > s.x1 ? cx - s.x1 : 0;
     if (d < bestD) {
       bestD = d;
       best = s;
     }
   }
-  return best;
+  return slope && bestD > 0 ? slope : best;
 }
 
 // The surface nearest to a point (for "where is that player / item, roughly").

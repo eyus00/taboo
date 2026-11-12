@@ -48,16 +48,14 @@ function reel(kind, label, cells, landing, cell, spin, start, stop) {
   const strip = el('div', 'strip');
   let n = 1;
   if (spin && cells.length > 1) {
-    // enough cells to blur past, never the same one twice running, the landing one last but one
+    // enough cells to blur past; worked out backwards from the one it lands on,
+    // so the same cell never comes twice running (with two players they simply take turns)
     n = Math.max(9, Math.min(26, Math.round((stop - start) / 105)));
-    const run = [];
-    let pool = [];
-    while (run.length < n - 1) {
-      if (!pool.length) pool = shuffled(cells);
-      const next = pool.pop();
-      if (next !== run[run.length - 1] && !(run.length === n - 2 && next === landing)) run.push(next);
+    const run = [landing];
+    while (run.length < n) {
+      const others = cells.filter((c) => c !== run[0]);
+      run.unshift(others[Math.floor(Math.random() * others.length)]);
     }
-    run.push(landing);
     run.push(cells.find((c) => c !== landing) || landing); // what peeks in when the reel overshoots
     for (const c of run) strip.append(cell(c));
     const total = run.length;
@@ -148,12 +146,13 @@ function build(root, info, opts, T) {
       const chip = el('i', 'chip');
       chip.style.background = opts.colorOf ? opts.colorOf(p.slot) : '#888';
       d.append(chip, el('b', '', p.name));
+      if (p.name.length > 8) d.classList.add('long');
       if (team) d.style.setProperty('--side', TEAM_COLORS[info.teams[p.slot]] || 'transparent');
       return d;
     };
     const land = players.find((p) => p.slot === info.it);
-    const w = reel(team ? 'who side' : 'who', team ? 'First bomb' : leader ? 'The leader is it' : 'Who is it?', players, land, whoCell, spinW, start + 180, tW);
-    stamp(w, team ? 'dark big' : 'seal big', spinW ? tW + 30 : 0, team ? '<svg class="ic" aria-hidden="true"><use href="#i-bomb" /></svg>' : '鬼');
+    const w = reel(team ? 'who sided' : 'who', team ? 'First bomb' : leader ? 'The leader is it' : 'Who is it?', players, land, whoCell, spinW, start + 180, tW);
+    stamp(w, team ? 'dark big' : 'seal big', spinW ? tW + 30 : 0, team ? '<svg class="ic" aria-hidden="true"><use href="#i-bomb" /></svg>' : '\u9b3c');
     rack.append(w);
     const mine = info.it === opts.me;
     if (team) verdict = mine ? 'You carry the first bomb!' : `${land.name} carries the first bomb`;
@@ -177,11 +176,16 @@ function build(root, info, opts, T) {
   }
   if (verdict) {
     const v = el('p', 'verdict', verdict);
+    // the news waits for the reel to stop - or, when nothing spins for it, for the doors to open
     if (spinW) v.style.setProperty('--at', `${Math.round(tW + 60)}ms`);
+    else if (doors) v.style.setProperty('--at', `${Math.round(tOpen + 380)}ms`);
     else v.classList.add('still');
     board.append(v);
   }
   root.append(board);
+  // the same news in words, for anyone who cannot see the reels
+  root.setAttribute('role', 'status');
+  root.setAttribute('aria-label', `Arena: ${landA.name}. Style: ${landS.name}.${verdict ? ` ${verdict}` : ''}`);
 
   // --- a few clicks: each reel coming to rest, the last one slowing down, the stamp ---
   const sfx = opts.sfx;

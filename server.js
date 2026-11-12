@@ -1,4 +1,4 @@
-// You're It! - game server.
+// Onigokko - game server.
 //
 // One Node process does everything: serves the static site, runs the rooms,
 // and is the single source of truth for every match (who is "it", who touched
@@ -736,7 +736,7 @@ io.on('connection', (socket) => {
 });
 
 http.listen(PORT, () => {
-  console.log(`You're It! running on http://localhost:${PORT}`);
+  console.log(`Onigokko running on http://localhost:${PORT}`);
 });
 
 process.on('SIGTERM', () => {

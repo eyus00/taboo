@@ -76,7 +76,8 @@
 .draw .reel.who .cell { flex-direction: row; align-items: center; justify-content: center; gap: calc(var(--cell) * 0.09); padding: 0 calc(var(--cell) * 0.12); }
 .draw .reel.who .chip { flex: none; width: calc(var(--cell) * 0.11); height: calc(var(--cell) * 0.46); }
 .draw .reel.who b { font: 400 calc(var(--cell) * 0.31)/1.15 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0.1em 0.16em 0 0; }
-.draw .reel.side .cell { box-shadow: inset 0 calc(var(--cell) * -0.07) 0 var(--side); }
+.draw .reel.who .long b { font-size: calc(var(--cell) * 0.225); }
+.draw .reel.sided .cell { box-shadow: inset 0 calc(var(--cell) * -0.07) 0 var(--side); }
 
 /* the seal that lands on a reel once it has stopped */
 .draw .stamp {

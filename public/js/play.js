@@ -3,7 +3,7 @@
 // touch controls, and turning game events into pictures, words and sound.
 //
 // The menus (main.js) only call a handful of things here:
-//   play.init({ socket, isTouch, onStart(info), onEnd(results) })
+//   play.init({ socket, isTouch, onStart(info), onEnd(results), onPause() })
 //   play.practice(settings, name)        a match against bots
 //   play.round(msg, mySlot)              an online round is starting
 //   play.finish() / play.stop() / play.hold(true|false)

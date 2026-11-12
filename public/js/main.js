@@ -1,12 +1,17 @@
-// You're It! - everything outside the match itself: menus, lobby, heads-up
-// display, results. One screen is visible at a time; every screen can be
-// driven with the keyboard (arrows + Enter, Esc to go back).
+// Onigokko - everything outside the match itself: the title scroll, rooms,
+// match setup, how to play, the draw before a round, results.
+//
+// On a wide screen the title scroll stays on the left and whatever you open
+// (rooms, match setup, how to play) opens beside it; on a narrow one there is
+// one panel at a time. Every screen can be driven with the keyboard alone
+// (arrows + Enter, Esc to go back, a letter or number for most things).
 
-import { MODES, DURATIONS, DEFAULT_DURATION, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS } from '/shared/config.js';
-import { ARENAS, arenaById } from '/shared/arenas.js';
+import { MODES, DURATIONS, DEFAULT_DURATION, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, BOMB_FUSE_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, ITEM_LOCK_TICKS } from '/shared/config.js';
+import { ARENAS } from '/shared/arenas.js';
 import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
 import { loadTheme } from './themes/index.js';
+import { draw } from './spinner.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -46,9 +51,11 @@ const socket = io({ tryAllTransports: true });
 play.init({
   socket,
   isTouch,
-  onStart() {
+  // a round is starting: show the match, and over it the draw for arena, style and who is it
+  onStart(info) {
     kind = play.kind;
     show('game');
+    draw.show(play.el.spin, info, { sfx, colorOf: (slot) => play.colorOf(slot), me: play.mySlot(), prefer: [cardTheme] });
   },
   onEnd: (res) => showResults(res),
   onPause: () => openPause(),
@@ -56,14 +63,17 @@ play.init({
 const { renderer, input, sfx, net } = play;
 
 let myName = cleanName(store.get('tag.name'));
-let screen = ''; // name | home | join | lobby | game
-let overlay = ''; // '' | results | pause | help
-let helpFrom = '';
-let kind = 'online'; // what the lobby screen is showing: online | practice
+let screen = ''; // name | home | game
+let panel = ''; // what is open beside the title scroll: '' | rooms | lobby | help
+let overlay = ''; // over a match: '' | results | pause | help
+let helpFrom = ''; // what How to play goes back to
+let kind = 'online'; // what match setup is showing: online | practice
 let room = null; // latest room state from the server
 let afterName = null;
 let lastResults = null;
 let nextTimer = 0;
+let cardTheme = DEFAULT_THEME; // the style the arena cards were last painted in
+let demos = null; // the live demos on the How to play page (loaded when it is first opened)
 
 const practice = { mode: 'potato', arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true, bots: 3 };
 try {
@@ -92,48 +102,89 @@ for (let i = 0; i < 14; i++) {
   $('petals').append(p);
 }
 
+// The name in kana is a flourish: only shown where the device can draw it.
+(() => {
+  try {
+    const c = document.createElement('canvas');
+    c.width = c.height = 24;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const ink = (ch) => {
+      g.clearRect(0, 0, 24, 24);
+      g.font = `18px ${getComputedStyle(document.querySelector('.kana')).fontFamily}`;
+      g.textBaseline = 'top';
+      g.fillText(ch, 2, 2);
+      return g.getImageData(0, 0, 24, 24).data.join();
+    };
+    const blank = ink(' ');
+    const kana = ink(String.fromCharCode(0x3054)); // hiragana GO
+    // a glyph nobody has: if the kana looks the same as that, it is only a placeholder box
+    if (kana === blank || kana === ink(String.fromCharCode(0xffff))) document.body.classList.add('no-kana');
+  } catch {}
+})();
+
 // ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
-const SCREENS = ['name', 'home', 'join', 'lobby'];
-const OVERLAYS = ['results', 'pause', 'help'];
+const PANELS = ['rooms', 'lobby', 'help'];
 
-function show(name) {
+// the name of what is in front right now (also what the automated checks ask for)
+const top = () => overlay || (screen === 'home' ? panel || 'home' : screen);
+
+function show(name, beside = '') {
   screen = name;
+  panel = name === 'home' ? beside : '';
   if (name !== 'game') paintScene();
-  for (const s of SCREENS) $(`s-${s}`).hidden = s !== name;
+  $('s-name').hidden = name !== 'name';
+  $('s-home').hidden = name !== 'home';
+  $('home-name').textContent = myName;
   $('game').hidden = name !== 'game';
   document.body.classList.toggle('in-game', name === 'game');
+  document.body.classList.toggle('has-panel', !!panel);
+  if (name !== 'game') {
+    play.stop();
+    draw.clear();
+  }
+  // which entry of the title scroll is open
+  $('btn-friends').toggleAttribute('aria-current', panel === 'rooms' || (panel === 'lobby' && kind === 'online'));
+  $('btn-practice').toggleAttribute('aria-current', panel === 'lobby' && kind === 'practice');
+  $('btn-help').toggleAttribute('aria-current', panel === 'help');
   setOverlay('');
-  if (name !== 'game') play.stop();
 }
 
 function setOverlay(name) {
   overlay = name;
-  for (const o of OVERLAYS) $(`s-${o}`).hidden = o !== name;
+  $('s-results').hidden = name !== 'results';
+  $('s-pause').hidden = name !== 'pause';
+  for (const p of PANELS) $(`s-${p}`).hidden = !(panel === p || (p === 'help' && name === 'help'));
+  $('s-help').classList.toggle('over', name === 'help');
   input.active = screen === 'game' && !name;
   if (!input.active) input.clear();
+  // the demos only run while How to play is in front
+  if (demos) {
+    if (top() === 'help') demos.start();
+    else demos.stop();
+  }
   focusFirst();
 }
 
-const topRoot = () => $(`s-${overlay || screen}`);
+const topRoot = () => $(`s-${top()}`);
 
-function focusFirst() {
+function focusFirst(prefer) {
   const root = topRoot();
   if (!root) return document.activeElement?.blur();
-  const target = root.querySelector('[data-autofocus]:not([hidden]):not(:disabled)');
+  const target = (prefer && !prefer.disabled && prefer.offsetParent !== null && prefer) || root.querySelector('[data-autofocus]:not([hidden]):not(:disabled)');
   // on a phone, focusing a button only leaves a stray outline; text fields still get focus
   if (target && (!isTouch || target.tagName === 'INPUT')) target.focus({ preventScroll: true });
   else document.activeElement?.blur();
 }
 
-// Up / down walk through the controls of the current screen.
+// Up / down walk through the controls of whatever is in front.
 function moveFocus(dir) {
   const root = topRoot();
   if (!root) return;
   // a group of choices (a row of rules, a grid of cards) counts as one stop; left / right move inside it
   const stops = [...root.querySelectorAll('button, input[type="text"], .seg, .cards')].filter((e) => {
-    if (e.closest('.numpad') || e.closest('.locked')) return false;
+    if (e.closest('.numpad') || e.closest('.locked') || e.closest('.demo')) return false;
     return !e.disabled && e.offsetParent !== null;
   });
   if (!stops.length) return;
@@ -182,6 +233,7 @@ function toggleSound(say) {
   if (say) toast(`Sound ${sfx.muted ? 'off' : 'on'}`);
 }
 
+const canFullscreen = !!document.documentElement.requestFullscreen;
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen?.();
   else document.documentElement.requestFullscreen?.().catch(() => {});
@@ -195,12 +247,21 @@ function toast(text) {
   setTimeout(() => t.remove(), 3000);
 }
 
-function toHome(message = '') {
+// The title scroll on its own (after leaving a room, a lost connection...).
+function toHome(message = '', focus) {
   room = null;
   play.game = null;
-  $('home-name').textContent = myName;
   $('home-error').textContent = message;
   show('home');
+  if (focus) focusFirst(focus);
+}
+
+// Close whatever is open beside the title scroll; the focus goes back to the entry that opened it.
+function closePanel() {
+  const opener = panel === 'help' ? $('btn-help') : panel === 'lobby' && kind === 'practice' ? $('btn-practice') : $('btn-friends');
+  $('home-error').textContent = '';
+  show('home');
+  focusFirst(opener);
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +290,12 @@ $('name-form').addEventListener('submit', (e) => {
   else toHome();
 });
 $('name').addEventListener('input', () => ($('name-error').textContent = ''));
-$('btn-rename').addEventListener('click', () => askName());
+function rename() {
+  // the room knows you by the name you came in with
+  if (room) return toast('Leave the room to change your name');
+  askName();
+}
+$('btn-rename').addEventListener('click', rename);
 
 // ---------------------------------------------------------------------------
 // Talking to the server
@@ -267,15 +333,26 @@ async function enterRoom(event, payload, errorEl) {
 const me = () => room?.players.find((p) => p.id === socket.id) || null;
 const amHost = () => !!room && room.hostId === socket.id;
 
-function setConn(cls, text) {
-  $('conn').className = `conn ${cls}`;
-  $('conn').textContent = text;
+// The connection is a paper lantern in the corner: lit when the server is
+// there, flickering while it is being woken up.
+const NAP = 'Free hosting naps when nobody is playing. Give it up to a minute.';
+function setConn(state, text, more = '') {
+  const box = $('conn');
+  box.className = `conn ${state}`;
+  $('conn-text').textContent = text;
+  $('conn-more').textContent = more;
+  // say it for a moment, then let the lantern speak for itself (it stays up while there is trouble)
+  box.classList.add('say');
+  clearTimeout(setConn.timer);
+  if (state === 'ok') setConn.timer = setTimeout(() => box.classList.remove('say'), 2600);
 }
-setConn('', 'Connecting...');
-socket.on('connect', () => setConn('ok', 'Server online'));
-socket.on('connect_error', () => setConn('bad', 'Waking up the server - free hosting naps when idle, give it up to a minute.'));
+$('btn-conn').addEventListener('click', () => $('conn').classList.toggle('open'));
+$('btn-conn').addEventListener('blur', () => $('conn').classList.remove('open'));
+setConn('wait', 'Lighting the lantern...');
+socket.on('connect', () => setConn('ok', 'Server awake', 'You are connected.'));
+socket.on('connect_error', () => setConn('bad', 'Waking the server...', NAP));
 socket.on('disconnect', () => {
-  setConn('bad', 'Reconnecting...');
+  setConn('bad', 'Reconnecting...', NAP);
   if (room) {
     play.stop();
     toHome('Lost the connection to the server.');
@@ -283,44 +360,91 @@ socket.on('disconnect', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Home
+// The title scroll
 // ---------------------------------------------------------------------------
-$('btn-create').addEventListener('click', () => enterRoom('create', { name: myName }, $('home-error')));
-$('btn-join').addEventListener('click', () => openJoin(''));
+$('btn-friends').addEventListener('click', () => {
+  if (room) openLobby(); // already in a room: that is where your friends are
+  else openRooms('');
+});
 $('btn-practice').addEventListener('click', () => {
+  if (room) {
+    if (!twice('leave', 'Press again to leave the room')) return;
+    socket.emit('leave');
+    room = null;
+  }
   kind = 'practice';
   openLobby();
 });
-$('btn-help').addEventListener('click', () => openHelp());
-const soundLabel = () => `Sound: ${sfx.muted ? 'off' : 'on'}`;
+$('btn-help').addEventListener('click', () => (panel === 'help' ? closeHelp() : openHelp()));
 function paintSound() {
-  $('sound-label').textContent = soundLabel();
-  $('pause-sound').textContent = soundLabel();
+  const word = `Sound ${sfx.muted ? 'off' : 'on'}`;
+  $('sound-label').textContent = word;
+  $('pause-sound').textContent = word;
+  document.body.classList.toggle('muted', sfx.muted);
 }
 for (const id of ['btn-sound', 'btn-pause-sound']) $(id).addEventListener('click', () => toggleSound(false));
 paintSound();
+$('btn-full').hidden = !canFullscreen;
+$('btn-full').addEventListener('click', toggleFullscreen);
 
-function openHelp() {
-  helpFrom = overlay;
-  setOverlay('help');
+// How to play opens beside the title scroll - or over a paused match.
+async function openHelp() {
+  if (top() === 'help' || screen === 'name') return;
+  helpFrom = screen === 'game' ? overlay : panel;
+  if (screen === 'game') setOverlay('help');
+  else show('home', 'help');
+  $(overlay === 'help' ? 's-help' : 'ui').scrollTop = 0;
+  if (!demos) {
+    try {
+      const m = await import('./demo.js');
+      demos = m.demos;
+      demos.mount($('s-help'));
+    } catch (err) {
+      console.warn('How to play: the demos could not be loaded', err);
+      return;
+    }
+  }
+  if (top() === 'help') demos.start();
 }
 function closeHelp() {
-  setOverlay(helpFrom);
+  if (overlay === 'help') return setOverlay(helpFrom);
+  const back = helpFrom === 'lobby' && (room || kind === 'practice') ? 'lobby' : helpFrom === 'rooms' && !room ? 'rooms' : '';
+  if (!back) return closePanel();
+  if (back === 'lobby') openLobby();
+  else show('home', back);
 }
 $('btn-help-back').addEventListener('click', closeHelp);
 
+// numbers in the rules come from the game's own settings
+const orList = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}` : String(items[0]));
+for (const [key, value] of Object.entries({ fuse: Math.round(BOMB_FUSE_TICKS / TICK_RATE), bomb: `${BOMB_POINTS} points`, flag: `${FLAG_POINTS} points`, lock: Math.round(ITEM_LOCK_TICKS / TICK_RATE), rounds: orList(CUP_ROUNDS) })) {
+  for (const e of document.querySelectorAll(`[data-n="${key}"]`)) e.textContent = value;
+}
+for (const k of ITEM_KINDS) {
+  const li = el('li');
+  li.dataset.kind = k;
+  li.innerHTML = `<svg class="ic" aria-hidden="true"><use href="#i-${k}" /></svg>`;
+  const words = el('span');
+  words.append(el('b', '', ITEM_INFO[k].name), ITEM_INFO[k].blurb);
+  li.append(words);
+  $('item-list').append(li);
+}
+
 // ---------------------------------------------------------------------------
-// Join: four digits, typed on our own number pad (or a real keyboard)
+// Play with friends: open a room, or type a code on our own number pad
 // ---------------------------------------------------------------------------
 let code = '';
 let codeTried = '';
 
-function openJoin(start) {
+function openRooms(start) {
   $('join-error').textContent = '';
+  $('create-error').textContent = '';
   codeTried = '';
-  show('join');
+  show('home', 'rooms');
   setCode(start);
 }
+
+$('btn-create').addEventListener('click', () => enterRoom('create', { name: myName }, $('create-error')));
 
 function setCode(next) {
   code = String(next).replace(/\D/g, '').slice(0, CODE_LEN);
@@ -341,7 +465,7 @@ async function submitCode() {
   if (code.length !== CODE_LEN || busy) return;
   codeTried = code;
   const ok = await enterRoom('join', { code, name: myName }, $('join-error'));
-  if (!ok && screen === 'join') {
+  if (!ok && top() === 'rooms') {
     $('digits').classList.add('bad');
     sfx.play('lose');
   }
@@ -358,28 +482,44 @@ $('numpad').addEventListener('click', (e) => {
   } else setCode(code + d);
   sfx.play('click');
 });
-$('btn-join-back').addEventListener('click', () => toHome());
+$('btn-rooms-back').addEventListener('click', closePanel);
 addEventListener('paste', (e) => {
-  if (screen !== 'join' || overlay) return;
+  if (top() !== 'rooms') return;
   const text = e.clipboardData?.getData('text') || '';
   if (/\d/.test(text)) setCode(text);
 });
 
 // ---------------------------------------------------------------------------
-// Lobby (an online room) / practice setup
+// Match setup: an online room, or practice
 // ---------------------------------------------------------------------------
+// Every row writes one setting (`key`); two rows may write the same one, shown
+// at different times (the rules of a quick match / of a tournament).
 const OPTIONS = [
-  { key: 'arena', hot: 'a', type: 'cards', box: 'arena-cards', values: [...ARENAS.map((a) => [a.id, a.name]), ['random', 'Random']] },
-  { key: 'theme', hot: 's', type: 'cards', box: 'style-cards', values: [...THEMES.map((t) => [t.id, t.name]), ['random', 'Random']] },
-  { key: 'game', hot: 'g', label: 'Game', only: 'online', type: 'seg', values: [['quick', 'Quick match'], ['cup', 'Tournament']] },
-  { key: 'mode', hot: 'r', label: 'Rules', type: 'seg', values: MODES.map((m) => [m.id, m.name]), show: (s) => s.game !== 'cup', hint: (s) => MODES.find((m) => m.id === s.mode)?.blurb },
-  { key: 'rounds', hot: 'r', label: 'Rounds', only: 'online', type: 'seg', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup', hint: () => 'Points every round. The leader starts as it. The last round counts double.' },
-  { key: 'bots', hot: 'b', label: 'Bots', only: 'practice', type: 'seg', values: [1, 2, 3, 4, 5].map((n) => [n, String(n)]) },
-  { key: 'duration', hot: 'l', label: 'Round length', type: 'seg', values: DURATIONS.map((d) => [d, `${d} s`]) },
-  { key: 'powerups', hot: 'p', label: 'Power-ups', type: 'seg', values: [[true, 'On'], [false, 'Off']] },
+  { id: 'arena', key: 'arena', hot: 'a', type: 'cards', box: 'arena-cards', values: [...ARENAS.map((a) => [a.id, a.name]), ['random', 'Random']] },
+  { id: 'theme', key: 'theme', hot: 's', type: 'cards', box: 'style-cards', values: [...THEMES.map((t) => [t.id, t.name]), ['random', 'Random']] },
+  { id: 'game', key: 'game', hot: 'g', label: 'Game', only: 'online', type: 'seg', values: [['quick', 'Quick match'], ['cup', 'Tournament']] },
+  { id: 'mode', key: 'mode', hot: 'r', label: 'Rules', type: 'seg', wrap: true, values: MODES.map((m) => [m.id, m.name]), show: (s) => s.game !== 'cup', hint: (s) => MODES.find((m) => m.id === s.mode)?.blurb },
+  {
+    id: 'sides',
+    key: 'mode',
+    hot: 't',
+    label: 'Sides',
+    only: 'online',
+    type: 'seg',
+    // a tournament is scored on time as the oni, or played as a team battle
+    values: [['potato', 'Free-for-all'], ['team', 'Team Bomb']],
+    on: (s, v) => (v === 'team') === (s.mode === 'team'),
+    show: (s) => s.game === 'cup',
+    hint: (s) => (s.mode === 'team' ? 'The teams stay together; their points add up.' : 'Points for the least time as the oni.'),
+  },
+  { id: 'rounds', key: 'rounds', hot: 'r', label: 'Rounds', only: 'online', type: 'seg', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup', hint: () => 'The last round counts double.' },
+  { id: 'bots', key: 'bots', hot: 'b', label: 'Bots', only: 'practice', type: 'seg', values: [1, 2, 3, 4, 5].map((n) => [n, String(n)]) },
+  { id: 'duration', key: 'duration', hot: 'l', label: 'Round length', type: 'seg', values: DURATIONS.map((d) => [d, `${d} s`]) },
+  { id: 'powerups', key: 'powerups', hot: 'p', label: 'Power-ups', type: 'seg', values: [[true, 'On'], [false, 'Off']] },
 ];
 const settings = () => (kind === 'practice' ? practice : room.settings);
 const locked = () => kind === 'online' && !amHost();
+const isOn = (o, s, value) => (o.on ? o.on(s, value) : String(s[o.key]) === String(value));
 
 function changeSetting(patch) {
   if (kind === 'practice') {
@@ -394,11 +534,12 @@ function changeSetting(patch) {
 }
 
 // Every choice is a real radio button underneath, so the arrow keys work for free.
-function radio(o, value) {
+function radio(o, value, i) {
   const inp = document.createElement('input');
   inp.type = 'radio';
-  inp.name = `opt-${o.key}`;
+  inp.name = `opt-${o.id}`;
   inp.value = String(value);
+  inp.dataset.i = i;
   inp.addEventListener('change', () => changeSetting({ [o.key]: value }));
   return inp;
 }
@@ -412,7 +553,9 @@ function buildOptions() {
       // picture cards: one per arena / art style, painted a moment later
       const grid = $(o.box);
       grid.textContent = '';
-      for (const [value, text] of o.values) {
+      const n = o.values.length;
+      grid.style.setProperty('--cols', o.id === 'arena' ? (n <= 6 ? 3 : n <= 8 ? 4 : n <= 10 ? 5 : 6) : 4);
+      o.values.forEach(([value, text], i) => {
         const card = el('label', 'card');
         let pic;
         if (value === 'random') pic = el('span', 'pic any', '?');
@@ -421,24 +564,24 @@ function buildOptions() {
           pic.alt = '';
           pic.dataset.id = value;
         }
-        card.append(radio(o, value), pic, el('span', 'cap', text));
+        card.append(radio(o, value, i), pic, el('span', 'cap', text));
         grid.append(card);
-      }
+      });
       continue;
     }
     const row = el('div', 'opt');
-    row.dataset.key = o.key;
+    row.dataset.id = o.id;
     const lab = el('span', 'lab', o.label);
     lab.append(el('kbd', '', o.hot.toUpperCase()));
     row.append(lab);
-    const seg = el('div', 'seg');
+    const seg = el('div', o.wrap || o.values.some(([, t]) => t.length > 12) ? 'seg wrap' : 'seg');
     seg.setAttribute('role', 'radiogroup');
     seg.setAttribute('aria-label', o.label);
-    for (const [value, text] of o.values) {
+    o.values.forEach(([value, text], i) => {
       const lab = el('label');
-      lab.append(radio(o, value), el('span', '', text));
+      lab.append(radio(o, value, i), el('span', '', text));
       seg.append(lab);
-    }
+    });
     row.append(seg);
     if (o.hint) row.append(el('span', 'hint'));
     box.append(row);
@@ -450,20 +593,17 @@ function syncOptions() {
   const lock = locked();
   for (const id of ['options', 'arena-cards', 'style-cards']) $(id).classList.toggle('locked', lock);
   for (const inp of $('s-lobby').querySelectorAll('input[type="radio"]')) {
-    const key = inp.name.slice(4);
-    inp.checked = inp.value === String(s[key]);
+    const o = OPTIONS.find((x) => x.id === inp.name.slice(4));
+    inp.checked = isOn(o, s, o.values[inp.dataset.i][0]);
     inp.disabled = lock;
     inp.parentElement.classList.toggle('on', inp.checked);
   }
   for (const row of $('options').children) {
-    const o = OPTIONS.find((x) => x.key === row.dataset.key);
+    const o = OPTIONS.find((x) => x.id === row.dataset.id);
     row.hidden = !!o.show && !o.show(s);
     const hint = row.querySelector('.hint');
     if (hint) hint.textContent = o.hint(s) || '';
   }
-  const arenaName = s.arena === 'random' ? 'Random arena' : arenaById(s.arena).name;
-  const styleName = s.theme === 'random' ? 'random style' : THEMES.find((t) => t.id === s.theme).name;
-  $('preview-cap').textContent = `${arenaName} - ${styleName}`;
   paintCards();
 }
 
@@ -474,29 +614,32 @@ function hotOption(letter, back) {
   const s = settings();
   const o = OPTIONS.find((x) => x.hot === letter && (!x.only || x.only === kind) && (!x.show || x.show(s)));
   if (!o) return false;
-  const i = o.values.findIndex(([v]) => v === s[o.key]);
+  const i = o.values.findIndex(([v]) => isOn(o, s, v));
   changeSetting({ [o.key]: o.values[(i + (back ? -1 : 1) + o.values.length) % o.values.length][0] });
-  $('s-lobby').querySelector(`input[name="opt-${o.key}"]:checked`)?.focus();
+  $('s-lobby').querySelector(`input[name="opt-${o.id}"]:checked`)?.focus();
   sfx.play('click');
   return true;
 }
 
 // Paint the pictures one at a time between frames, so the screen never stalls:
-// the big preview first, then each arena in the chosen style, then one still
-// per art style. Everything is cached, so this is instant the second time.
+// each arena in the chosen style, then one still per art style. Everything is
+// cached, so this is instant the second time (and the draw before a round
+// borrows the same pictures).
 let paintRun = 0;
 function paintCards() {
   const s = settings();
   const run = ++paintRun;
   const themeId = s.theme === 'random' ? DEFAULT_THEME : s.theme;
-  const jobs = [[themeId, () => ($('preview').src = scenePreview(s.arena, themeId, 480, 270))]];
+  const jobs = [];
   for (const img of $('arena-cards').querySelectorAll('img')) jobs.push([themeId, () => (img.src = scenePreview(img.dataset.id, themeId, 240, 135))]);
   for (const img of $('style-cards').querySelectorAll('img')) if (!img.dataset.done) jobs.push([img.dataset.id, () => ((img.src = styleStill(img.dataset.id)), (img.dataset.done = '1'))]);
+  jobs.push([themeId, () => (cardTheme = themeId)]);
+  const live = () => run === paintRun && panel === 'lobby';
   const next = async () => {
     const job = jobs.shift();
-    if (!job || run !== paintRun || screen !== 'lobby') return;
+    if (!job || !live()) return;
     await loadTheme(job[0]);
-    if (run !== paintRun || screen !== 'lobby') return;
+    if (!live()) return;
     job[1]();
     setTimeout(next, 0);
   };
@@ -504,7 +647,7 @@ function paintCards() {
 }
 
 function openLobby() {
-  show('lobby');
+  show('home', 'lobby');
   buildOptions();
   renderLobby();
   focusFirst();
@@ -531,7 +674,7 @@ function renderLobby() {
     if (r.score) li.append(el('span', 'score', r.score));
     list.append(li);
   }
-  for (let i = rows.length; i < (online ? MAX_PLAYERS : 0); i++) list.append(el('li', 'empty', 'waiting for a challenger...'));
+  for (let i = rows.length; i < MAX_PLAYERS; i++) list.append(el('li', 'empty', online ? 'waiting...' : ''));
 
   const start = $('btn-start');
   if (online) {
@@ -558,14 +701,20 @@ function renderLobby() {
       ? [[['Esc', 'Esc'], 'leave the room'], [['C'], 'copy the invite link']]
       : [[['\u2191', '\u2193'], 'move'], [['\u2190', '\u2192'], 'choose'], [['Enter'], 'start'], [online ? ['Esc', 'Esc'] : ['Esc'], online ? 'leave the room' : 'back']],
   );
-  start.toggleAttribute('data-autofocus', !start.hidden);
+  // Where the keyboard starts: the start button; alone in a room, the invite
+  // link. (A guest gets no starting point: Enter must not walk them out.)
+  const first = start.hidden ? null : start.disabled ? $('btn-copy') : start;
+  for (const b of [start, $('btn-copy')]) b.toggleAttribute('data-autofocus', b === first);
+  // someone joined and the match can start: Enter should start it, not copy the link again
+  if (first === start && panel === 'lobby' && !overlay && [$('btn-copy'), document.body].includes(document.activeElement)) focusFirst();
   syncOptions();
 }
 
 function leaveRoom() {
-  if (kind === 'online' && room) socket.emit('leave');
+  const wasOnline = kind === 'online';
+  if (wasOnline && room) socket.emit('leave');
   play.stop();
-  toHome();
+  toHome('', wasOnline ? $('btn-friends') : $('btn-practice'));
 }
 $('btn-leave').addEventListener('click', leaveRoom);
 $('btn-start').addEventListener('click', () => {
@@ -594,7 +743,8 @@ fonts.then(() => {
   fontsIn = true;
   clearPictures();
   if (renderer.arena) renderer.layout(true); // names and signs were drawn with a fallback font
-  if (screen === 'lobby') {
+  demos?.refresh();
+  if (panel === 'lobby') {
     for (const img of $('style-cards').querySelectorAll('img')) delete img.dataset.done;
     paintCards();
   }
@@ -606,7 +756,7 @@ fonts.then(() => {
 function openPause() {
   if (screen !== 'game' || overlay) return;
   $('pause-note').textContent = kind === 'practice' ? 'The match is on hold.' : `Room ${room?.code || ''} - the match carries on without you.`;
-  $('btn-pause-full').hidden = !document.documentElement.requestFullscreen;
+  $('btn-pause-full').hidden = !canFullscreen;
   play.hold(true); // practice really pauses; an online match carries on behind the menu
   setOverlay('pause');
 }
@@ -628,73 +778,80 @@ $('btn-quit').addEventListener('click', leaveRoom);
 const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
 const list = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] || '');
 
+// a small seal with a word beside it: who won, who was it at the end
+function mark(glyph, word, dark) {
+  const m = el('span', 'mark');
+  m.append(el('i', dark ? 'seal sm dark' : 'seal sm', glyph), word);
+  return m;
+}
+
 function showResults(res) {
   lastResults = res;
   clearInterval(nextTimer);
+  draw.clear();
   const mySlot = play.mySlot();
   const cup = res.cup;
+  const team = res.team || null;
   const iWon = res.winners.includes(mySlot);
   const nameOf = (slot) => (res.rows.find((r) => r.slot === slot) || cup?.table.find((r) => r.slot === slot))?.name || `Player ${slot + 1}`;
   const winners = res.winners.map(nameOf);
+  const forfeit = res.reason === 'forfeit';
   let kicker;
   let title;
   let sub = '';
-  if (cup) {
+  if (team) {
+    // team battle: this round's score, or the running total of a tournament
+    const mine = res.rows.find((r) => r.slot === mySlot)?.team ?? -1;
+    const final = !cup || cup.final;
+    const tally = cup && team.total ? team.total : team.score;
+    const lead = final ? team.win : tally[0] === tally[1] ? -1 : tally[0] > tally[1] ? 0 : 1;
+    const side = (t) => (t === mine ? 'Your team' : TEAM_NAMES[t]);
+    const points = `A bomb that goes off scores ${BOMB_POINTS} for the other team, a captured flag ${FLAG_POINTS}.`;
+    if (cup) {
+      kicker = cup.final ? 'Tournament over - Team Bomb' : `Round ${cup.round} of ${cup.rounds} - Team Bomb`;
+      if (cup.final) {
+        title = lead < 0 ? 'The tournament ends level!' : lead === mine ? 'Your team wins the tournament!' : `${TEAM_NAMES[lead]} win the tournament!`;
+        sub = forfeit ? 'Everyone else left.' : 'Final score.';
+      } else {
+        title = lead < 0 ? `Level at ${tally[0]} all` : `${side(lead)} ${lead === mine ? 'leads' : 'lead'} ${tally[lead]} - ${tally[1 - lead]}`;
+        sub = `${points} The last round counts double.`;
+      }
+    } else {
+      kicker = forfeit ? 'Match over' : 'Team Bomb';
+      title = lead < 0 ? 'A draw!' : lead === mine ? 'Your team wins!' : `${TEAM_NAMES[lead]} win!`;
+      sub = forfeit ? 'Everyone else left.' : points;
+    }
+  } else if (cup) {
     kicker = cup.final ? 'Tournament over' : `Round ${cup.round} of ${cup.rounds}`;
     if (cup.final) {
       title = iWon ? 'You win the tournament!' : `${list(winners)} win${winners.length > 1 ? '' : 's'} the tournament!`;
-      sub = res.reason === 'forfeit' ? 'Everyone else left.' : 'Final standings.';
+      sub = forfeit ? 'Everyone else left.' : 'Final standings.';
     } else {
       const lead = cup.table[0];
       const tied = cup.table.filter((r) => r.pts === lead.pts).length > 1;
       title = tied ? 'Level at the top' : lead.slot === mySlot ? 'You are in the lead' : `${lead.name} is in the lead`;
-      sub = 'Points for the least time as it, plus one if you were not it at the buzzer.';
+      sub = 'Points for the least time as the oni, plus one if you were not it at the buzzer.';
     }
-  } else if (res.reason === 'forfeit') {
+  } else if (forfeit) {
     kicker = 'Match over';
     title = iWon ? 'You win!' : `${list(winners)} wins!`;
     sub = 'Everyone else left.';
   } else if (res.mode === 'potato') {
     kicker = 'Hot Potato';
-    title = res.loser === mySlot ? 'You were it. You lose!' : iWon ? 'You got away!' : `${nameOf(res.loser)} loses!`;
+    title = res.loser === mySlot ? 'You were the oni. You lose!' : iWon ? 'You got away!' : `${nameOf(res.loser)} loses!`;
     sub = `${res.loser === mySlot ? 'You were' : `${nameOf(res.loser)} was`} it when the clock ran out.`;
   } else {
     kicker = 'Least Time';
     title = iWon ? (winners.length > 1 ? 'You share the win!' : 'You win!') : `${list(winners)} win${winners.length > 1 ? '' : 's'}!`;
-    sub = 'Least time as it wins.';
+    sub = 'Least time as the oni wins.';
   }
   $('res-kicker').textContent = kicker;
   $('res-title').textContent = title;
   $('res-sub').textContent = sub;
-
-  // the table
-  const table = $('res-table');
-  table.textContent = '';
-  const head = el('tr');
-  for (const h of cup ? ['', 'Player', 'As it', 'Round', 'Total'] : ['', 'Player', 'As it', 'Tags']) head.append(el('th', '', h));
-  table.append(head);
-  const rows = cup ? cup.table.map((t) => ({ ...t, row: res.rows.find((r) => r.slot === t.slot) })) : res.rows.map((r) => ({ slot: r.slot, name: r.name, row: r }));
-  rows.forEach((r, i) => {
-    const tr = el('tr');
-    const final = !cup || cup.final;
-    if (r.slot === mySlot) tr.classList.add('me');
-    const who = el('td', 'who');
-    const chip = el('i', 'chip');
-    chip.style.background = play.colorOf(r.slot);
-    who.append(chip, r.name);
-    // a seal for the winner, and one for whoever was it at the end
-    const mark = (glyph, word, dark) => {
-      const m = el('span', 'mark');
-      m.append(el('i', dark ? 'seal sm dark' : 'seal sm', glyph), word);
-      who.append(m);
-    };
-    if (final && res.winners.includes(r.slot)) mark('\u52dd', 'wins');
-    if (res.loser === r.slot && res.reason !== 'forfeit') mark('\u9b3c', 'it', true);
-    tr.append(el('td', '', String(i + 1)), who, el('td', '', r.row ? secs(r.row.ms) : '-'));
-    if (cup) tr.append(el('td', 'gain', r.row ? `+${r.gained}` : '-'), el('td', '', `${r.pts} pts`));
-    else tr.append(el('td', '', String(r.row.tags)));
-    table.append(tr);
-  });
+  $('res-teams').hidden = !team;
+  $('res-table').hidden = !!team;
+  if (team) paintSides(res, mySlot);
+  else paintTable(res, mySlot);
 
   renderResultButtons();
   setOverlay('results');
@@ -709,6 +866,73 @@ function showResults(res) {
     nextTimer = setInterval(tick, 250);
   }
   sfx.play(iWon || (cup && !cup.final && res.loser !== mySlot) ? 'win' : 'lose');
+}
+
+// everyone for themselves: one table
+function paintTable(res, mySlot) {
+  const cup = res.cup;
+  const table = $('res-table');
+  table.textContent = '';
+  const head = el('tr');
+  for (const h of cup ? ['', 'Player', 'As oni', 'Round', 'Total'] : ['', 'Player', 'As oni', 'Tags']) head.append(el('th', '', h));
+  table.append(head);
+  const rows = cup ? cup.table.map((t) => ({ ...t, row: res.rows.find((r) => r.slot === t.slot) })) : res.rows.map((r) => ({ slot: r.slot, name: r.name, row: r }));
+  rows.forEach((r, i) => {
+    const tr = el('tr');
+    const final = !cup || cup.final;
+    if (r.slot === mySlot) tr.classList.add('me');
+    const who = el('td', 'who');
+    const chip = el('i', 'chip');
+    chip.style.background = play.colorOf(r.slot);
+    who.append(chip, r.name);
+    // a seal for the winner, and one for whoever was it at the end
+    if (final && res.winners.includes(r.slot)) who.append(mark('\u52dd', 'wins'));
+    if (res.loser === r.slot && res.reason !== 'forfeit') who.append(mark('\u9b3c', 'it', true));
+    tr.append(el('td', '', String(i + 1)), who, el('td', '', r.row ? secs(r.row.ms) : '-'));
+    if (cup) tr.append(el('td', 'gain', r.row ? `+${r.gained}` : '-'), el('td', '', `${r.pts} pts`));
+    else tr.append(el('td', '', String(r.row.tags)));
+    table.append(tr);
+  });
+}
+
+// team battle: the two sides face to face, each in its colour
+function paintSides(res, mySlot) {
+  const { score, win, total } = res.team;
+  const cup = res.cup;
+  const final = !cup || cup.final;
+  const box = $('res-teams');
+  box.textContent = '';
+  [0, 1].forEach((t) => {
+    const side = el('div', 'side');
+    side.style.setProperty('--side', TEAM_COLORS[t]);
+    const won = final && win === t;
+    side.classList.toggle('won', won);
+    side.classList.toggle('lost', final && win === 1 - t);
+    const head = el('header');
+    const tally = el('span', 'tally', String(cup && total ? total[t] : score[t]));
+    head.append(el('b', 'nm', TEAM_NAMES[t]), tally);
+    if (cup && total) head.append(el('small', '', `+${score[t] * (cup.double ? 2 : 1)} this round${cup.double ? ' (double)' : ''}`));
+    if (won) head.append(mark('\u52dd', 'wins'));
+    else if (final && win < 0) head.append(el('small', '', 'a draw'));
+    side.append(head);
+    const ul = el('ul');
+    const hd = el('li', 'hd');
+    hd.append(el('span', '', 'Player'), el('span', '', 'Bomb held'), el('span', '', 'Passed'));
+    ul.append(hd);
+    for (const r of res.rows) {
+      if (r.team !== t) continue;
+      const li = el('li', r.slot === mySlot ? 'me' : '');
+      const chip = el('i', 'chip');
+      chip.style.background = play.colorOf(r.slot);
+      const who = el('span', 'who');
+      who.append(chip, r.name);
+      li.append(who, el('span', '', secs(r.ms)), el('span', '', String(r.tags)));
+      ul.append(li);
+    }
+    side.append(ul);
+    box.append(side);
+    if (t === 0) box.append(el('i', 'vs', 'vs'));
+  });
 }
 
 function renderResultButtons() {
@@ -762,7 +986,8 @@ socket.on('room', (r) => {
   net.code = r.code;
   if (r.phase === 'lobby') {
     clearInterval(nextTimer);
-    if (screen !== 'lobby' || kind !== 'online') {
+    if (panel === 'help' && kind === 'online') renderLobby(); // reading How to play in a room: leave them to it
+    else if (panel !== 'lobby' || overlay || kind !== 'online') {
       kind = 'online';
       openLobby();
     } else renderLobby();
@@ -802,16 +1027,17 @@ function goBack() {
     const safe = kind === 'practice' || (amHost() && !(lastResults?.cup && !lastResults.cup.final));
     if (safe || twice('results', `Press Esc again to ${amHost() ? 'end the tournament' : 'leave the room'}`)) resultsBack();
   } else if (screen === 'game') openPause();
-  else if (screen === 'join') toHome();
-  else if (screen === 'lobby') {
-    if (kind === 'practice') toHome();
+  else if (panel === 'help') closeHelp();
+  else if (panel === 'rooms') closePanel();
+  else if (panel === 'lobby') {
+    if (kind === 'practice') closePanel();
     else if (twice('leave', 'Press Esc again to leave the room')) leaveRoom();
   } else if (screen === 'name' && myName) toHome();
 }
 
 // One place for every shortcut. Returns true when the key was used.
 function shortcut(key, e) {
-  const top = overlay || screen;
+  const at = top();
   const onButton = document.activeElement?.tagName === 'BUTTON';
   const typing = document.activeElement?.tagName === 'INPUT' && document.activeElement.type === 'text';
   if (typing) return false; // letters belong to the name being typed
@@ -819,44 +1045,51 @@ function shortcut(key, e) {
   // anywhere: sound and full screen
   if (key === 'm') return toggleSound(true), true;
   if (key === 'f') return toggleFullscreen(), true;
-  if (top === 'game') return false; // everything else belongs to the match
+  if (at === 'game') return false; // everything else belongs to the match
 
-  if (top === 'home') {
-    if (/^[123]$/.test(key)) return [$('btn-create'), $('btn-join'), $('btn-practice')][Number(key) - 1].click(), true;
-    if (key === 'h') return openHelp(), true;
-    if (key === 'n') return askName(), true;
-  } else if (top === 'join') {
+  // every menu: how to play; beside the title scroll: your name
+  if (key === 'h' && at !== 'results') return at === 'help' ? closeHelp() : openHelp(), true;
+  if (key === 'n' && screen === 'home') return rename(), true;
+
+  if (at === 'home' || (at === 'help' && screen === 'home')) {
+    // the title scroll's entries (digits are a room code while Play with friends is open)
+    if (key === '1') return $('btn-friends').click(), true;
+    if (key === '2') return $('btn-practice').click(), true;
+  }
+  // the tools under the menu sit in a row: left and right walk along it
+  if ((key === 'arrowleft' || key === 'arrowright') && document.activeElement?.classList.contains('tool')) return moveFocus(key === 'arrowright' ? 1 : -1), true;
+  if (at === 'rooms') {
     if (/^\d$/.test(key)) return setCode(code + key), true;
     if (key === 'backspace') return setCode(code.slice(0, -1)), true;
-    if (key === 'enter' && !onButton) {
+    if (key === 'c') return $('btn-create').click(), true;
+    if (key === 'enter' && code.length === CODE_LEN) {
+      // a full code is on the pad: Enter tries it again, wherever the focus is
       codeTried = '';
       return submitCode(), true;
     }
-  } else if (top === 'lobby') {
+  } else if (at === 'lobby') {
     if (key === 'enter' && !onButton) {
       if (!$('btn-start').hidden && !$('btn-start').disabled) $('btn-start').click();
       return true;
     }
     if (key === 'c' && kind === 'online') return copyInvite(), true;
-    if (key === 'h') return openHelp(), true;
     if (/^[a-z]$/.test(key)) return hotOption(key, e.shiftKey);
-  } else if (top === 'pause') {
-    if (key === 'h') return openHelp(), true;
+  } else if (at === 'pause') {
     if (key === 'q') {
       if (twice('quit', 'Press Q again to leave the match')) leaveRoom();
       return true;
     }
-  } else if (top === 'results') {
+  } else if (at === 'results') {
     if (key === 'enter' && !onButton) {
       const again = $('btn-res-again');
       if (!again.hidden && !again.disabled) again.click();
       return true;
     }
     if (key === 'arrowleft' || key === 'arrowright') return moveFocus(key === 'arrowright' ? 1 : -1), true;
-  } else if (top === 'help') {
+  } else if (at === 'help') {
     // read the scroll with the arrow keys
-    const step = { arrowdown: 70, arrowup: -70, pagedown: 400, pageup: -400, ' ': 400 }[key];
-    if (step) return $('s-help').scrollBy({ top: step }), true;
+    const step = { arrowdown: 90, arrowup: -90, pagedown: 420, pageup: -420, ' ': 420 }[key];
+    if (step) return $(overlay === 'help' ? 's-help' : 'ui').scrollBy({ top: step }), true;
   }
   if (key === 'arrowdown' || key === 'arrowup') return moveFocus(key === 'arrowdown' ? 1 : -1), true;
   return false;
@@ -887,9 +1120,9 @@ addEventListener('resize', () => {
 // ---------------------------------------------------------------------------
 const invite = (new URLSearchParams(location.search).get('room') || '').replace(/\D/g, '').slice(0, CODE_LEN);
 if (invite) history.replaceState(null, '', location.pathname);
-const start = () => (invite.length === CODE_LEN ? openJoin(invite) : toHome());
+const start = () => (invite.length === CODE_LEN ? openRooms(invite) : toHome());
 if (myName) start();
 else askName(start);
 
 // Handy for debugging from the browser console (and used by the automated checks).
-window.__tag = { renderer, net, socket, input, get game() { return play.game; }, play, get screen() { return overlay || screen; }, get room() { return room; }, fontsReady: () => fontsIn };
+window.__tag = { renderer, net, socket, input, get game() { return play.game; }, play, draw, get demos() { return demos; }, get screen() { return top(); }, get room() { return room; }, fontsReady: () => fontsIn };

@@ -51,6 +51,7 @@ export class Sim {
     this.players = new Array(MAX_PLAYERS).fill(null); // indexed by slot
     this.it = -1; // who is it - in a team battle, who carries the bomb (-1: nobody right now)
     this.tick = 0;
+    this.live = false; // true from GO: before that nobody is it and nothing happens
     this.events = []; // filled during a tick, drained by the owner
     this.twist = { grav: 1, speed: 1, items: 1 }; // round modifier (see TWISTS in config.js)
     // lucky boxes and items
@@ -117,6 +118,7 @@ export class Sim {
 
   // GO: choose who is "it" (or use the one given) and start the box clock.
   start(itSlot = -1) {
+    this.live = true;
     if (itSlot >= 0 && this.players[itSlot]) this.it = itSlot;
     else this.pickIt();
     if (this.teams && this.it >= 0) {
@@ -145,7 +147,7 @@ export class Sim {
     this.updateBoxes();
     this.updateGoo();
     this.checkTag();
-    if (this.teams) this.updateTeams();
+    if (this.teams && this.live) this.updateTeams(); // no bomb and no flags before GO
     const cur = this.players[this.it];
     if (cur) cur.itTicks++;
     const i = this.tick % HIST;

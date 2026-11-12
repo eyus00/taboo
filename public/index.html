@@ -39,7 +39,7 @@
         <symbol id="i-storm" viewBox="0 0 24 24"><path d="M6 13a5 5 0 1 1 3.500-8.500A6 6 0 0 1 20 8a4 4 0 0 1-2 7.500" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round" /><path d="M12 12l-3 5h4l-2 5" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round" stroke-linejoin="round" /></symbol>
         <symbol id="i-goo" viewBox="0 0 24 24"><path d="M12 2c3 5 6 8 6 12a6 6 0 0 1-12 0c0-4 3-7 6-12z" fill="currentColor" /></symbol>
         <symbol id="i-box" viewBox="0 0 24 24"><path d="M8 9a4 4 0 1 1 6 3.500c-1.300.800-2 1.500-2 3M12 19.500v.500" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></symbol>
-        <symbol id="i-bomb" viewBox="0 0 24 24"><circle cx="10.500" cy="14" r="7.500" fill="currentColor" /><path d="M15.500 8.500l3-3M18 3l3 1-1 3" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-bomb" viewBox="0 0 24 24"><circle cx="10" cy="15" r="7.5" fill="currentColor" /><path d="M13.300 8.200l2.900-2.900 2.500 2.500-2.900 2.900z" fill="currentColor" /><path d="M17.800 5.900c.700-1.700 1.900-2.600 3.400-2.700" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linecap="round" /><path d="M21.600 1v1.300M23.300 3.300H22M22.900 1.500l-.900.900" fill="none" stroke="currentColor" stroke-width="1.300" stroke-linecap="round" /></symbol>
         <symbol id="i-flag" viewBox="0 0 24 24"><path d="M6 22V3M6 4h12l-3 4 3 4H6" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round" stroke-linejoin="round" /></symbol>
       </defs>
     </svg>
@@ -75,7 +75,7 @@
           </header>
           <p class="lead"><span class="kana" lang="ja" aria-hidden="true">鬼ごっこ</span>Tag for 2-6 players. Don't be the oni when the clock runs out.</p>
           <nav class="menu" aria-label="Main menu">
-            <button class="entry" id="btn-friends" data-autofocus><kbd>1</kbd><span><b>Play with friends</b><small>Open a room, or join one with a code</small></span></button>
+            <button class="entry" id="btn-friends" data-autofocus><kbd>1</kbd><span><b>Play with friends</b><small>Open a room or join with a code</small></span></button>
             <button class="entry minor" id="btn-practice"><kbd>2</kbd><span><b>Practice</b><small>Spar against bots</small></span></button>
           </nav>
           <p class="error" id="home-error" role="alert"></p>
@@ -132,7 +132,7 @@
             <div class="code" id="lobby-code" aria-label="Room code"></div>
             <button class="link" id="btn-copy"><kbd>C</kbd><svg class="ic"><use href="#i-copy" /></svg>Copy invite link</button>
           </header>
-          <div class="who">
+          <div class="roster">
             <h3 id="players-title">Players</h3>
             <ul class="players" id="players"></ul>
             <p class="note" id="lobby-note"></p>
@@ -217,7 +217,7 @@
             <article class="lesson">
               <div data-demo="bounce"></div>
               <h3><i>4</i>Trampolines and launchers</h3>
-              <p>A trampoline throws you straight up - far higher than these little ones. A launcher, marked with arrows, flings you up and across. Steer in the air.</p>
+              <p>A trampoline throws you straight up - in a real arena, far higher than in this little picture. A launcher, marked with arrows, flings you up and across. Steer in the air.</p>
             </article>
             <article class="lesson">
               <div data-demo="lift"></div>
@@ -237,7 +237,7 @@
             <article class="lesson">
               <div data-demo="items"></div>
               <h3><i>8</i>Lucky boxes</h3>
-              <p>Touch a box with empty hands to draw one of eight items, then set it off when it suits you<span class="kbd-only"> with <kbd>E</kbd></span><span class="touch-only"> with the item button</span>. Nothing works in the last 10 seconds of a round.</p>
+              <p>Touch a box with empty hands to draw one of eight items, then set it off when it suits you<span class="kbd-only"> with <kbd>E</kbd></span><span class="touch-only"> with the item button</span>. Nothing works in the last <span data-n="lock">10</span> seconds of a round.</p>
               <ul class="powers" id="item-list"></ul>
             </article>
             <article class="lesson">
@@ -266,17 +266,7 @@
               </ul>
               <p class="note kbd-only">On a phone or tablet you get a thumb strip for running and buttons for jump, down and the item.</p>
             </section>
-            <section>
-              <h3>Tournament</h3>
-              <ul class="plain">
-                <li>3, 5 or 7 rounds. Each round, the less time you spent as the oni, the more points you get.</li>
-                <li>Everyone who is <b>not</b> the oni at the buzzer gets a bonus point.</li>
-                <li>The leader starts the next round as the oni. Every second round has a twist. The last round counts double.</li>
-                <li>With the arena or the style on Random, the draw before each round picks a new one - a tournament visits every arena before it repeats one.</li>
-                <li><b>Team Bomb tournament:</b> the teams stay together and their points add up over the rounds.</li>
-              </ul>
-            </section>
-            <section class="kbd-only">
+            <section class="kbd-only tall">
               <h3>Keyboard shortcuts</h3>
               <ul class="keys short">
                 <li><span><kbd>&uarr;</kbd><kbd>&darr;</kbd></span> Move through any menu</li>
@@ -286,10 +276,21 @@
                 <li><span><kbd>1</kbd> <kbd>2</kbd></span> Title screen: play with friends, practice</li>
                 <li><span><kbd>C</kbd> <kbd>0</kbd>-<kbd>9</kbd></span> Play with friends: create a room, type a code</li>
                 <li><span><kbd>A</kbd> <kbd>S</kbd></span> Match setup: next arena, next style (with Shift: previous)</li>
-                <li><span><kbd>G</kbd><kbd>R</kbd><kbd>L</kbd><kbd>P</kbd><kbd>B</kbd></span> Match setup: game, rules or rounds, length, power-ups, bots</li>
+                <li><span><kbd>G</kbd> <kbd>R</kbd> <kbd>T</kbd></span> Match setup: game, rules or rounds, sides in a tournament</li>
+                <li><span><kbd>L</kbd> <kbd>P</kbd> <kbd>B</kbd></span> Match setup: round length, power-ups, bots</li>
                 <li><span><kbd>C</kbd></span> In a room: copy the invite link</li>
                 <li><span><kbd>H</kbd> <kbd>N</kbd></span> Menus: how to play, change your name</li>
                 <li><span><kbd>M</kbd> <kbd>F</kbd></span> Anywhere: sound on or off, full screen</li>
+              </ul>
+            </section>
+            <section>
+              <h3>Tournament</h3>
+              <ul class="plain">
+                <li><span data-n="rounds">3, 5 or 7</span> rounds. Each round, the less time you spent as the oni, the more points you get.</li>
+                <li>Everyone who is <b>not</b> the oni at the buzzer gets a bonus point.</li>
+                <li>The leader starts the next round as the oni. Every second round has a twist. The last round counts double.</li>
+                <li>With the arena or the style on Random, the draw before each round picks a new one - a tournament visits every arena before it repeats one.</li>
+                <li><b>Team Bomb tournament:</b> the teams stay together and their points add up over the rounds.</li>
               </ul>
             </section>
           </div>
