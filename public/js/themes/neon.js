@@ -6,7 +6,7 @@
 // has to glow while it moves stamps a pre-rendered sprite.
 
 import { ART_W as W, ART_H as H, PW } from '/shared/config.js';
-import { rr, rgba, lighten, hash1, vnoise, squashAt, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
+import { rr, rgba, lighten, darken, hash1, vnoise, squashAt, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
 
 const CYAN = '#22e6ff';
 const PINK = '#ff2bd6';
@@ -15,7 +15,6 @@ const VIOLET = '#9d6bff';
 const HOT = '#ff2b6a'; // whoever is "it" burns this colour
 const SHELL = '#0c0a1f';
 const AIR = '#7df9ff'; // updraft columns
-const OFF = new Set((new URLSearchParams(location.search).get('off') || '').split(',')); // DEBUG
 const SIGN_COLORS = [CYAN, PINK, AMBER, '#7dff6b'];
 const COLORS = ['#ff4d5e', '#3da8ff', '#3dff9a', '#ffe14d'];
 const SLAB = 14; // how thick ledges and slopes are
@@ -33,6 +32,7 @@ function skyline(g, rnd, o) {
     g.fillStyle = o.color;
     g.fillRect(x, top, w, h);
     if (rnd() < 0.45) g.fillRect(x + w * 0.2, top - 8 - rnd() * 14, w * 0.6, 30); // stepped roof
+    if (o.cover) o.cover.push([x, top - 22, x + w, H]);
     if (rnd() < 0.35) {
       const ax = x + w * (0.3 + rnd() * 0.4);
       const ah = 14 + rnd() * 30;
@@ -266,6 +266,83 @@ function slab(g, pts, accent) {
   g.stroke();
 }
 
+// One visor-bot, baked with all of its glow: halo, shell, visor, eyes, antenna.
+// The box is `size` square with the middle of the body at its centre. The legs are drawn live.
+function paintBot(g, size, color, face, isIt) {
+  const u = unit(g);
+  const cx = size / 2;
+  const by = size / 2 - 16; // top of the shell
+  const tint = isIt ? HOT : color;
+  const halo = g.createRadialGradient(cx, by + 16, 6, cx, by + 16, size / 2);
+  halo.addColorStop(0, rgba(tint, isIt ? 0.8 : 0.5));
+  halo.addColorStop(0.5, rgba(tint, isIt ? 0.3 : 0.17));
+  halo.addColorStop(1, rgba(tint, 0));
+  g.fillStyle = halo;
+  g.fillRect(0, 0, size, size);
+
+  // shell in the player's colour, with a bright tube around the edge
+  const body = g.createLinearGradient(0, by, 0, by + 31);
+  body.addColorStop(0, lighten(color, 0.3));
+  body.addColorStop(0.4, color);
+  body.addColorStop(1, darken(color, 0.25));
+  g.save();
+  g.shadowColor = tint;
+  g.shadowBlur = 8 * u;
+  rr(g, cx - PW / 2 + 2, by, PW - 4, 31, 8);
+  g.fillStyle = body;
+  g.fill();
+  g.restore();
+  g.lineWidth = 2;
+  g.strokeStyle = isIt ? '#ffffff' : lighten(color, 0.5);
+  g.stroke();
+  g.fillStyle = lighten(color, 0.75);
+  g.fillRect(cx - 8, by + 2.5, 16, 2.5);
+
+  // dark visor with lit eyes
+  const vx = cx - 10 + face * 3;
+  const ey = by + 12;
+  rr(g, vx, by + 7, 20, 10, 3.5);
+  g.fillStyle = SHELL;
+  g.fill();
+  g.save();
+  if (isIt) {
+    // angry slanted eyes
+    const ex = vx + 10 + face * 1.5;
+    g.shadowColor = HOT;
+    g.shadowBlur = 4 * u;
+    g.fillStyle = '#ff6a8c';
+    g.beginPath();
+    g.moveTo(ex - 7.5, ey - 3.5);
+    g.lineTo(ex - 1.5, ey - 0.5);
+    g.lineTo(ex - 2, ey + 3);
+    g.lineTo(ex - 7.5, ey + 3);
+    g.moveTo(ex + 7.5, ey - 3.5);
+    g.lineTo(ex + 1.5, ey - 0.5);
+    g.lineTo(ex + 2, ey + 3);
+    g.lineTo(ex + 7.5, ey + 3);
+    g.fill();
+  } else {
+    g.shadowColor = CYAN;
+    g.shadowBlur = 3 * u;
+    g.fillStyle = '#d8fcff';
+    g.fillRect(vx + 4 + face * 2, ey - 3, 3.6, 6);
+    g.fillRect(vx + 12.4 + face * 2, ey - 3, 3.6, 6);
+  }
+  g.restore();
+
+  // core light + antenna
+  g.strokeStyle = lighten(color, 0.5);
+  g.lineWidth = 1.8;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(cx - face * 6, by + 1);
+  g.lineTo(cx - face * 9, by - 5.5);
+  g.stroke();
+  g.fillStyle = '#ffffff';
+  g.fillRect(cx - 2, by + 21.5, 4, 4);
+  g.fillRect(cx - face * 9 - 1.75, by - 8.5, 3.5, 3.5);
+}
+
 // A soft round glow, baked once and stamped wherever something has to shine.
 function glowSprite(sprite, color, alpha) {
   return sprite(64, 64, (g) => {
@@ -276,6 +353,12 @@ function glowSprite(sprite, color, alpha) {
     g.fillStyle = rg;
     g.fillRect(0, 0, 64, 64);
   });
+}
+
+// The ghost of a bot's shell, left behind as it moves.
+function afterimage(g, p) {
+  g.fillStyle = p.color;
+  g.fillRect(p.x + 3, p.y + 2, PW - 6, 29);
 }
 
 // Everything in the arena as boxes [x0, y0, x1, y1], with room for its glow.
@@ -307,6 +390,7 @@ export default {
     const { rnd, layer, sprite, arena } = env;
     const signs = [];
     const beacons = [];
+    const cover = []; // the nearest row of buildings, which hides part of what stands behind it
     const bg = layer((g) => {
       const sky = g.createLinearGradient(0, 0, 0, H);
       sky.addColorStop(0, '#070318');
@@ -350,7 +434,7 @@ export default {
       g.fillStyle = 'rgba(66,17,92,.35)';
       g.fillRect(0, 0, W, H);
       skyline(g, rnd, { minW: 40, maxW: 96, minH: 90, maxH: 260, color: '#130a36', density: 0.36, winAlpha: 0.85, signs, beacons });
-      skyline(g, rnd, { minW: 50, maxW: 130, minH: 26, maxH: 110, color: '#090520', density: 0.06, winAlpha: 0.5 });
+      skyline(g, rnd, { minW: 50, maxW: 130, minH: 26, maxH: 110, color: '#090520', density: 0.06, winAlpha: 0.5, cover });
       const fog = g.createLinearGradient(0, H - 150, 0, H);
       fog.addColorStop(0, 'rgba(255,43,214,0)');
       fog.addColorStop(1, 'rgba(255,43,214,.2)');
@@ -369,8 +453,39 @@ export default {
       g.fillRect(0, 0, W, H);
     });
 
+    // Sprites are stamped pixel for pixel on whole pixels, which costs next to nothing.
+    // k = sprite pixels per world unit; sizes are trimmed to a whole number of pixels.
+    let k = 1;
+    sprite(1, 1, (g) => (k = unit(g)));
+    const whole = (size) => (Math.ceil(size * k) - 0.5) / k;
+    const bake = (size, draw) => {
+      const c = sprite(whole(size), whole(size), draw);
+      return { c, side: c.width / k };
+    };
+
+    // the bots: [slot][is "it"][facing right]
+    const bots = COLORS.map((col) => [false, true].map((it) => [-1, 1].map((face) => bake(it ? 104 : 72, (g) => paintBot(g, it ? 104 : 72, col, face, it)))));
+
+    // rain: three lengths of streak, baked at screen size, faint at the top and bright at the tip
+    const drops = [12, 17, 23].map((len) => {
+      const hp = Math.max(4, Math.round(len * env.scale));
+      const wp = Math.ceil(hp * 0.22) + 3;
+      const c = sprite((wp - 0.5) / k, (hp - 0.5) / k, (g) => {
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        const fade = g.createLinearGradient(0, 0, 0, hp);
+        fade.addColorStop(0, 'rgba(160,215,255,0)');
+        fade.addColorStop(1, 'rgba(175,225,255,.6)');
+        g.strokeStyle = fade;
+        g.lineWidth = Math.max(1, env.scale * 0.75);
+        g.beginPath();
+        g.moveTo(wp - 1.5, 0);
+        g.lineTo(1.5, hp - 1);
+        g.stroke();
+      });
+      return { c, dx: wp - 1.5 };
+    });
     const rain = [];
-    for (let i = 0; i < 80; i++) rain.push({ x: rnd() * (W + 120), y: rnd() * (H + 60), v: 520 + rnd() * 380, l: 9 + rnd() * 12 });
+    for (let i = 0; i < 56; i++) rain.push({ x: rnd() * (W + 120), y: rnd() * (H + 60), v: 520 + rnd() * 380, drop: drops[i % 3] });
 
     // every rail a pulse of light can run along: ledges, open block tops, slopes
     const rails = [];
@@ -384,18 +499,20 @@ export default {
     }
     for (const r of arena.ramps) rail(r.x0, r.y0, r.x1, r.y1);
 
+    // only lights in plain view may blink
+    const hidden = (x0, y0, x1, y1) => cover.some((c) => x1 > c[0] && x0 < c[2] && y1 > c[1]);
     return {
       bg,
       overlay,
-      signs,
-      beacons,
+      signs: signs.filter((s) => !hidden(s.x, s.y, s.x + s.w, s.y + s.h)),
+      beacons: beacons.filter((b) => !hidden(b.x - 2, b.y - 2, b.x + 2, b.y + 2)),
       rain,
       rails,
       cars: [],
       arena,
-      // glow sprites: one per player colour, one for whoever is "it", one for bounce pads
-      pal: COLORS.map((c) => ({ glow: glowSprite(sprite, c, 0.5), rim: lighten(c, 0.45), hi: lighten(c, 0.7) })),
-      itGlow: glowSprite(sprite, HOT, 0.9),
+      k,
+      bots,
+      legs: COLORS.map((c) => lighten(c, 0.5)),
       padGlow: glowSprite(sprite, AMBER, 0.75),
       trail: [0, 0, 0, 0],
     };
@@ -495,9 +612,8 @@ export default {
     g.drawImage(sc.overlay, 0, 0, W, H);
   },
 
-  // every frame: a handful of small lights and one stroke of rain
+  // every frame: a handful of small lights, pulses on the rails, and the rain
   live(g, sc, t) {
-    if (OFF.has('live')) return; // DEBUG
     // flickering signs: briefly cut the power
     g.fillStyle = 'rgba(19,10,54,.72)';
     for (let i = 0; i < sc.signs.length; i++) {
@@ -509,20 +625,9 @@ export default {
     for (const b of sc.beacons) {
       if (Math.sin(t * 2.4 + b.ph) > 0.2) g.fillRect(b.x - 1.6, b.y - 1.6, 3.2, 3.2);
     }
-    // rain, falling at a slant
-    g.strokeStyle = 'rgba(160,215,255,.3)';
-    g.lineWidth = 1;
-    g.beginPath();
-    if (!OFF.has('rain')) // DEBUG
-    for (const d of sc.rain) {
-      const y = ((d.y + t * d.v) % (H + 60)) - 30;
-      const x = ((d.x - y * 0.22 + 2000) % (W + 120)) - 60;
-      g.moveTo(x, y);
-      g.lineTo(x - d.l * 0.22, y + d.l);
-    }
-    g.stroke();
 
     // the rest is drawn at world positions
+    const art = g.getTransform();
     const w = sc.world;
     g.translate(w.x, w.y);
     g.scale(w.k, w.k);
@@ -539,7 +644,6 @@ export default {
 
     // a pulse of light racing along every rail
     g.beginPath();
-    if (!OFF.has('pulse')) // DEBUG
     for (const r of sc.rails) {
       const loop = r.len + 60;
       for (let j = 0; j < r.n; j++) {
@@ -561,7 +665,6 @@ export default {
 
     // chevrons rising off the bounce pads (they shrink as they go, which reads as fading)
     g.beginPath();
-    if (!OFF.has('chev')) // DEBUG
     for (const tr of sc.arena.tramps) {
       for (let n = 0; n < 3; n++) {
         const ph = (t * 1.6 + n / 3) % 1;
@@ -576,6 +679,14 @@ export default {
     g.lineWidth = 2.4;
     g.strokeStyle = '#ffc56e';
     g.stroke();
+
+    // rain, falling at a slant: each streak is a sprite stamped straight onto whole pixels
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    for (const d of sc.rain) {
+      const y = ((d.y + t * d.v) % (H + 60)) - 30;
+      const x = ((d.x - y * 0.22 + 2000) % (W + 120)) - 60;
+      g.drawImage(d.drop.c, Math.round(art.a * x + art.e - d.drop.dx), Math.round(art.d * y + art.f));
+    }
   },
 
   // a repulsor pad
@@ -591,6 +702,17 @@ export default {
     g.fillRect(x + 2, y + 2 + dip, w - 4, 5);
     g.fillStyle = '#fff3d6';
     g.fillRect(x + 4, y + 3 + dip, w - 8, 1.6 + k * 2);
+    // two faint arrows painted in the air above it (brighter ones rise through them in live())
+    g.strokeStyle = '#9a6a35';
+    g.lineWidth = 2;
+    g.lineJoin = 'round';
+    g.beginPath();
+    for (const cy of [y - 9, y - 18]) {
+      g.moveTo(tr.cx - 8, cy + 4);
+      g.lineTo(tr.cx, cy - 1.5);
+      g.lineTo(tr.cx + 8, cy + 4);
+    }
+    g.stroke();
   },
 
   // a hard-light gate
@@ -660,42 +782,42 @@ export default {
   },
 
   player(g, pv, t, sc) {
-    if (OFF.has('player')) return; // DEBUG
-    const { cx, feet, color } = pv;
-    const pal = sc.pal[pv.slot];
+    const k = sc.k;
     const moving = pv.ground && Math.abs(pv.vx) > 30;
     const sw = moving ? Math.sin(pv.run) : 0;
     const bob = moving ? Math.abs(Math.cos(pv.run)) * 1.5 : 0;
-    const by = pv.y + 1 - bob;
-    const bh = 31;
-    const hip = by + bh - 2;
+    // the baked body goes on whole pixels; the legs hang off wherever it lands
+    const bot = sc.bots[pv.slot][pv.isIt ? 1 : 0][pv.face > 0 ? 1 : 0];
+    const half = bot.side / 2;
+    const left = Math.round((pv.cx - half) * k) / k;
+    const top = Math.round((pv.y + 17 - bob - half) * k) / k;
+    const cx = left + half;
+    const by = top + half - 16;
+    const hip = by + 29;
+    const feet = pv.feet;
 
-    // halo: their own colour, or a big angry pulse around whoever is "it"
-    if (OFF.has('glow')) ; else // DEBUG
     if (pv.isIt) {
-      const r = 54 + 6 * Math.sin(t * 11);
-      g.drawImage(sc.itGlow, cx - r, by + 16 - r, r * 2, r * 2);
-      // a ring that keeps pinging outwards
+      // a ring that keeps pinging outwards from whoever is "it"
       const ping = (t * 1.3) % 1;
       g.strokeStyle = HOT;
       g.lineWidth = 3.2 * (1 - ping);
       g.beginPath();
       g.arc(cx, by + 16, 24 + ping * 26, 0, 6.283);
       g.stroke();
-    } else g.drawImage(pal.glow, cx - 36, by - 20, 72, 72);
+    }
     squashAt(g, cx, feet, pv.squash);
 
     // legs: two light sticks
     g.lineCap = 'round';
-    g.strokeStyle = pal.rim;
+    g.strokeStyle = sc.legs[pv.slot];
     g.lineWidth = 4;
     g.beginPath();
     if (!pv.ground) {
-      const k = pv.vy < 0 ? 5 : -3;
+      const kick = pv.vy < 0 ? 5 : -3;
       g.moveTo(cx - 7, hip);
-      g.lineTo(cx - 7 - pv.face * k, feet - 4);
+      g.lineTo(cx - 7 - pv.face * kick, feet - 4);
       g.moveTo(cx + 7, hip);
-      g.lineTo(cx + 7 - pv.face * k, feet - 1);
+      g.lineTo(cx + 7 - pv.face * kick, feet - 1);
     } else {
       g.moveTo(cx - 7, hip);
       g.lineTo(cx - 7 + sw * 7, feet - 2 - Math.max(0, sw) * 4);
@@ -704,52 +826,16 @@ export default {
     }
     g.stroke();
 
-    // body shell in the player's colour, with a bright tube around the edge
-    rr(g, pv.x + 2, by, PW - 4, bh, 8);
-    g.fillStyle = color;
-    g.fill();
-    g.lineWidth = 2;
-    g.strokeStyle = pv.isIt ? '#ffffff' : pal.rim;
-    g.stroke();
-    g.fillStyle = pal.hi;
-    g.fillRect(pv.x + 8, by + 2.5, PW - 16, 2.5);
-
-    // dark visor with lit eyes
-    const vx = cx - 10 + pv.face * 3;
-    const ey = by + 12;
-    rr(g, vx, by + 7, 20, 10, 3.5);
-    g.fillStyle = SHELL;
-    g.fill();
-    if (pv.isIt) {
-      // angry slanted eyes
-      const ex = vx + 10 + pv.face * 1.5;
-      g.fillStyle = '#ff5c80';
-      g.beginPath();
-      g.moveTo(ex - 7.5, ey - 3.5);
-      g.lineTo(ex - 1.5, ey - 0.5);
-      g.lineTo(ex - 2, ey + 3);
-      g.lineTo(ex - 7.5, ey + 3);
-      g.moveTo(ex + 7.5, ey - 3.5);
-      g.lineTo(ex + 1.5, ey - 0.5);
-      g.lineTo(ex + 2, ey + 3);
-      g.lineTo(ex + 7.5, ey + 3);
-      g.fill();
-    } else {
-      const eh = 6 * (1 - pv.blink * 0.85);
-      g.fillStyle = '#d2fbff';
-      g.fillRect(vx + 4 + pv.face * 2, ey - eh / 2, 3.6, eh);
-      g.fillRect(vx + 12.4 + pv.face * 2, ey - eh / 2, 3.6, eh);
+    g.drawImage(bot.c, left, top, bot.side, bot.side);
+    if (pv.blink > 0.25 && !pv.isIt) {
+      // eyes shut: cover them, leave two slits
+      const vx = cx - 10 + pv.face * 3;
+      g.fillStyle = SHELL;
+      g.fillRect(vx + 2.5, by + 8, 15, 8);
+      g.fillStyle = '#d8fcff';
+      g.fillRect(vx + 4 + pv.face * 2, by + 11.4, 3.6, 1.2);
+      g.fillRect(vx + 12.4 + pv.face * 2, by + 11.4, 3.6, 1.2);
     }
-    // core light + antenna
-    g.fillStyle = '#ffffff';
-    g.fillRect(cx - 2, by + 21.5, 4, 4);
-    g.fillRect(cx - pv.face * 9 - 1.75, by - 8.5, 3.5, 3.5);
-    g.strokeStyle = pal.rim;
-    g.lineWidth = 1.8;
-    g.beginPath();
-    g.moveTo(cx - pv.face * 6, by + 1);
-    g.lineTo(cx - pv.face * 9, by - 5.5);
-    g.stroke();
   },
 
   // a small neon sign with an arrow pointing at the head
@@ -785,22 +871,10 @@ export default {
     // afterimages
     trail(R, pv, dt, t) {
       const sc = R.scene;
-      if (OFF.has('trail')) return; // DEBUG
       if (Math.abs(pv.vx) < 150 && pv.ground) return;
       if (t - sc.trail[pv.slot] < 0.05) return;
       sc.trail[pv.slot] = t;
-      R.emit({
-        x: pv.x,
-        y: pv.y,
-        life: 0.22,
-        alpha: 0.32,
-        back: true,
-        color: pv.color,
-        draw(g, p) {
-          g.fillStyle = p.color;
-          g.fillRect(p.x + 3, p.y + 2, PW - 6, 29);
-        },
-      });
+      R.emit({ x: pv.x, y: pv.y, life: 0.22, alpha: 0.32, back: true, color: pv.color, draw: afterimage });
     },
     jump(R, pv) {
       for (let i = 0; i < 5; i++) {

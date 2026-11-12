@@ -156,7 +156,7 @@ function brightStar(g, x, y, r, col) {
   g.fill();
 }
 
-function starfield(g, rnd) {
+function starfield(g, rnd, stars) {
   for (let i = 0; i < 950; i++) {
     const m = rnd() ** 3; // most are faint
     const s = 0.45 + m * 0.95;
@@ -172,13 +172,17 @@ function starfield(g, rnd) {
   for (let i = 0; i < 46; i++) {
     const x = rnd() * W;
     const y = rnd() * H;
-    const col = starTint(rnd());
-    glowDot(g, x, y, 2.2 + rnd() * 2.2, col, 0.5);
+    const r = 2.2 + rnd() * 2.2;
+    glowDot(g, x, y, r, starTint(rnd()), 0.5);
     g.fillStyle = '#ffffff';
     g.fillRect(x - 0.5, y - 0.5, 1, 1);
+    stars.push({ x, y, r: 2.2 + r * 0.7 });
   }
   const big = [[236, 58, 1.5, '#cfe0ff'], [704, 66, 1.25, '#ffe9c8'], [452, 34, 1.1, '#cfe0ff'], [372, 236, 1.2, '#e6dcff'], [748, 268, 1.0, '#cfe0ff'], [54, 250, 1.15, '#ffe0c0'], [520, 300, 0.9, '#cfe0ff']];
-  for (const [x, y, r, col] of big) brightStar(g, x, y, r, col);
+  for (const [x, y, r, col] of big) {
+    brightStar(g, x, y, r, col);
+    stars.unshift({ x, y, r: 3.6 + r * 1.6 }); // the brightest twinkle first
+  }
 }
 
 // a small ringed moon, lit from the lower right like everything else
@@ -606,11 +610,15 @@ function drawHull(g, p, i, rnd, arena) {
       g.fillRect(px + pw - 1.2, py, 1.3, rowH);
       g.fillStyle = 'rgba(255,255,255,.12)';
       g.fillRect(px + pw + 0.1, py, 0.9, rowH);
-      // rivets in the corners
-      g.fillStyle = 'rgba(6,9,26,.5)';
-      for (const [rx, ry] of [[4.5, 5], [pw - 6, 5], [4.5, rowH - 5], [pw - 6, rowH - 5]]) g.fillRect(px + rx - 0.8, py + ry - 0.8, 1.6, 1.6);
-      g.fillStyle = 'rgba(255,255,255,.3)';
-      for (const [rx, ry] of [[4.5, 5], [pw - 6, 5], [4.5, rowH - 5], [pw - 6, rowH - 5]]) g.fillRect(px + rx - 0.8, py + ry - 1.3, 1.2, 0.7);
+      // rivets in the corners: a dark dot with a glint on top
+      for (const rx of [4.5, pw - 6]) {
+        for (const ry of [5, rowH - 5]) {
+          g.fillStyle = 'rgba(6,9,26,.5)';
+          g.fillRect(px + rx - 0.8, py + ry - 0.8, 1.6, 1.6);
+          g.fillStyle = 'rgba(255,255,255,.3)';
+          g.fillRect(px + rx - 0.8, py + ry - 1.3, 1.2, 0.7);
+        }
+      }
 
       // something on the panel: a window, a vent, a hatch, a stencilled number
       const cx = px + pw / 2;
@@ -689,10 +697,10 @@ function drawHull(g, p, i, rnd, arena) {
 
   // the deck: a white plate with station lighting under its lip
   for (const [a, b] of spans) {
-    // warning paint at drop-offs and under jump pads
+    // warning paint at drop-offs (the block's own ends, unless they are the arena wall) and under jump pads
     const marks = [];
-    if (a > 1 && b - a > 90) marks.push([a + 3, 30]);
-    if (b < arena.w - 1 && b - a > 90) marks.push([b - 33, 30]);
+    if (a === x && a > 1 && b - a > 90) marks.push([a + 3, 30]);
+    if (b === x + w && b < arena.w - 1 && b - a > 90) marks.push([b - 33, 30]);
     for (const tr of arena.tramps) {
       if (Math.abs(tr.y + tr.h - src.y) < 2 && tr.x > a - 1 && tr.x + tr.w < b + 1) marks.push([tr.x - 8, tr.w + 16]);
     }
@@ -916,6 +924,72 @@ function overDeck(arena, x, feet) {
   return false;
 }
 
+// live() draws over the platforms, so whatever twinkles or flies in the backdrop
+// has to keep to open sky. Worked out in decor(), when the real transforms of
+// both the art board (noted in back()) and the world are on the table.
+function placeLive(g, sc, arena) {
+  const at = sc.artT;
+  if (!at || !g.getTransform) return; // very old browser: a still sky
+  const wt = g.getTransform();
+  const toWorldX = (ax) => (at.e + ax * at.a - wt.e) / wt.a;
+  const toWorldY = (ay) => (at.f + ay * at.d - wt.f) / wt.d;
+  const toArtX = (wx) => (wt.e + wx * wt.a - at.e) / at.a;
+  const toArtY = (wy) => (wt.f + wy * wt.d - at.f) / at.d;
+  // hidden behind a platform, a slope or an antenna mast?
+  const covered = (ax, ay, pad) => {
+    const wx = toWorldX(ax);
+    const wy = toWorldY(ay);
+    for (const p of arena.platforms) {
+      const bottom = p.ground && p.y + p.h >= arena.h - 1 ? Infinity : p.y + p.h;
+      if (wx > p.x - pad && wx < p.x + p.w + pad && wy > p.y - pad - (p.ground ? 34 : 0) && wy < bottom + pad) return true;
+    }
+    for (const r of arena.ramps) {
+      if (wx < r.x0 - 20 - pad || wx > r.x1 + 20 + pad) continue;
+      const ry = r.y0 + ((r.y1 - r.y0) * (wx - r.x0)) / (r.x1 - r.x0);
+      if (wy > ry - pad - 4 && wy < ry + 20 + pad) return true;
+    }
+    return false;
+  };
+  // ... or in front of the planet, the moon or the far station?
+  const cosr = Math.cos(-ST.rot);
+  const sinr = Math.sin(-ST.rot);
+  const scenery = (ax, ay) => {
+    if (ay > limbY(clamp(ax, 0, W)) - 14) return true;
+    if (Math.hypot(ax - MOON.x, ay - MOON.y) < MOON.r * 2.3) return true;
+    const dx = ax - ST.x;
+    const dy = ay - ST.y;
+    return Math.abs(dx * cosr - dy * sinr) < 168 * ST.s && Math.abs(dx * sinr + dy * cosr) < 76 * ST.s;
+  };
+  const rnd = sc.rndLive;
+
+  // twinkling: up to 16 of the painted stars that nothing hides, spread about
+  for (const s of sc.stars) {
+    if (sc.twinkles.length >= 16) break;
+    if (covered(s.x, s.y, 12) || scenery(s.x, s.y) || sc.twinkles.some((o) => Math.hypot(o.x - s.x, o.y - s.y) < 44)) continue;
+    sc.twinkles.push({ x: s.x, y: s.y, r: s.r, f: 1.1 + rnd() * 2.2, ph: rnd() * TAU });
+  }
+  // shooting stars: short paths across open sky
+  for (let tries = 0; tries < 200 && sc.meteors.length < 5; tries++) {
+    const x = 80 + rnd() * (W - 160);
+    const y = 30 + rnd() * 240;
+    const dx = (rnd() < 0.5 ? -1 : 1) * (70 + rnd() * 40);
+    const dy = 24 + rnd() * 26;
+    let clear = true;
+    for (let f = -0.3; f <= 1.01 && clear; f += 0.1) clear = !covered(x + dx * f, y + dy * f, 20) && !scenery(x + dx * f, y + dy * f);
+    if (clear) sc.meteors.push({ x, y, dx, dy });
+  }
+  // a satellite crossing high above the arena: note where a platform would hide it
+  const top = toArtY(46);
+  sc.satY = (ax) => top + (ax / W) * 14;
+  sc.satMask = [];
+  for (let ax = 0; ax <= W; ax += 8) sc.satMask.push(!covered(ax, sc.satY(ax), 16));
+  // where the strobes on the antenna masts are, on the art board
+  for (const m of sc.masts) {
+    m.ax = toArtX(m.x);
+    m.ay = toArtY(m.y - m.h - 1);
+  }
+}
+
 // particle that stamps a baked glow (p.img) instead of drawing a shape
 function stamp(g, p) {
   const s = Math.max(1, p.size);
@@ -963,11 +1037,11 @@ export default {
 
   build(env) {
     const { layer, sprite, arena } = env;
-    // Separate random streams: how many twinkling stars fit depends on the shape
-    // of the screen, and that must not change the rest of the scenery.
+    // Separate random streams: where shooting stars may fly depends on the shape
+    // of the screen, and that must not change the scenery everyone shares.
     const seed = (env.rnd() * 4294967296) >>> 0;
     const rnd = mulberry32(seed); // the painted backdrop
-    const rndLive = mulberry32(seed + 1); // things that move
+    const rndLive = mulberry32(seed + 1); // things that move (see placeLive)
     const rndMast = mulberry32(seed + 2);
 
     // Screen pixels per world unit, read off a throw-away sprite. Sprites are
@@ -986,66 +1060,8 @@ export default {
       return { c, x: snap(x0), y: snap(y0), w: c.width / k, h: c.height / k };
     };
 
-    // Art board <-> world. Both are centred on the screen, so this only needs the two scales.
-    const u = env.scale / k; // world units per art unit
-    const toWorldX = (ax) => arena.w / 2 + (ax - W / 2) * u;
-    const toWorldY = (ay) => arena.h / 2 + (ay - H / 2) * u;
-    const toArtX = (wx) => W / 2 + (wx - arena.w / 2) / u;
-    const toArtY = (wy) => H / 2 + (wy - arena.h / 2) / u;
-    // Is this spot of the backdrop hidden behind a platform or slope? (live() draws
-    // over the platforms, so nothing there may twinkle.)
-    const covered = (ax, ay, pad = 12) => {
-      const wx = toWorldX(ax);
-      const wy = toWorldY(ay);
-      for (const p of arena.platforms) {
-        const bottom = p.ground && p.y + p.h >= arena.h - 1 ? Infinity : p.y + p.h;
-        if (wx > p.x - pad && wx < p.x + p.w + pad && wy > p.y - pad - (p.ground ? 34 : 0) && wy < bottom + pad) return true;
-      }
-      for (const r of arena.ramps) {
-        if (wx < r.x0 - 20 - pad || wx > r.x1 + 20 + pad) continue;
-        const ry = r.y0 + ((r.y1 - r.y0) * (wx - r.x0)) / (r.x1 - r.x0);
-        if (wy > ry - pad - 4 && wy < ry + 20 + pad) return true;
-      }
-      return false;
-    };
-    // ... or behind the planet, the moon or the far station?
-    const cosr = Math.cos(-ST.rot);
-    const sinr = Math.sin(-ST.rot);
-    const scenery = (ax, ay) => {
-      if (ay > limbY(clamp(ax, 0, W)) - 14) return true;
-      if (Math.hypot(ax - MOON.x, ay - MOON.y) < MOON.r * 2.3) return true;
-      const dx = ax - ST.x;
-      const dy = ay - ST.y;
-      return Math.abs(dx * cosr - dy * sinr) < 168 * ST.s && Math.abs(dx * sinr + dy * cosr) < 76 * ST.s;
-    };
-
-    // stars that twinkle: picked where nothing hides them, and painted into the sky as well
-    const twinkles = [];
-    for (let tries = 0; tries < 400 && twinkles.length < 16; tries++) {
-      const x = 20 + rndLive() * (W - 40);
-      const y = 30 + rndLive() * (H - 120);
-      if (covered(x, y) || scenery(x, y)) continue;
-      if (twinkles.some((s) => Math.hypot(s.x - x, s.y - y) < 60)) continue;
-      twinkles.push({ x, y, r: 3.2 + rndLive() * 2.6, f: 1.1 + rndLive() * 2.2, ph: rndLive() * TAU, col: starTint(rndLive()) });
-    }
-    // shooting stars: short paths across open sky
-    const meteors = [];
-    for (let tries = 0; tries < 200 && meteors.length < 5; tries++) {
-      const x = 80 + rndLive() * (W - 160);
-      const y = 30 + rndLive() * 240;
-      const dir = rndLive() < 0.5 ? -1 : 1;
-      const dx = dir * (70 + rndLive() * 40);
-      const dy = 24 + rndLive() * 26;
-      let clear = true;
-      for (let s = -0.3; s <= 1.01 && clear; s += 0.1) clear = !covered(x + dx * s, y + dy * s, 20) && !scenery(x + dx * s, y + dy * s);
-      if (clear) meteors.push({ x, y, dx, dy });
-    }
-    // a satellite crossing high above the arena; note where platforms would hide it
-    const satY = (ax) => toArtY(46) + (ax / W) * 14;
-    const satMask = [];
-    for (let ax = 0; ax <= W; ax += 8) satMask.push(!covered(ax, satY(ax), 16));
-
-    const beacons = [];
+    const beacons = []; // lamps on the far station
+    const stars = []; // the brighter stars: some of them will twinkle
     const bg = layer((g) => {
       const sky = g.createLinearGradient(0, 0, 0, H);
       sky.addColorStop(0, '#03040c');
@@ -1054,12 +1070,7 @@ export default {
       g.fillStyle = sky;
       g.fillRect(0, 0, W, H);
       nebula(g, rnd, layer);
-      starfield(g, rnd);
-      for (const s of twinkles) {
-        glowDot(g, s.x, s.y, s.r * 0.9, s.col, 0.5);
-        g.fillStyle = '#ffffff';
-        g.fillRect(s.x - 0.45, s.y - 0.45, 0.9, 0.9);
-      }
+      starfield(g, rnd, stars);
       ringedMoon(g, rnd);
       farStation(g, rnd, beacons);
       planet(g, rnd, layer);
@@ -1093,13 +1104,9 @@ export default {
       if (!p.ground) continue;
       for (const [a, b] of topSpans(p, arena)) {
         for (let x = a + 70 + rndMast() * 160; x < b - 70; x += 380 + rndMast() * 260) {
-          if (!busy(x, p.y)) masts.push({ x: Math.round(x), y: p.y, h: 26 + rndMast() * 10, ax: 0, ay: 0, ph: rndMast() });
+          if (!busy(x, p.y)) masts.push({ x: Math.round(x), y: p.y, h: 26 + rndMast() * 10, ax: null, ay: null, ph: rndMast() });
         }
       }
-    }
-    for (const m of masts) {
-      m.ax = toArtX(m.x);
-      m.ay = toArtY(m.y - m.h - 1);
     }
 
     // baked glows
@@ -1152,10 +1159,11 @@ export default {
       limb: darken(color, 0.14),
     }));
 
-    return { bg, shade, k, snap, suits, itGlow, flare, puff, dust, padGlow, spark, twinkles, meteors, satY, satMask, beacons, masts, u, trail: [0, 0, 0, 0] };
+    return { bg, shade, snap, suits, itGlow, flare, puff, dust, padGlow, spark, beacons, masts, stars, rndLive, artT: null, twinkles: [], meteors: [], satY: null, satMask: null, trail: [0, 0, 0, 0] };
   },
 
   back(g, sc) {
+    if (g.getTransform) sc.artT = g.getTransform(); // where the art board sits on the canvas (for placeLive)
     g.drawImage(sc.bg, 0, 0, W, H);
   },
 
@@ -1226,6 +1234,7 @@ export default {
       g.fillStyle = '#ffffff';
       g.fillRect(m.x - 1.2, top - 2.2, 2.4, 2.4);
     }
+    placeLive(g, sc, arena);
   },
 
   // static: the corners fall away into the dark
@@ -1258,11 +1267,11 @@ export default {
     for (let i = 0; i < sc.masts.length; i++) {
       const m = sc.masts[i];
       const ph = (t * 0.6 + m.ph) % 1;
-      if (ph > 0.07 && (ph < 0.14 || ph > 0.21)) continue;
+      if (m.ax == null || (ph > 0.07 && (ph < 0.14 || ph > 0.21))) continue;
       g.drawImage(sp, m.ax - 5, m.ay - 5, 10, 10);
     }
     // a satellite gliding over
-    {
+    if (sc.satMask) {
       const x = ((t * 5 + 300) % (W + 80)) - 40;
       if (sc.satMask[clamp(Math.round(x / 8), 0, sc.satMask.length - 1)]) {
         const y = sc.satY(x);
@@ -1498,6 +1507,12 @@ export default {
       const s = 74 + 6 * Math.sin(t * 9);
       g.drawImage(sc.itGlow, -s / 2, -21 - s / 2, s, s);
     }
+    if (air) {
+      // weightless: the whole body tips into the direction of travel
+      g.translate(0, -20);
+      g.rotate(clamp(pv.vx / 310, -1, 1) * 0.17);
+      g.translate(0, 20);
+    }
     g.scale(pv.face, 1); // from here on the astronaut faces right
     g.lineCap = 'round';
     g.lineJoin = 'round';
@@ -1652,7 +1667,7 @@ export default {
   marker(g, cx, cy) {
     g.save();
     g.translate(cx, cy);
-    glowDot(g, 0, -13, 34, ALERT, 0.55);
+    glowDot(g, 0, -15, 32, ALERT, 0.55);
     g.lineJoin = 'round';
     // badge with a pointer underneath
     const badge = () => {

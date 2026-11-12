@@ -265,16 +265,21 @@ function block(g, p, rnd, arena) {
   }
 }
 
-// A soft round light, baked once and stamped wherever something has to glow.
-function glowSprite(sprite, color, alpha) {
-  return sprite(64, 64, (g) => {
-    const rg = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    rg.addColorStop(0, rgba(color, alpha));
-    rg.addColorStop(0.4, rgba(color, alpha * 0.45));
-    rg.addColorStop(1, rgba(color, 0));
-    g.fillStyle = rg;
-    g.fillRect(0, 0, 64, 64);
-  });
+// A soft round light filling a box of the given size.
+function light(g, size, color, alpha) {
+  const r = size / 2;
+  const rg = g.createRadialGradient(r, r, 0, r, r, r);
+  rg.addColorStop(0, rgba(color, alpha));
+  rg.addColorStop(0.4, rgba(color, alpha * 0.45));
+  rg.addColorStop(1, rgba(color, 0));
+  g.fillStyle = rg;
+  g.fillRect(0, 0, size, size);
+}
+
+// How a wisp left behind by a spirit is drawn: its baked blob of light, on whole pixels.
+function stampWisp(g, p) {
+  const s = p.wisp;
+  g.drawImage(s.c, Math.round((p.x - s.w / 2) * p.k) / p.k, Math.round((p.y - s.h / 2) * p.k) / p.k, s.w, s.h);
 }
 
 // Everything in the arena as boxes [x0, y0, x1, y1], with a little room around each.
@@ -469,6 +474,17 @@ export default {
     const bats = [];
     for (let i = 0; i < 3; i++) bats.push({ x: rnd() * W, y: my - 50 + i * 45, v: (i % 2 ? -1 : 1) * (26 + rnd() * 22), f: 0.8 + rnd(), ph: rnd() * 6, s: 4.5 + rnd() * 2 });
 
+    // Sprites are stamped pixel for pixel on whole pixels, which costs next to nothing.
+    // k = sprite pixels per world unit; sizes are trimmed to a whole number of pixels.
+    let k = 1;
+    sprite(1, 1, (g) => (k = unit(g)));
+    const whole = (size) => (Math.ceil(size * k) - 0.5) / k;
+    const bake = (w, h, draw) => {
+      const c = sprite(whole(w), whole(h), draw);
+      return { c, w: c.width / k, h: c.height / k };
+    };
+    const wisps = [140, 170].map((w) => bake(w, w * 0.29, (g) => puff(g, w / 2, w * 0.145, w / 2, w * 0.145, '#aabeb9', 0.3)));
+
     // wisps of mist that creep back and forth along open ground (world positions)
     const beds = [];
     for (const p of arena.platforms) {
@@ -477,7 +493,7 @@ export default {
     const mist = [];
     for (let i = 0; i < 6 && beds.length; i++) {
       const [a, b, y] = beds[i % beds.length];
-      mist.push({ a: a + 70, len: b - a - 140, y: y - 34 + rnd() * 12, w: 130 + rnd() * 40, v: 9 + rnd() * 14, ph: rnd() * 2 });
+      mist.push({ a: a + 70, len: b - a - 140, y: y - 34 + rnd() * 12, wisp: wisps[i % 2], v: 9 + rnd() * 14, ph: rnd() * 2 });
     }
 
     return {
@@ -489,11 +505,18 @@ export default {
       mist,
       arena,
       solid: boxes(arena),
-      // light sprites: one per spirit, one for whoever is "it", one for the toadstools, one wisp of mist
-      pal: COLORS.map((c) => ({ glow: glowSprite(sprite, c, 0.42), hi: lighten(c, 0.45) })),
-      itGlow: glowSprite(sprite, EMBER, 0.7),
-      capGlow: glowSprite(sprite, '#ff2a2a', 0.5),
-      wisp: sprite(96, 28, (g) => puff(g, 48, 14, 48, 14, '#aabeb9', 0.3)),
+      k,
+      // light sprites: every spirit's own pool of light (a wider one for you) and the wisps it leaves behind,
+      // two sizes of red for whoever is "it", one for the toadstools
+      pal: COLORS.map((c) => ({
+        glow: bake(96, 96, (g) => light(g, 96, c, 0.42)),
+        mine: bake(116, 116, (g) => light(g, 116, c, 0.42)),
+        wisp: bake(22, 22, (g) => light(g, 22, c, 0.5)),
+        hi: lighten(c, 0.45),
+      })),
+      itGlow: [124, 138].map((d) => bake(d, d, (g) => light(g, d, EMBER, 0.7))),
+      itWisp: bake(22, 22, (g) => light(g, 22, '#ff3b30', 0.55)),
+      capGlow: sprite(64, 64, (g) => light(g, 64, '#ff2a2a', 0.5)),
       seen: COLORS.map(() => ({ x: 0, y: 0, t: -9 })), // where each spirit was last drawn
       wispT: [0, 0, 0, 0],
       nextBolt: null,
@@ -578,11 +601,8 @@ export default {
     // the light in the house gutters
     for (let i = 0; i < sc.windows.length; i++) {
       const r = sc.windows[i];
-      g.fillStyle = `rgba(255,170,70,${(0.1 + 0.5 * vnoise(t * 6 + i * 20, 3)).toFixed(2)})`;
-      g.fillRect(r.x, r.y, r.w / 2 - 0.6, r.h / 2 - 0.6);
-      g.fillRect(r.x + r.w / 2 + 0.6, r.y, r.w / 2 - 0.6, r.h / 2 - 0.6);
-      g.fillRect(r.x, r.y + r.h / 2 + 0.6, r.w / 2 - 0.6, r.h / 2 - 0.6);
-      g.fillRect(r.x + r.w / 2 + 0.6, r.y + r.h / 2 + 0.6, r.w / 2 - 0.6, r.h / 2 - 0.6);
+      g.fillStyle = `rgba(255,170,70,${(0.08 + 0.45 * vnoise(t * 6 + i * 20, 3)).toFixed(2)})`;
+      g.fillRect(r.x, r.y, r.w, r.h);
     }
 
     // eyes in the dark: they open, look at whoever is nearest, and close again
@@ -639,7 +659,7 @@ export default {
     }
     g.fill();
 
-    // lightning: rare, brief, and it always comes down on something
+    // lightning: rare and brief; the bolt stops at whatever it strikes
     if (sc.nextBolt === null) sc.nextBolt = t + 6 + Math.random() * 8;
     if (t > sc.nextBolt) {
       sc.nextBolt = t + 14 + Math.random() * 16;
@@ -672,13 +692,13 @@ export default {
       g.stroke();
     }
 
-    // mist creeping along the ground
-    g.translate(w.x, w.y);
-    g.scale(w.k, w.k);
+    // mist creeping along the ground: sprites stamped straight onto whole pixels
+    const art = g.getTransform();
+    g.setTransform(1, 0, 0, 1, 0, 0);
     for (const m of sc.mist) {
       const f = ((t * m.v) / m.len + m.ph) % 2;
-      const x = m.a + (f < 1 ? f : 2 - f) * m.len;
-      g.drawImage(sc.wisp, x - m.w / 2, m.y, m.w, m.w * 0.29);
+      const x = m.a + (f < 1 ? f : 2 - f) * m.len - m.wisp.w / 2;
+      g.drawImage(m.wisp.c, Math.round(art.a * (w.x + x * w.k) + art.e), Math.round(art.d * (w.y + m.y * w.k) + art.f));
     }
   },
 
@@ -807,13 +827,9 @@ export default {
     seen.t = t;
 
     // every spirit carries its own light; whoever is "it" burns red
-    if (pv.isIt) {
-      const r = 64 + 7 * Math.sin(t * 9);
-      g.drawImage(sc.itGlow, cx - r, y + 18 - r, r * 2, r * 2);
-    } else {
-      const r = pv.local ? 56 : 48;
-      g.drawImage(pal.glow, cx - r, y + 18 - r, r * 2, r * 2);
-    }
+    const k = sc.k;
+    const glow = pv.isIt ? sc.itGlow[Math.sin(t * 9) > 0 ? 1 : 0] : pv.local ? pal.mine : pal.glow;
+    g.drawImage(glow.c, Math.round((cx - glow.w / 2) * k) / k, Math.round((y + 18 - glow.h / 2) * k) / k, glow.w, glow.h);
     squashAt(g, cx, feet, pv.squash);
     const hover = pv.ground ? Math.sin(t * 4 + pv.seed) * 1.2 : 0;
     const lean = clamp(pv.vx / 260, -1, 1) * 5;
@@ -941,11 +957,11 @@ export default {
         vx: -pv.vx * 0.08 + (Math.random() - 0.5) * 14,
         vy: -12 - Math.random() * 18,
         life: 0.45 + Math.random() * 0.25,
-        size: 5 + Math.random() * 4,
-        grow: -6,
-        alpha: 0.3,
-        color: pv.isIt ? '#ff3b30' : pv.color,
+        alpha: 0.7,
         back: true,
+        k: sc.k,
+        wisp: pv.isIt ? sc.itWisp : sc.pal[pv.slot].wisp,
+        draw: stampWisp,
       });
     },
     jump(R, pv) {

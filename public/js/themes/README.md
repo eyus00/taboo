@@ -99,6 +99,12 @@ Keep counts small: a handful per event, at most ~30 for a tag.
 Allowed: paths, fills, strokes, arcs, small `fillRect`s, `drawImage` of a sprite,
 `save/translate/rotate/restore`, solid or rgba colours.
 
+Good to know: a fill is about half the cost of a fill plus a stroke, so draw an
+outline as a slightly bigger dark shape under the coloured one. Many small paths
+are cheaper than one path whose pieces are scattered across the screen. `live`
+is drawn above the platforms (it is on the moving layer), so keep ambient things
+in open sky or check where the platforms are.
+
 Not allowed: `createLinearGradient` / `createRadialGradient` / `createPattern`,
 `shadowBlur` / `shadowColor`, `filter`, `globalCompositeOperation` other than the
 default, `getImageData`, text (`fillText`), clipping big regions, or filling large

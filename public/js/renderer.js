@@ -26,6 +26,7 @@ export class Renderer {
   // stage: an element to put the canvases in, or null to draw off screen (opts.size = [w, h]).
   // opts.whole: always show the whole arena. opts.zoom / opts.focus: fixed zoom and centre.
   // opts.padBottom: CSS px the following view may scroll below the arena (room for touch buttons).
+  // opts.plain: do not dim the area outside the arena (menu pictures).
   constructor(stage, opts = {}) {
     this.stage = stage;
     this.opts = opts;
@@ -115,6 +116,8 @@ export class Renderer {
     this.s = s;
     this.kDev = kCss * s; // background pixels per world unit
     this.kf = this.kDev * this.q; // foreground pixels per world unit
+    // pixel-art styles: how many whole screen pixels one art pixel is blown up to before the final fit
+    this.pxN = this.theme.pixel ? Math.max(1, Math.ceil(this.kf * this.theme.pixel - 0.001)) : 1;
     this.viewW = cssW / kCss; // world units across the screen
     this.viewH = cssH / kCss;
 
@@ -200,7 +203,7 @@ export class Renderer {
     g.setTransform(1, 0, 0, 1, 0, 0);
     const aw = A.w * kw;
     const ah = A.h * kw;
-    if (wx > 1 || wy > 1) {
+    if ((wx > 1 || wy > 1) && !this.opts.plain) {
       g.fillStyle = rgba(th.letterbox, 0.55);
       g.fillRect(0, 0, cw, wy);
       g.fillRect(0, wy + ah, cw, ch - wy - ah);
@@ -242,15 +245,23 @@ export class Renderer {
     g.restore();
 
     if (U) {
+      // Blow the small picture up by a whole number first (crisp, every art pixel
+      // the same size), then fit that to the screen smoothly. Going straight to a
+      // fractional size would make some art pixels wider than others.
+      const n = Math.ceil(unit - 0.001);
+      let src = this.lo;
+      if (n > 1) {
+        src = this.crisp(this.lo, n);
+      }
       this.bgx.setTransform(1, 0, 0, 1, 0, 0);
-      this.bgx.imageSmoothingEnabled = false;
-      this.bgx.drawImage(this.lo, 0, 0, this.lo.width * unit, this.lo.height * unit);
+      this.bgx.imageSmoothingEnabled = n > 1 ? Math.abs(n - unit) > 0.01 : unit < 1;
+      this.bgx.drawImage(src, 0, 0, this.lo.width * unit, this.lo.height * unit);
     }
     this.buildSprites();
   }
 
-  // Updraft columns: a faint band of colour and a vent at the bottom, so the
-  // column reads even in a still picture. The moving streaks are drawn live.
+  // Updraft columns: a faint band of colour with brighter edges, so the column
+  // reads even in a still picture. The moving streaks are drawn live.
   paintLifts(g) {
     const col = this.theme.lift || '#ffffff';
     for (const z of this.arena.lifts) {
@@ -260,6 +271,18 @@ export class Renderer {
       g.fillRect(z.x, z.y, 3, z.h);
       g.fillRect(z.x + z.w - 3, z.y, 3, z.h);
     }
+  }
+
+  // A copy of a small canvas, n times bigger, with hard pixel edges.
+  crisp(small, n, into) {
+    const c = into || document.createElement('canvas');
+    if (c.width !== small.width * n) c.width = small.width * n;
+    if (c.height !== small.height * n) c.height = small.height * n;
+    const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.clearRect(0, 0, c.width, c.height);
+    g.drawImage(small, 0, 0, c.width, c.height);
+    return c;
   }
 
   // A picture pre-rendered at screen resolution. The box is in world units
@@ -273,10 +296,16 @@ export class Renderer {
     const g = c.getContext('2d');
     g.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
     draw(g);
-    return { c, x0, y0, w, h };
+    return { c: U && this.pxN > 1 ? this.crisp(c, this.pxN) : c, x0, y0, w, h };
   }
 
   blit(g, s, x, y, scale = 1) {
+    const U = this.theme.pixel;
+    if (U) {
+      // pixel art stays on its own grid, and never changes size
+      g.drawImage(s.c, Math.round((x + s.x0) / U) * U, Math.round((y + s.y0) / U) * U, s.w, s.h);
+      return;
+    }
     // snap to whole pixels: sharper, and cheaper to draw
     const k = this.kf;
     const px = Math.round((x + s.x0 * scale) * k) / k;
@@ -421,7 +450,7 @@ export class Renderer {
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalAlpha = 1;
     g.clearRect(0, 0, this.fg.width, this.fg.height);
-    g.imageSmoothingEnabled = !th.pixel;
+    g.imageSmoothingEnabled = true;
 
     // ambient animation (petals, rain, twinkling stars...) on the art board
     if (th.live && this.level === 0) {
@@ -519,23 +548,27 @@ export class Renderer {
     const spr = this.spr;
 
     // updrafts: streaks of air rushing up the column
+    const U = th.pixel;
     if (A.lifts.length) {
-      g.strokeStyle = rgba(th.lift || '#ffffff', 0.55);
+      g.strokeStyle = g.fillStyle = rgba(th.lift || '#ffffff', 0.55);
       g.lineWidth = 2.5;
       g.lineCap = 'round';
-      g.beginPath();
       A.lifts.forEach((z, zi) => {
         const n = Math.max(4, Math.round(z.h / 60));
+        if (!U) g.beginPath();
         for (let i = 0; i < n; i++) {
           const f = (t * (0.45 + 0.25 * hash1(i, zi + 7)) + hash1(i, zi)) % 1;
           const x = z.x + 8 + (z.w - 16) * hash1(i, zi + 3);
           const y = z.y + z.h * (1 - f);
           const len = 14 + 22 * Math.sin(f * Math.PI);
-          g.moveTo(x, y);
-          g.lineTo(x, y - len);
+          if (U) g.fillRect(Math.round(x / U) * U, Math.round((y - len) / U) * U, U, Math.round(len / U) * U);
+          else {
+            g.moveTo(x, y);
+            g.lineTo(x, y - len);
+          }
         }
+        if (!U) g.stroke();
       });
-      g.stroke();
     }
 
     // portals: the pre-rendered ring, breathing a little, with sparks circling it
@@ -545,8 +578,11 @@ export class Renderer {
       g.fillStyle = col;
       for (let k = 0; k < 3; k++) {
         const a = t * 2.4 + i * 1.3 + (k * 6.283) / 3;
-        const r = 2.2 + 0.8 * Math.sin(t * 5 + k);
-        g.fillRect(po.cx + Math.cos(a) * 21 - r / 2, po.cy + Math.sin(a) * 35 - r / 2, r, r);
+        const r = U ? U : 2.2 + 0.8 * Math.sin(t * 5 + k);
+        const sx = po.cx + Math.cos(a) * 21 - r / 2;
+        const sy = po.cy + Math.sin(a) * 35 - r / 2;
+        if (U) g.fillRect(Math.round(sx / U) * U, Math.round(sy / U) * U, r, r);
+        else g.fillRect(sx, sy, r, r);
       }
     });
 
@@ -762,7 +798,7 @@ export class Renderer {
     const th = this.theme;
     const U = th.pixel;
     // tag protection: flash between solid and see-through
-    const a = pv.immune ? (Math.floor(t * 14) % 2 ? 0.35 : 0.9) : 1;
+    const a = pv.immune ? (Math.floor(t * 14) % 2 ? 0.45 : 0.95) : 1;
     if (U) {
       // pixel-art styles: draw at one canvas pixel per art pixel, then blow it up
       const sg = this.sx;
@@ -775,7 +811,8 @@ export class Renderer {
       th.player(sg, pv, t, this.scene);
       sg.restore();
       g.globalAlpha = a;
-      g.drawImage(this.scratch, bx, by, this.scratch.width * U, this.scratch.height * U);
+      const big = this.pxN > 1 ? (this.scratch2 = this.crisp(this.scratch, this.pxN, this.scratch2)) : this.scratch;
+      g.drawImage(big, bx, by, this.scratch.width * U, this.scratch.height * U);
       g.globalAlpha = 1;
     } else {
       g.save();
@@ -887,7 +924,6 @@ export class Renderer {
     const kf = this.kf;
     const cam = this.cam;
     const px = this.s * this.q; // canvas pixels per CSS pixel
-    g.imageSmoothingEnabled = !th.pixel;
     for (const pv of pvs) {
       const sx = Math.round((pv.cx - cam.x) * kf);
       if (sx < -20 * px || sx > this.fg.width + 20 * px) continue; // out of sight

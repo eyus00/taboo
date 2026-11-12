@@ -18,6 +18,10 @@ const THICK = 14; // how thick ledges and slopes are
 const LIP = 16; // slopes carry on flat this far past each end
 const BURST_W = 150; // the "TAG!" burst sprite
 const BURST_H = 104;
+const COLORS = ['#ee4b4b', '#3f8cf0', '#43b85c', '#f7c531']; // red, blue, green, yellow
+const BODY_W = 36; // a character's pre-drawn body: the 28 x 29 blob with room for its outline
+const BODY_H = 37;
+const BODY_PAD = 4;
 
 // One hand-drawn stroke: never perfectly straight, never ending exactly on
 // target. Long strokes wander a little instead of looking ruled.
@@ -472,16 +476,44 @@ function blobPath(g, x, y, w, h, r, j) {
   g.closePath();
 }
 
-// lighter felt-tip streak for each player colour, worked out once
-const streaks = new Map();
-function streakOf(color) {
-  if (!streaks.has(color)) streaks.set(color, lighten(color, 0.45));
-  return streaks.get(color);
+// A character's body as a still picture: coloured in with a felt-tip, outlined,
+// and (when the eyes are open) the whites of its googly eyes, looking right.
+// Stamping this costs far less than stroking it again every frame.
+function body(g, color, wobble, eyes) {
+  const j = (i) => (hash1(wobble * 31 + i, 7) - 0.5) * 1.8;
+  g.translate(BODY_PAD, BODY_PAD);
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  blobPath(g, 0, 0, PW - 4, 29, 9, j);
+  g.fillStyle = color;
+  g.fill();
+  g.strokeStyle = INK;
+  g.lineWidth = 2.8;
+  g.stroke();
+  g.strokeStyle = lighten(color, 0.45);
+  g.lineWidth = 2.4;
+  g.beginPath();
+  for (let k = 0; k < 3; k++) {
+    const d = 5 + k * 7 + j(50 + k);
+    g.moveTo(d, 24);
+    g.lineTo(d + 5, 5);
+  }
+  g.stroke();
+  if (!eyes) return;
+  g.strokeStyle = INK;
+  g.lineWidth = 1.6;
+  g.beginPath();
+  g.arc(11.5, 11, 4.8, 0, 6.283);
+  g.moveTo(27.3, 11);
+  g.arc(22.5, 11, 4.8, 0, 6.283);
+  g.fillStyle = '#fff';
+  g.fill();
+  g.stroke();
 }
 
 export default {
   id: 'sketch',
-  colors: ['#ee4b4b', '#3f8cf0', '#43b85c', '#f7c531'],
+  colors: COLORS,
   letterbox: '#e4dcc4',
   lift: PEN,
   label: {
@@ -499,7 +531,19 @@ export default {
     const bursts = [0, 1].map(() => sprite(BURST_W, BURST_H, (g) => burst(g, rnd)));
     const birds = [];
     for (let i = 0; i < 5; i++) birds.push({ x: rnd() * W, y: 96 + rnd() * 110, v: 9 + rnd() * 9, ph: rnd() * 6.283 });
-    return { rnd, bursts, birds, dash: [0, 0, 0, 0] };
+    // bodies[slot][wobble][eyes open ? 1 : 0]; px = sprite pixels per world unit
+    let px = 1;
+    const bodies = COLORS.map((color) =>
+      [0, 1].map((wobble) =>
+        [false, true].map((eyes) =>
+          sprite(BODY_W, BODY_H, (g) => {
+            px = g.getTransform().a;
+            body(g, color, wobble, eyes);
+          }),
+        ),
+      ),
+    );
+    return { rnd, bursts, birds, bodies, px, dash: [0, 0, 0, 0] };
   },
 
   back(g, sc) {
@@ -545,13 +589,43 @@ export default {
     g.fillRect(0, 0, W, H);
   },
 
-  // every frame: a few birds, a butterfly and a paper plane cross the page
+  // every frame: a few birds, a butterfly and a paper plane cross the page.
+  // The plane is one fill; everything else shares a single pencil stroke.
   live(g, sc, t) {
+    const span = W + 300;
+    const px = ((t * 55) % span) - 150;
+    const py = 150 + Math.sin(t * 0.9) * 46;
+    const ang = Math.atan2(Math.cos(t * 0.9) * 46 * 0.9, 55);
+    const c = Math.cos(ang);
+    const s = Math.sin(ang);
+    const at = (x, y, move) => (move ? g.moveTo(px + x * c - y * s, py + x * s + y * c) : g.lineTo(px + x * c - y * s, py + x * s + y * c));
+    const plane = () => {
+      at(16, 0, true);
+      at(-12, -9);
+      at(-6, 0);
+      at(-12, 8);
+      at(16, 0);
+    };
+    g.fillStyle = CARD;
+    g.beginPath();
+    plane();
+    g.fill();
+
     g.lineCap = 'round';
     g.lineJoin = 'round';
-    g.strokeStyle = GRAPHITE;
+    g.strokeStyle = 'rgb(96,96,110)';
     g.lineWidth = 1.5;
     g.beginPath();
+    plane();
+    at(-6, 0);
+    // its dotted trail
+    for (let k = 1; k < 13; k += 2) {
+      const ta = t - k * 0.12;
+      const ax = ((ta * 55) % span) - 150;
+      if (ax > px) break; // the plane has just wrapped round to the left edge
+      g.moveTo(ax, 150 + Math.sin(ta * 0.9) * 46);
+      g.lineTo(ax - 3.9, 150 + Math.sin((ta - 0.07) * 0.9) * 46);
+    }
     for (let i = 0; i < sc.birds.length; i++) {
       const b = sc.birds[i];
       const x = ((b.x + t * b.v) % (W + 40)) - 20;
@@ -561,49 +635,15 @@ export default {
       g.quadraticCurveTo(x - 4, y - 5 - flap, x, y);
       g.quadraticCurveTo(x + 4, y - 5 - flap, x + 8, y - 2 - flap * 4);
     }
-    // the plane's dotted trail
-    const span = W + 300;
-    const px = ((t * 55) % span) - 150;
-    const py = 150 + Math.sin(t * 0.9) * 46;
-    for (let k = 1; k < 13; k += 2) {
-      const ta = t - k * 0.12;
-      const tb = ta - 0.07;
-      const ax = ((ta * 55) % span) - 150;
-      if (ax > px) break; // the plane has just wrapped round to the left edge
-      g.moveTo(ax, 150 + Math.sin(ta * 0.9) * 46);
-      g.lineTo(ax - 0.07 * 55, 150 + Math.sin(tb * 0.9) * 46);
-    }
-    g.stroke();
-
-    // paper plane
-    g.save();
-    g.translate(px, py);
-    g.rotate(Math.atan2(Math.cos(t * 0.9) * 46 * 0.9, 55));
-    g.fillStyle = CARD;
-    g.strokeStyle = INK;
-    g.beginPath();
-    g.moveTo(16, 0);
-    g.lineTo(-12, -9);
-    g.lineTo(-6, 0);
-    g.lineTo(-12, 8);
-    g.closePath();
-    g.fill();
-    g.moveTo(16, 0);
-    g.lineTo(-6, 0);
-    g.stroke();
-    g.restore();
-
-    // butterfly: two pencil wings that open and close
+    // butterfly: two wings that open and close
     const bx = 170 + Math.sin(t * 0.43) * 90 + Math.sin(t * 2.1) * 12;
     const by = 300 + Math.sin(t * 0.31 + 1) * 60 + Math.sin(t * 2.9) * 8;
     const open = 0.25 + 0.75 * Math.abs(Math.sin(t * 9));
-    g.fillStyle = '#f7d3da';
-    g.strokeStyle = 'rgb(120,120,135)';
-    g.lineWidth = 1.1;
-    g.beginPath();
-    g.ellipse(bx - 3.2 * open, by - 1, 3.2 * open, 4.4, -0.3, 0, 6.283);
-    g.ellipse(bx + 3.2 * open, by - 1, 3.2 * open, 4.4, 0.3, 0, 6.283);
-    g.fill();
+    g.moveTo(bx, by + 3);
+    g.quadraticCurveTo(bx - 9 * open, by + 2, bx - 6 * open, by - 6);
+    g.quadraticCurveTo(bx - 2 * open, by - 5, bx, by + 3);
+    g.quadraticCurveTo(bx + 2 * open, by - 5, bx + 6 * open, by - 6);
+    g.quadraticCurveTo(bx + 9 * open, by + 2, bx, by + 3);
     g.stroke();
   },
 
@@ -724,11 +764,17 @@ export default {
     drawIcon(g, kind, 0, 0, 9, INK);
   },
 
-  player(g, pv, t) {
-    const { x, y, cx, feet, color } = pv;
+  // Drawn facing right; mirrored when heading left. The body is a stamp, the
+  // limbs, pupils and mouth are drawn fresh so they can move and boil.
+  player(g, pv, t, sc) {
+    const { x, y, cx, feet } = pv;
     const frame = Math.floor(t * 8);
     const j = (i) => (hash1(frame * 31 + i, pv.seed) - 0.5) * 1.8;
     squashAt(g, cx, feet, pv.squash);
+    if (pv.face < 0) {
+      g.translate(cx * 2, 0);
+      g.scale(-1, 1);
+    }
     const air = !pv.ground;
     const moving = pv.ground && Math.abs(pv.vx) > 30;
     const sw = moving ? Math.sin(pv.run) : 0;
@@ -763,11 +809,11 @@ export default {
     if (air) {
       const k = pv.vy < 0 ? 1 : -1;
       g.moveTo(cx - 6, hip);
-      g.lineTo(cx - 9 - pv.face * 2, feet - 5 + k * 2);
-      g.lineTo(cx - 9 + pv.face * 3, feet - 3 + k * 2);
+      g.lineTo(cx - 11, feet - 5 + k * 2);
+      g.lineTo(cx - 6, feet - 3 + k * 2);
       g.moveTo(cx + 6, hip);
-      g.lineTo(cx + 9 - pv.face * 2, feet - 2 - k);
-      g.lineTo(cx + 9 + pv.face * 3, feet - k);
+      g.lineTo(cx + 7, feet - 2 - k);
+      g.lineTo(cx + 12, feet - k);
     } else {
       const fx1 = cx - 6 + sw * 8;
       const fy1 = feet - 1.5 - Math.max(0, sw) * 5;
@@ -775,10 +821,10 @@ export default {
       const fy2 = feet - 1.5 - Math.max(0, -sw) * 5;
       g.moveTo(cx - 6, hip);
       g.lineTo(fx1, fy1);
-      g.lineTo(fx1 + pv.face * 5, fy1);
+      g.lineTo(fx1 + 5, fy1);
       g.moveTo(cx + 6, hip);
       g.lineTo(fx2, fy2);
-      g.lineTo(fx2 + pv.face * 5, fy2);
+      g.lineTo(fx2 + 5, fy2);
     }
     // stick arms
     const ay = by + 17;
@@ -795,85 +841,71 @@ export default {
     }
     g.stroke();
 
-    // body, coloured in with a felt-tip
-    blobPath(g, x + 2, by, PW - 4, bh, 9, j);
-    g.fillStyle = color;
-    g.fill();
-    g.stroke();
-    g.strokeStyle = streakOf(color);
-    g.lineWidth = 2.4;
-    g.beginPath();
-    for (let k = 0; k < 3; k++) {
-      const d = 7 + k * 7 + j(50 + k);
-      g.moveTo(x + d, by + bh - 5);
-      g.lineTo(x + d + 5, by + 5);
+    // body (and the whites of the eyes), stamped on whole pixels while it is not squashing
+    const open = !pv.stunned && pv.blink < 0.5;
+    let bx = x + 2 - BODY_PAD;
+    let top = by - BODY_PAD;
+    if (!pv.squash) {
+      const k = sc.px;
+      const left = pv.face < 0 ? cx * 2 - bx - BODY_W : bx; // where its left edge shows on screen
+      const snapped = Math.round(left * k) / k;
+      bx = pv.face < 0 ? cx * 2 - snapped - BODY_W : snapped;
+      top = Math.round(top * k) / k;
     }
-    g.stroke();
+    g.drawImage(sc.bodies[pv.slot][frame & 1][open ? 1 : 0], bx, top, BODY_W, BODY_H);
 
-    // googly face
-    const ex = cx + pv.face * 3;
+    // the rest of the googly face
+    const ex = cx + 3;
     const ey = by + 11;
-    g.strokeStyle = INK;
     g.lineWidth = 1.6;
-    for (const s of [-1, 1]) {
-      const ox = ex + s * 5.5;
-      if (pv.stunned) {
-        // seeing stars
-        g.beginPath();
+    g.beginPath();
+    if (open) {
+      const py = air ? (pv.vy < 0 ? -1.2 : 1.4) : 0.4;
+      g.fillStyle = INK;
+      g.arc(ex - 3.7, ey + py, 2.2, 0, 6.283);
+      g.arc(ex + 7.3, ey + py, 2.2, 0, 6.283);
+      g.fill();
+    } else if (pv.stunned) {
+      // seeing stars
+      for (const ox of [ex - 5.5, ex + 5.5]) {
         g.moveTo(ox - 3, ey - 3);
         g.lineTo(ox + 3, ey + 3);
         g.moveTo(ox + 3, ey - 3);
         g.lineTo(ox - 3, ey + 3);
-        g.stroke();
-      } else if (pv.blink < 0.5) {
-        g.fillStyle = '#fff';
-        g.beginPath();
-        g.arc(ox, ey, 4.8, 0, 6.283);
-        g.fill();
-        g.stroke();
-        g.fillStyle = INK;
-        g.beginPath();
-        g.arc(ox + pv.face * 1.8, ey + (air ? (pv.vy < 0 ? -1.2 : 1.4) : 0.4), 2.2, 0, 6.283);
-        g.fill();
-      } else {
-        g.beginPath();
-        g.moveTo(ox - 4, ey);
-        g.lineTo(ox + 4, ey);
-        g.stroke();
       }
+      g.stroke();
+    } else {
+      g.moveTo(ex - 9.5, ey);
+      g.lineTo(ex - 1.5, ey);
+      g.moveTo(ex + 1.5, ey);
+      g.lineTo(ex + 9.5, ey);
+      g.stroke();
     }
     g.beginPath();
     if (pv.isIt) {
-      // angry eyebrows and a big toothy grin
-      g.lineWidth = 2.4;
-      g.moveTo(ex - 11, ey - 8);
-      g.lineTo(ex - 2, ey - 4);
-      g.moveTo(ex + 11, ey - 8);
-      g.lineTo(ex + 2, ey - 4);
-      g.stroke();
-      g.lineWidth = 1.6;
-      g.fillStyle = '#fff';
-      g.beginPath();
+      // a big grin, then angry eyebrows and the teeth in one go
       g.moveTo(ex - 8, ey + 8);
       g.lineTo(ex + 8, ey + 8);
       g.quadraticCurveTo(ex + 7, ey + 15, ex, ey + 15);
       g.quadraticCurveTo(ex - 7, ey + 15, ex - 8, ey + 8);
+      g.fillStyle = '#fff';
       g.fill();
       g.stroke();
-      g.lineWidth = 1.2;
+      g.lineWidth = 2;
       g.beginPath();
+      g.moveTo(ex - 11, ey - 8);
+      g.lineTo(ex - 2, ey - 4);
+      g.moveTo(ex + 11, ey - 8);
+      g.lineTo(ex + 2, ey - 4);
       for (let k = -1; k <= 1; k++) {
-        g.moveTo(ex + k * 4, ey + 8);
-        g.lineTo(ex + k * 4, ey + 14.5);
+        g.moveTo(ex + k * 4, ey + 9);
+        g.lineTo(ex + k * 4, ey + 14);
       }
-      g.stroke();
-    } else if (air) {
-      g.lineWidth = 1.8;
-      g.arc(ex, ey + 11, 2.6, 0, 6.283);
       g.stroke();
     } else {
       g.lineWidth = 1.8;
-      g.arc(ex, ey + 7, 6, 0.3, Math.PI - 0.3);
+      if (air) g.arc(ex, ey + 11, 2.6, 0, 6.283);
+      else g.arc(ex, ey + 7, 6, 0.3, Math.PI - 0.3);
       g.stroke();
     }
   },
@@ -918,10 +950,10 @@ export default {
   fx: {
     trail(R, pv, dt, t) {
       const sc = R.scene;
-      if (Math.abs(pv.vx) < 200 || t - sc.dash[pv.slot] < 0.07) return;
+      if (Math.abs(pv.vx) < 200 || t - sc.dash[pv.slot] < 0.11) return;
       sc.dash[pv.slot] = t;
       // speed lines
-      R.emit({ x: pv.cx - pv.face * 20, y: pv.y + 6 + Math.random() * 26, life: 0.22, shape: 'line', width: 1.6, lx: -pv.face * (8 + Math.random() * 10), color: INK, alpha: 0.7, back: true });
+      R.emit({ x: pv.cx - pv.face * 20, y: pv.y + 6 + Math.random() * 26, life: 0.2, shape: 'line', width: 1.6, lx: -pv.face * (8 + Math.random() * 10), color: INK, alpha: 0.7, back: true });
     },
     jump(R, pv) {
       for (let i = 0; i < 3; i++) puff(R, pv.cx + (i - 1) * 9, pv.feet - 2, (i - 1) * 30, -10);

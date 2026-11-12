@@ -425,7 +425,7 @@ export default {
       const f = age / 1.3;
       const cx = Math.round(w.x + (300 + hash1(n, 3) * 1400 + dir * f * 560) * w.k);
       const cy = Math.round(w.y + (12 + f * 44) * w.k);
-      const tail = ['#ffffff', '#fff6cf', '#ffd27a', '#f0756b', '#c9517f', '#8f3a8f'];
+      const tail = ['#ffffff', '#fff6cf', '#ffe9a1', '#ffd27a', '#ffa95e', '#f0756b', '#c9517f', '#8f3a8f'];
       for (let i = tail.length - 1; i >= 0; i--) {
         g.fillStyle = tail[i];
         px(cx - dir * i * 3 - 1, cy - (i >> 1), 3, i ? 1 : 2);
@@ -645,7 +645,7 @@ export default {
       for (let i = 0; i < 10; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 24, y: pv.y - 30 + Math.random() * 40, vy: 60 + Math.random() * 120, life: 0.4, size: 2, color: i % 2 ? pv.color : '#ffffff', fade: false });
     },
     tag(R, to, from) {
-      R.flash('#ffffff', 0.5);
+      R.flash('#ffffff', 0.22);
       const cols = ['#ffffff', '#ffd84d', to.color, from.color];
       for (let i = 0; i < 28; i++) {
         const a = (i / 28) * 6.283;

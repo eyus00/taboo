@@ -361,7 +361,7 @@ function paintBackdrop(g, rnd, lights) {
   g.lineTo(352, 62);
   g.stroke();
   g.fillStyle = 'rgba(30,18,72,.5)';
-  for (const [x, y, sz] of [[392, 214, 1], [414, 201, 0.8], [421, 226, 0.7], [444, 211, 0.6], [372, 232, 0.55]]) glider(g, x, y, sz, -0.25 + (rnd() - 0.5) * 0.3);
+  for (const [x, y, sz] of [[226, 164, 1], [248, 151, 0.8], [255, 176, 0.7], [278, 161, 0.6], [206, 182, 0.55]]) glider(g, x, y, sz, -0.25 + (rnd() - 0.5) * 0.3);
 
   // far: arches and needles, washed out by the haze
   let fill = grad(170, 400, '#514e9e', '#44839d');
@@ -402,12 +402,12 @@ function paintBackdrop(g, rnd, lights) {
   lantern(g, rnd, fill, 470, yAt(470), 84, GLOWS[1], lights);
   lantern(g, rnd, fill, 582, yAt(582), 62, GLOWS[2], lights);
   // little lights in the undergrowth
-  for (let i = 0; i < 46; i++) {
+  for (let i = 0; i < 36; i++) {
     const x = rnd() * W;
     const y = yAt(x) + 2 + rnd() * 34;
     const col = GLOWS[Math.floor(rnd() * 3)];
-    halo(g, x, y, 4 + rnd() * 4, col, 0.3);
-    g.fillStyle = rgba(lighten(col, 0.3), 0.8);
+    halo(g, x, y, 4 + rnd() * 4, col, 0.26);
+    g.fillStyle = rgba(lighten(col, 0.3), 0.7);
     g.beginPath();
     g.arc(x, y, 0.5 + rnd() * 0.7, 0, TAU);
     g.fill();
@@ -729,6 +729,10 @@ function shelf(g, rnd, p) {
 // Characters
 // ---------------------------------------------------------------------------
 
+// Things drawn every frame get their outlines without stroking: a fat dark
+// copy of the shape is filled, then a thinner coloured copy on top. That costs
+// about half as much as fill + stroke.
+
 const TINTS = new Map(); // shades of each player colour, worked out once
 function tints(color) {
   let t = TINTS.get(color);
@@ -737,6 +741,36 @@ function tints(color) {
     TINTS.set(color, t);
   }
   return t;
+}
+
+// The critter's body: an egg, a little wider at the bottom, with a pointed tail
+// curling out behind. o pushes the edge out (+) or in (-). Like every piece of
+// the dark silhouette it runs "up the back, down the front", so the pieces can
+// overlap in one fill without punching holes in each other.
+function bodyPath(g, cx, by, f, wag, o) {
+  const rx = 13.5 + o;
+  const top = by - 15 - o;
+  const bot = by + 14 + o;
+  g.moveTo(cx - f * rx, by + 3);
+  g.bezierCurveTo(cx - f * rx, by - 8 - o * 0.6, cx - f * (8 + o * 0.6), top, cx + f, top); // up the back to the crown
+  g.bezierCurveTo(cx + f * (9 + o * 0.6), top, cx + f * rx, by - 8 - o * 0.6, cx + f * rx, by + 3); // down the face
+  g.bezierCurveTo(cx + f * rx, by + 11 + o * 0.7, cx + f * (7 + o * 0.5), bot, cx, bot); // under the chin
+  g.bezierCurveTo(cx - f * 4, bot, cx - f * 7, bot - 0.4, cx - f * (8.5 - o * 0.3), by + 12.2 + o * 0.9);
+  g.quadraticCurveTo(cx - f * (17.5 + o * 0.5), by + 13.5 + o * 1.3, cx - f * (19.5 + o * 0.7), by + 1 - wag - o * 1.3); // out to the tip of the tail
+  g.quadraticCurveTo(cx - f * (15 - o * 0.9), by + 8 - o * 1.1, cx - f * (12.9 + o * 0.9), by + 6.8 - o * 1.1); // and back
+  g.closePath();
+}
+
+// The cap of a bounce pod, squashed by k; o as above.
+function capPath(g, x, w, base, k, o) {
+  const top = base - 21 + k * 9 - o;
+  const side = 3 + k * 5 + o;
+  const lip = base - 6 + k * 2 + o * 0.7;
+  g.moveTo(x - side, lip);
+  g.bezierCurveTo(x - side, top - 3, x + w * 0.3, top, x + w / 2, top);
+  g.bezierCurveTo(x + w * 0.7, top, x + w + side, top - 3, x + w + side, lip);
+  g.quadraticCurveTo(x + w / 2, base - 1 + k + o * 1.6, x - side, lip);
+  g.closePath();
 }
 
 export default {
@@ -767,30 +801,21 @@ export default {
       g.fillRect(0, 0, W, H);
     }, 0.5);
 
-    // glows are baked here and only stamped later
-    const dot = (col) =>
-      sprite(16, 16, (g) => {
-        const rg = g.createRadialGradient(8, 8, 0, 8, 8, 8);
-        rg.addColorStop(0, '#ffffff');
-        rg.addColorStop(0.22, rgba(lighten(col, 0.4), 0.95));
-        rg.addColorStop(0.5, rgba(col, 0.4));
-        rg.addColorStop(1, rgba(col, 0));
-        g.fillStyle = rg;
-        g.fillRect(0, 0, 16, 16);
-      });
-    const dots = [dot(GLOWS[0]), dot(GLOWS[1]), dot(GLOWS[2])];
+    // glows are baked here and only stamped later; only the biggest pods breathe
     const blooms = new Map();
     lights.sort((a, b) => b.r - a.r);
-    lights.length = Math.min(lights.length, 5); // only the biggest pods breathe
+    lights.length = Math.min(lights.length, 5);
     for (const l of lights) {
       if (!blooms.has(l.col)) blooms.set(l.col, sprite(48, 48, (g) => halo(g, 24, 24, 24, lighten(l.col, 0.2), 0.75)));
       l.spr = blooms.get(l.col);
       l.f = 0.8 + rnd() * 1.4;
       l.ph = rnd() * TAU;
     }
-    const flies = [];
-    for (let i = 0; i < 16; i++) {
-      flies.push({ x: rnd() * W, y: rnd() * H, vx: (rnd() - 0.5) * 9, vy: 3 + rnd() * 8, amp: 6 + rnd() * 16, f: 0.3 + rnd() * 0.8, tw: 1 + rnd() * 2.4, ph: rnd() * TAU, s: 2.2 + rnd() * 2.4, spr: dots[i % 3] });
+
+    // fireflies, in three swarms by colour
+    const swarms = GLOWS.slice(0, 3).map((col) => ({ halo: col, core: lighten(col, 0.6), flies: [] }));
+    for (let i = 0; i < 15; i++) {
+      swarms[i % 3].flies.push({ x: rnd() * W, y: rnd() * H, vx: (rnd() - 0.5) * 9, vy: 3 + rnd() * 8, amp: 6 + rnd() * 16, f: 0.3 + rnd() * 0.8, tw: 1 + rnd() * 2.4, ph: rnd() * TAU, s: 1.8 + rnd() * 2, px: 0, py: 0, pr: 0 });
     }
 
     // the angry aura behind whoever is "it": six frames, each turned a little
@@ -826,7 +851,7 @@ export default {
       halo(g, 0, 0, 43, PINK, 0.65);
     });
 
-    return { bg, shade, lights, flies, aura, padGlow };
+    return { bg, shade, lights, swarms, aura, padGlow };
   },
 
   back(g, sc) {
@@ -967,30 +992,21 @@ export default {
     const w = tr.w;
     const base = tr.y + tr.h;
     const top = tr.y - 5 + k * 9;
-    const bulge = 3 + k * 5;
     g.drawImage(sc.padGlow, x - 10, tr.y - 30, w + 20, 52);
-    // stubby foot
-    g.fillStyle = '#4a2a7a';
-    g.strokeStyle = INK;
-    g.lineWidth = 1.8;
+    // dark outline of the cap, and the stubby foot under it
     g.beginPath();
+    capPath(g, x, w, base, k, 1);
     g.moveTo(x + w * 0.3, base - 9 + k * 3);
     g.lineTo(x + w * 0.7, base - 9 + k * 3);
     g.lineTo(x + w * 0.76, base);
     g.lineTo(x + w * 0.24, base);
     g.closePath();
+    g.fillStyle = INK;
     g.fill();
-    g.stroke();
-    // cap
     g.beginPath();
-    g.moveTo(x - bulge, base - 6 + k * 2);
-    g.bezierCurveTo(x - bulge, top - 3, x + w * 0.3, top, x + w / 2, top);
-    g.bezierCurveTo(x + w * 0.7, top, x + w + bulge, top - 3, x + w + bulge, base - 6 + k * 2);
-    g.quadraticCurveTo(x + w / 2, base - 1 + k, x - bulge, base - 6 + k * 2);
-    g.closePath();
+    capPath(g, x, w, base, k, -0.9);
     g.fillStyle = '#ff62c6';
     g.fill();
-    g.stroke();
     // shine and spots
     g.fillStyle = '#ffd0f1';
     g.beginPath();
@@ -1133,12 +1149,11 @@ export default {
     const f = pv.face;
     const air = !pv.ground;
     const moving = pv.ground && Math.abs(pv.vx) > 30;
-    const sw = moving ? Math.sin(pv.run) : 0;
     const bob = moving ? Math.abs(Math.cos(pv.run)) * 1.8 : air ? 0 : 0.5 + 0.5 * Math.sin(t * 3 + pv.seed);
     const it = pv.isIt;
 
     if (it) {
-      // baked glow: pick the frame for this moment and stamp it on whole pixels
+      // baked glow: pick the frame for this moment and stamp it 1:1 on whole pixels
       const spr = sc.aura[Math.floor(t * 11) % 6];
       const m = g.getTransform();
       const w = spr.width / m.a;
@@ -1147,210 +1162,209 @@ export default {
 
     squashAt(g, cx, feet, pv.squash);
     const by = pv.y + 23 - bob; // middle of the body
-    g.lineCap = 'round';
-    g.lineJoin = 'round';
 
-    // tail, curling out behind
+    // feet - and, on whoever is it, spines down the back. Dark copy, then coloured copy.
+    let ax = cx - 6; // where the two feet are, and how they are tilted
+    let ay = feet - 3.2;
+    let bx = cx + 6;
+    let b2 = feet - 3.2;
+    let tilt = 0;
+    if (air) {
+      const up = pv.vy < 0; // tucked back on the way up, spread wide on the way down
+      ax = cx - (up ? 4.5 + f * 3 : 9);
+      bx = cx + (up ? 4.5 - f * 3 : 9);
+      ay = feet - (up ? 2 : 5.5);
+      b2 = ay + (up ? 1 : 0);
+      tilt = up ? f * 0.5 : 0.4;
+    } else if (moving) {
+      const sw = Math.sin(pv.run) * 5.5;
+      const c = Math.cos(pv.run) * 3.5;
+      ax += sw;
+      bx -= sw;
+      ay -= Math.max(0, c);
+      b2 -= Math.max(0, -c);
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      const o = pass ? -0.9 : 0.9;
+      g.beginPath();
+      g.ellipse(ax, ay, 5 + o, 3.2 + o, air && pv.vy >= 0 ? -tilt : tilt, 0, TAU);
+      g.ellipse(bx, b2, 5 + o, 3.2 + o, tilt, 0, TAU);
+      if (it) {
+        for (let n = 0; n < 3; n++) {
+          const px = cx - f * (6 + n * 4.2);
+          const py = by - 13 + n * n * 2.6;
+          g.moveTo(px + f * (2.8 + o * 0.8), py + 3.2 + o);
+          g.lineTo(px - f * (5 + o * 1.5), py - 5 + n * 2 - o * 1.5);
+          g.lineTo(px - f * (1.1 + o * 0.5), py + 6 + o * 1.3);
+        }
+      }
+      g.fillStyle = pass ? tint.dark : INK;
+      g.fill();
+    }
+
+    // antennae: they trail behind when it runs and fly up when it falls
+    const sway = clamp(pv.vx / 55, -5, 5) + Math.sin(t * 5 + pv.seed) * 1.1;
+    const hx = cx + f; // crown of the head
+    const lx = hx - (it ? 10 : 9) - sway; // the two tips
+    const rx = hx + (it ? 10 : 9) - sway;
+    const ty = by - (it ? 28 : 24) - clamp(pv.vy / 150, -4, 4.5);
+
+    // the whole dark silhouette in one fill: body and tail, antenna stalks, tips
     const wag = air ? clamp(pv.vy / 90, -6, 6) : Math.sin(moving ? pv.run * 2 : t * 4 + pv.seed) * 2;
     g.beginPath();
-    g.moveTo(cx - f * 9, by + 7);
-    g.quadraticCurveTo(cx - f * 17, by + 10, cx - f * 19, by + 1 - wag);
-    g.strokeStyle = INK;
-    g.lineWidth = 7;
-    g.stroke();
-    g.strokeStyle = tint.shade;
-    g.lineWidth = 3.4;
-    g.stroke();
-
-    // feet
-    g.beginPath();
-    if (air) {
-      const up = pv.vy < 0;
-      const sp = up ? 4.5 : 9;
-      const fy = feet - (up ? 2 : 5.5);
-      g.ellipse(cx - sp - (up ? f * 3 : 0), fy, 4.6, 3.2, up ? f * 0.5 : -0.4, 0, TAU);
-      g.ellipse(cx + sp - (up ? f * 3 : 0), fy + (up ? 1 : 0), 4.6, 3.2, up ? f * 0.5 : 0.4, 0, TAU);
-    } else {
-      const c = moving ? Math.cos(pv.run) : 0;
-      g.ellipse(cx - 6 + sw * 5.5, feet - 3.2 - Math.max(0, c) * 3.5, 5, 3.2, 0, 0, TAU);
-      g.ellipse(cx + 6 - sw * 5.5, feet - 3.2 - Math.max(0, -c) * 3.5, 5, 3.2, 0, 0, TAU);
-    }
-    g.fillStyle = tint.dark;
-    g.fill();
-    g.strokeStyle = INK;
-    g.lineWidth = 1.8;
-    g.stroke();
-
-    // spines down the back of whoever is it
+    bodyPath(g, cx, by, f, wag, 1);
     if (it) {
-      g.beginPath();
-      for (let n = 0; n < 3; n++) {
-        const px = cx - f * (6 + n * 4.2);
-        const py = by - 13 + n * n * 2.6;
-        g.moveTo(px + f * 3, py + 3);
-        g.lineTo(px - f * 5, py - 5 + n * 2);
-        g.lineTo(px - f, py + 6);
+      // barbed tips (their jagged stalks are drawn further down)
+      for (let n = 0; n < 2; n++) {
+        const x = n ? rx : lx;
+        g.moveTo(x, ty - 6);
+        g.lineTo(x + f * 4.7, ty);
+        g.lineTo(x, ty + 4.5);
+        g.lineTo(x - f * 4.7, ty);
+        g.closePath();
       }
-      g.fillStyle = tint.dark;
-      g.fill();
-      g.stroke();
+    } else {
+      // bulb tips on thin curved stalks
+      for (let n = 0; n < 2; n++) {
+        const x = n ? rx : lx;
+        const root = hx + (n ? 5 : -5);
+        const bend = hx + (n ? 6 : -6) - sway * 0.3;
+        g.moveTo(root - f * 1.1, by - 13.5);
+        g.quadraticCurveTo(bend - f * 1.1, by - 20, x - f, ty);
+        g.lineTo(x + f, ty);
+        g.quadraticCurveTo(bend + f * 1.1, by - 20, root + f * 1.1, by - 13.5);
+        g.closePath();
+        g.moveTo(x + 3.7, ty);
+        g.arc(x, ty, 3.7, 0, TAU, f < 0);
+      }
     }
+    g.fillStyle = INK;
+    g.fill();
 
-    // body: an egg, a little wider at the bottom
+    // the body in its own colour, and freckles on its back
     g.beginPath();
-    g.moveTo(cx - 13.5, by + 3);
-    g.bezierCurveTo(cx - 13.5, by - 8, cx - 8, by - 15, cx + f, by - 15);
-    g.bezierCurveTo(cx + 9, by - 15, cx + 13.5, by - 8, cx + 13.5, by + 3);
-    g.bezierCurveTo(cx + 13.5, by + 11, cx + 7, by + 14, cx, by + 14);
-    g.bezierCurveTo(cx - 7, by + 14, cx - 13.5, by + 11, cx - 13.5, by + 3);
-    g.closePath();
+    bodyPath(g, cx, by, f, wag, -1);
     g.fillStyle = color;
     g.fill();
-    g.strokeStyle = INK;
-    g.lineWidth = 2;
-    g.stroke();
-    // freckles on its back
     g.fillStyle = tint.shade;
     g.beginPath();
     g.arc(cx - f * 8, by + 4, 2.3, 0, TAU);
     g.arc(cx - f * 5, by + 9.5, 1.6, 0, TAU);
     g.fill();
 
-    // antennae: they trail behind when it runs and fly up when it falls
-    const sway = clamp(pv.vx / 55, -5, 5) + Math.sin(t * 5 + pv.seed) * 1.1;
-    const drag = clamp(pv.vy / 150, -4, 4.5);
-    const hx = cx + f; // crown of the head
-    g.strokeStyle = INK;
-    g.lineWidth = 2.2;
+    // antenna tips, lit up
     g.beginPath();
     if (it) {
-      // jagged, like little lightning bolts
-      const ty = by - 28 - drag;
-      g.moveTo(hx - 5, by - 13.5);
+      g.moveTo(lx, ty - 4);
+      g.lineTo(lx + 3, ty);
+      g.lineTo(lx, ty + 2.8);
+      g.lineTo(lx - 3, ty);
+      g.moveTo(rx, ty - 4);
+      g.lineTo(rx + 3, ty);
+      g.lineTo(rx, ty + 2.8);
+      g.lineTo(rx - 3, ty);
+      g.fillStyle = '#ffe27a';
+      g.fill();
+      // jagged stalks, like little lightning bolts
+      g.beginPath();
+      g.moveTo(hx - 5, by - 14);
       g.lineTo(hx - 9, by - 19);
       g.lineTo(hx - 5 - sway * 0.5, by - 21);
-      g.lineTo(hx - 10 - sway, ty);
-      g.moveTo(hx + 5, by - 13.5);
+      g.lineTo(lx, ty + 3.5);
+      g.moveTo(hx + 5, by - 14);
       g.lineTo(hx + 9, by - 19);
       g.lineTo(hx + 5 - sway * 0.5, by - 21);
-      g.lineTo(hx + 10 - sway, ty);
-      g.stroke();
-      g.fillStyle = '#ffe27a';
-      g.beginPath();
-      for (const d of [-1, 1]) {
-        const ax = hx + d * 10 - sway;
-        g.moveTo(ax, ty - 4.5);
-        g.lineTo(ax + 3.4, ty);
-        g.lineTo(ax, ty + 3.2);
-        g.lineTo(ax - 3.4, ty);
-        g.closePath();
-      }
-      g.fill();
-      g.lineWidth = 1.4;
+      g.lineTo(rx, ty + 3.5);
+      g.strokeStyle = INK;
+      g.lineWidth = 2;
+      g.lineJoin = 'round';
       g.stroke();
     } else {
-      const ty = by - 24 - drag;
-      g.moveTo(hx - 5, by - 13.5);
-      g.quadraticCurveTo(hx - 6 - sway * 0.3, by - 20, hx - 9 - sway, ty);
-      g.moveTo(hx + 5, by - 13.5);
-      g.quadraticCurveTo(hx + 6 - sway * 0.3, by - 20, hx + 9 - sway, ty);
-      g.stroke();
+      g.arc(lx, ty, 2.3, 0, TAU);
+      g.moveTo(rx + 2.3, ty);
+      g.arc(rx, ty, 2.3, 0, TAU);
       g.fillStyle = tint.light;
-      g.beginPath();
-      g.arc(hx - 9 - sway, ty, 2.9, 0, TAU);
-      g.moveTo(hx + 9 - sway + 2.9, ty);
-      g.arc(hx + 9 - sway, ty, 2.9, 0, TAU);
       g.fill();
-      g.lineWidth = 1.4;
-      g.stroke();
     }
 
     // one big eye
     const ex = cx + f * 4.5;
     const ey = by - 3.5;
-    const look = clamp(pv.vy / 320, -1.8, 1.8);
+    const shut = pv.blink > 0.5 && !it;
+    g.fillStyle = INK;
+    g.beginPath();
+    g.arc(ex, ey, 7.6, 0, TAU);
+    g.fill();
+    g.fillStyle = shut ? tint.shade : '#ffffff';
+    g.beginPath();
+    g.arc(ex, ey, 6, 0, TAU);
+    g.fill();
     g.strokeStyle = INK;
-    if (pv.blink > 0.5 && !it) {
-      // shut: just the lid and a lash line
-      g.fillStyle = tint.shade;
-      g.beginPath();
-      g.arc(ex, ey, 6.8, 0, TAU);
-      g.fill();
+    g.lineCap = 'round';
+    if (shut) {
+      // just the lid and a lash line
       g.lineWidth = 1.6;
-      g.stroke();
       g.beginPath();
-      g.moveTo(ex - 6, ey + 0.5);
-      g.quadraticCurveTo(ex, ey + 3.5, ex + 6, ey + 0.5);
+      g.moveTo(ex - 5.5, ey + 0.5);
+      g.quadraticCurveTo(ex, ey + 3.5, ex + 5.5, ey + 0.5);
+      g.stroke();
+    } else if (pv.stunned) {
+      // dazed: a cross
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(ex - 3.2, ey - 3.2);
+      g.lineTo(ex + 3.2, ey + 3.2);
+      g.moveTo(ex + 3.2, ey - 3.2);
+      g.lineTo(ex - 3.2, ey + 3.2);
       g.stroke();
     } else {
-      g.fillStyle = '#ffffff';
-      g.beginPath();
-      g.arc(ex, ey, 6.8, 0, TAU);
-      g.fill();
-      g.lineWidth = 1.6;
-      g.stroke();
-      if (pv.stunned) {
-        // dazed: a cross
-        g.lineWidth = 2;
-        g.beginPath();
-        g.moveTo(ex - 3.4, ey - 3.4);
-        g.lineTo(ex + 3.4, ey + 3.4);
-        g.moveTo(ex + 3.4, ey - 3.4);
-        g.lineTo(ex - 3.4, ey + 3.4);
-        g.stroke();
-      } else {
-        const px = ex + f * 2.3;
-        const py = ey + look + (it ? 1 : 0);
-        if (it) {
-          g.fillStyle = HOT;
-          g.beginPath();
-          g.arc(px, py, 4, 0, TAU);
-          g.fill();
-        }
-        g.fillStyle = INK;
-        g.beginPath();
-        g.arc(px, py, it ? 2.1 : 3.5, 0, TAU);
-        g.fill();
-        g.fillStyle = '#ffffff';
-        g.fillRect(px - 2.2, py - 2.6, 1.7, 1.7);
-      }
+      // the pupil looks where it is going: ahead, and up or down with its flight
+      const px = ex + f * 2;
+      const py = ey + clamp(pv.vy / 320, -1.6, 1.6) + (it ? 1 : 0);
       if (it) {
-        // heavy slanted lid: the top slice of the eye, cut along a brow
+        g.fillStyle = HOT;
         g.beginPath();
-        if (f > 0) g.arc(ex, ey, 6.8, Math.PI + 0.55, 0.12);
-        else g.arc(ex, ey, 6.8, Math.PI - 0.12, -0.55);
-        g.closePath();
-        g.fillStyle = tint.dark;
+        g.arc(px, py, 3.9, 0, TAU);
         g.fill();
-        g.lineWidth = 1.6;
-        g.stroke();
-        g.lineWidth = 2.4;
-        g.beginPath();
-        g.moveTo(ex - f * 7.6, ey - 5);
-        g.lineTo(ex + f * 8.2, ey + 1.2);
-        g.stroke();
       }
+      g.fillStyle = INK;
+      g.beginPath();
+      g.arc(px, py, it ? 2.1 : 3.4, 0, TAU);
+      g.fill();
+      g.fillStyle = '#ffffff';
+      g.fillRect(px - 2.2, py - 2.6, 1.7, 1.7);
+    }
+    if (it) {
+      // heavy slanted lid: the top slice of the eye, cut along a brow
+      g.beginPath();
+      if (f > 0) g.arc(ex, ey, 6.4, Math.PI + 0.55, 0.12);
+      else g.arc(ex, ey, 6.4, Math.PI - 0.12, -0.55);
+      g.fillStyle = tint.dark;
+      g.fill();
+      g.lineWidth = 2.4;
+      g.beginPath();
+      g.moveTo(ex - f * 7.4, ey - 4.9);
+      g.lineTo(ex + f * 8, ey + 1.2);
+      g.stroke();
     }
 
-    // mouth
+    // mouth: a smile, a gasp in mid-air, or gritted teeth
     const mx = cx + f * 5.5;
     const my = by + 7.5;
-    g.strokeStyle = INK;
-    g.lineWidth = 1.6;
     g.beginPath();
-    if (it) {
-      g.moveTo(mx - 4.5, my + 1);
-      g.lineTo(mx - 2.2, my - 1.2);
-      g.lineTo(mx, my + 1);
-      g.lineTo(mx + 2.2, my - 1.2);
-      g.lineTo(mx + 4.5, my + 1);
-      g.stroke();
-    } else if (air) {
+    if (air && !it) {
       g.fillStyle = INK;
       g.arc(mx, my, 2, 0, TAU);
       g.fill();
     } else {
-      g.arc(mx, my - 1.5, 3.2, 0.5, Math.PI - 0.5);
+      if (it) {
+        g.moveTo(mx - 4.5, my + 1);
+        g.lineTo(mx - 2.2, my - 1.2);
+        g.lineTo(mx, my + 1);
+        g.lineTo(mx + 2.2, my - 1.2);
+        g.lineTo(mx + 4.5, my + 1);
+      } else g.arc(mx, my - 1.5, 3.2, 0.5, Math.PI - 0.5);
+      g.lineWidth = 1.6;
       g.stroke();
     }
   },
@@ -1401,17 +1415,37 @@ export default {
 
   // every frame: plant lights breathing, fireflies drifting up
   live(g, sc, t) {
+    // lights: a baked bloom stamped 1:1 on whole pixels (the cheapest way to draw a sprite)
+    const m = g.getTransform();
     for (let i = 0; i < sc.lights.length; i++) {
       const l = sc.lights[i];
+      const d = l.spr.width / m.a;
       g.globalAlpha = 0.34 + 0.3 * Math.sin(t * l.f + l.ph);
-      g.drawImage(l.spr, l.x - l.r, l.y - l.r, l.r * 2, l.r * 2);
+      g.drawImage(l.spr, (Math.round((l.x - d / 2) * m.a + m.e) - m.e) / m.a, (Math.round((l.y - d / 2) * m.d + m.f) - m.f) / m.d, d, d);
     }
-    for (let i = 0; i < sc.flies.length; i++) {
-      const p = sc.flies[i];
-      const x = ((((p.x + t * p.vx + Math.sin(t * p.f + p.ph) * p.amp) % (W + 20)) + W + 20) % (W + 20)) - 10;
-      const y = ((((p.y - t * p.vy + Math.cos(t * p.f * 0.8 + p.ph) * p.amp * 0.6) % (H + 20)) + H + 20) % (H + 20)) - 10;
-      g.globalAlpha = 0.5 + 0.45 * Math.sin(t * p.tw + p.ph);
-      g.drawImage(p.spr, x - p.s, y - p.s, p.s * 2, p.s * 2);
+    // fireflies: a faint disc with a bright core. Each is its own tiny path -
+    // one big path scattered across the screen is far slower to fill.
+    for (let k = 0; k < sc.swarms.length; k++) {
+      const swarm = sc.swarms[k];
+      for (let pass = 0; pass < 2; pass++) {
+        g.globalAlpha = pass ? 0.95 : 0.2;
+        g.fillStyle = pass ? swarm.core : swarm.halo;
+        for (let i = 0; i < swarm.flies.length; i++) {
+          const p = swarm.flies[i];
+          if (!pass) {
+            p.px = ((((p.x + t * p.vx + Math.sin(t * p.f + p.ph) * p.amp) % (W + 20)) + W + 20) % (W + 20)) - 10;
+            // Up and down they stay inside the band of the board that is always on screen
+            // (30 from each edge), shrinking to nothing where they wrap round.
+            p.py = 30 + ((((p.y - t * p.vy + Math.cos(t * p.f * 0.8 + p.ph) * p.amp * 0.6) % (H - 60)) + H - 60) % (H - 60));
+            const edge = Math.min(1, (p.py - 30) / 14, (H - 30 - p.py) / 14);
+            p.pr = p.s * (0.55 + 0.45 * Math.sin(t * p.tw + p.ph)) * edge; // they twinkle by swelling and shrinking
+          }
+          if (p.pr < 0.15) continue;
+          g.beginPath();
+          g.arc(p.px, p.py, pass ? p.pr * 0.36 : p.pr, 0, TAU);
+          g.fill();
+        }
+      }
     }
     g.globalAlpha = 1;
   },
