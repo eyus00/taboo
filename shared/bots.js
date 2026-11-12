@@ -5,7 +5,7 @@
 // and then follows the route there one hop at a time, pressing the same
 // buttons a person would.
 
-import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_DASH } from './config.js';
+import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN } from './config.js';
 import { buildNav, surfaceAt, surfaceNear } from './nav.js';
 
 function rng(seed) {
@@ -32,9 +32,13 @@ export function makeBot(seed = 1) {
     snub: -1, // someone we gave up on for a while
     snubT: 0,
     rest: 0, // ticks of standing around
+    roaming: false,
     stuck: 0,
     lastX: 0,
     rejump: 0, // countdown to a second jump press
+    airT: 0, // ticks since we last stood on something
+    escape: 0, // ticks left of steering out of an updraft we did not mean to ride
+    escDir: 1,
     pressed: 0, // bits sent last tick
   };
 }
@@ -42,13 +46,14 @@ export function makeBot(seed = 1) {
 const navOf = (arena) => (arena.nav ||= buildNav(arena));
 const dirBits = (d) => (d < 0 ? IN_LEFT : d > 0 ? IN_RIGHT : 0);
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const NEAR = 13; // close enough to a take-off point
 
 // Returns input bits for this tick.
 export function botThink(sim, slot, mem) {
   const me = sim.players[slot];
   if (!me) return 0;
   const s = me.s;
-  if (s.dead > 0 || s.stun > 0 || s.frz > 0) {
+  if (s.dead > 0 || s.stun > 0 || s.frz > 0 || s.orb > 0) {
     mem.plan = null;
     mem.pressed = 0;
     return 0;
@@ -60,7 +65,7 @@ export function botThink(sim, slot, mem) {
 
   // where am I?
   if (s.ground) {
-    const cur = surfaceAt(nav, cx, feet);
+    const cur = surfaceAt(nav, cx, feet, s.gk === 1);
     const id = cur ? cur.id : -1;
     if (id !== mem.surf) {
       mem.surf = id;
@@ -68,8 +73,10 @@ export function botThink(sim, slot, mem) {
     }
     if (Math.abs(s.x - mem.lastX) < 0.4) mem.stuck++;
     else mem.stuck = 0;
+    mem.airT = 0;
   } else {
     mem.stuck = 0;
+    mem.airT++;
   }
   mem.lastX = s.x;
 
@@ -81,6 +88,24 @@ export function botThink(sim, slot, mem) {
 
   let bits = mem.direct ? pursue(sim, me, mem, nav) : travel(sim, me, mem, nav);
 
+  // Floating in an updraft we never meant to ride (or hanging in the air for
+  // ages): steer out sideways.
+  if (!s.ground) {
+    const z = nav.liftAt(cx, feet);
+    const riding = mem.plan && mem.plan.e.type === 'lift' && !mem.direct;
+    if (mem.escape === 0 && ((z && !riding && mem.airT > 45) || mem.airT > 240)) {
+      mem.escape = 50;
+      mem.plan = null;
+      const g = mem.goal >= 0 ? nav.surfaces[mem.goal] : null;
+      const want = g ? (g.x0 + g.x1) / 2 - cx : 0;
+      mem.escDir = Math.abs(want) > 60 ? Math.sign(want) : rnd() < 0.5 ? -1 : 1;
+    }
+    if (mem.escape > 0) {
+      mem.escape--;
+      bits = dirBits(mem.escDir);
+    }
+  } else mem.escape = 0;
+
   // standing still against something for too long: shake loose
   if (mem.stuck > 50 && bits & (IN_LEFT | IN_RIGHT)) {
     mem.plan = null;
@@ -90,7 +115,6 @@ export function botThink(sim, slot, mem) {
   }
   // a jump only counts when the button goes down, so never hold it across a landing
   if (s.ground && mem.pressed & IN_JUMP) bits &= ~IN_JUMP;
-  if (mem.pressed & IN_DASH) bits &= ~IN_DASH;
   mem.pressed = bits;
   return bits;
 }
@@ -137,12 +161,14 @@ function decide(sim, me, mem, nav) {
       mem.target = best.slot;
       mem.chase = 0;
     }
+    mem.roaming = false;
     const tcx = best.s.x + PW / 2;
     const tfeet = best.s.y + PH;
-    const mine = s.ground ? nav.surfaces[mem.surf] : null;
+    const mine = s.ground && mem.surf >= 0 ? nav.surfaces[mem.surf] : null;
     const theirs = surfaceNear(nav, tcx, tfeet);
-    const close = Math.abs(tcx - cx) < 190 && Math.abs(tfeet - feet) < 150;
-    if (close || (mine && theirs && mine.id === theirs.id)) {
+    const close = Math.abs(tcx - cx) < 200 && Math.abs(tfeet - feet) < 150;
+    const sameRun = mine && theirs && (mine.id === theirs.id || (mine.ramp && mine.ramp === theirs.ramp));
+    if (close || sameRun) {
       mem.direct = { slot: best.slot, flee: false };
     } else if (theirs) {
       mem.goal = theirs.id;
@@ -155,10 +181,11 @@ function decide(sim, me, mem, nav) {
   mem.target = -1;
   const it = sim.players[sim.it];
   const dist = it && it.s.dead === 0 ? Math.hypot(it.s.x - s.x, (it.s.y - s.y) * 1.2) : Infinity;
-  const calm = !it || it.s.stun > 0 || it.s.frz > 0 || me.immune > 30;
-  if (dist > 560 || (calm && dist > 160)) return wander(sim, me, mem, nav);
+  const calm = !it || it.s.stun > 0 || it.s.frz > 0 || it.s.orb > 0 || me.immune > 30;
+  if (dist > 600 || (calm && dist > 170)) return wander(sim, me, mem, nav);
+  mem.roaming = false;
 
-  if (dist < 120 && !calm) {
+  if (dist < 130 && !calm) {
     mem.direct = { slot: it.slot, flee: true };
     return;
   }
@@ -188,7 +215,7 @@ function decide(sim, me, mem, nav) {
     // do not run towards "it" to reach an exit
     if (Math.abs(takeoff - ix) < Math.abs(cx - ix) - 20 && Math.abs(iy - feet) < 120) score -= 260;
     score += Math.min(4, b.edges.length) * 14; // prefer places with ways out
-    if (e.type === 'portal' || e.type === 'tramp') score += 60;
+    if (e.type === 'portal' || e.type === 'tramp' || e.type === 'lift') score += 70;
     consider(score, b.id, null);
   }
   if (pick) {
@@ -207,7 +234,7 @@ function wander(sim, me, mem, nav) {
     mem.goal = -1;
     return;
   }
-  const arrived = mem.goal >= 0 && s.ground && mem.surf === mem.goal && (mem.goalX == null || Math.abs(s.x + PW / 2 - mem.goalX) < 14);
+  const arrived = mem.goal >= 0 && s.ground && mem.surf === mem.goal && (mem.goalX == null || Math.abs(s.x + PW / 2 - mem.goalX) < 18);
   if (mem.goal >= 0 && !arrived && mem.roaming) return; // still on our way
   if (arrived && rnd() < 0.5) {
     mem.rest = 20 + rnd() * 50; // take a breather
@@ -267,7 +294,7 @@ function travel(sim, me, mem, nav) {
     const here = mem.surf >= 0 ? nav.surfaces[mem.surf] : null;
     if (mem.surf === mem.goal) {
       mem.plan = null;
-      if (mem.goalX == null || Math.abs(cx - mem.goalX) < 8) return 0;
+      if (mem.goalX == null || Math.abs(cx - mem.goalX) < NEAR) return 0;
       return walk(here, cx, mem.goalX);
     }
     if (mem.surf < 0) return dirBits(sim.arena.w / 2 - cx); // standing somewhere unmapped: head inwards
@@ -282,25 +309,31 @@ function travel(sim, me, mem, nav) {
     const { e, tx } = mem.plan;
     switch (e.type) {
       case 'walk':
+        if (e.foot) {
+          // up a slope from flat ground: you have to walk into its low end from outside
+          if ((cx - tx) * e.dir > -6) return dirBits(-e.dir);
+          return dirBits(e.dir);
+        }
+        return dirBits(e.dir); // along a slope, or off the end of a ledge onto one
       case 'fall':
-        return dirBits(e.dir);
+        return walk(here, cx, tx + e.dir * 60);
       case 'hop': {
         // run to the lip and jump off it
-        const atLip = e.dir > 0 ? cx >= tx - 10 : cx <= tx + 10;
-        return dirBits(e.dir) | (atLip ? IN_JUMP : 0);
+        const atLip = e.dir > 0 ? cx >= tx - 12 : cx <= tx + 12;
+        return atLip ? dirBits(e.dir) | IN_JUMP : walk(here, cx, tx + e.dir * 60);
       }
       case 'up':
-        if (Math.abs(cx - tx) > 7) return walk(here, cx, tx);
+        if (Math.abs(cx - tx) > NEAR) return walk(here, cx, tx);
         return IN_JUMP;
       case 'drop':
-        if (Math.abs(cx - tx) > 7) return walk(here, cx, tx);
+        if (Math.abs(cx - tx) > NEAR) return walk(here, cx, tx);
         return IN_DOWN;
       case 'portal':
-        // a portal we just came out of will not take us until we step out of it
-        if (s.tp > 0) return dirBits((here.x0 + here.x1) / 2 - cx) || IN_RIGHT;
+        // a portal we just came out of will not take us until we step right out of it
+        if (s.tp > 0) return dirBits(here.x1 - tx > tx - here.x0 ? 1 : -1);
         return walk(here, cx, tx) || IN_RIGHT;
-      default: // trampoline: just walk onto it
-        return dirBits(tx - cx) || IN_RIGHT;
+      default: // trampoline, updraft: just walk into it
+        return Math.abs(tx - cx) > 4 ? walk(here, cx, tx) : IN_RIGHT;
     }
   }
 
@@ -312,17 +345,21 @@ function travel(sim, me, mem, nav) {
   }
   const { e } = mem.plan;
   const b = nav.surfaces[e.to];
+  const short = feet > b.y + 2; // still below where we are going
+  if (e.type === 'lift' && short) {
+    // stay in the column until it has carried us high enough
+    return Math.abs(e.x - cx) > 8 ? dirBits(e.x - cx) : 0;
+  }
   const aim = clamp(cx, b.x0 + 14, b.x1 - 14);
   let bits = Math.abs(aim - cx) > 5 ? dirBits(aim - cx) : 0;
-  if (e.type === 'drop' || e.type === 'fall') return bits;
+  if (e.type === 'drop' || e.type === 'fall' || e.type === 'lift') return bits;
   // going up: hold jump for full height, and use the second jump if we are
   // about to come up short
-  const short = feet > b.y + 2;
   if (s.vy < 0 && mem.pressed & IN_JUMP) bits |= IN_JUMP; // keep holding, never a fresh press
   if (mem.rejump > 0) {
     if (--mem.rejump === 0) bits |= IN_JUMP;
     else bits &= ~IN_JUMP;
-  } else if (short && s.air > 0 && s.vy > -90 && e.type !== 'portal') {
+  } else if (short && s.air > 0 && s.vy > -90 && e.type !== 'portal' && e.type !== 'tramp') {
     mem.rejump = 2;
     bits &= ~IN_JUMP;
   }
@@ -342,7 +379,14 @@ function walk(surf, cx, x) {
     for (const t of surf.pads) {
       const near = dir > 0 ? t.x - cx : cx - (t.x + t.w);
       const beyond = dir > 0 ? x > t.x + t.w : x < t.x;
-      if (beyond && near > -t.w && near < 46) bits |= IN_JUMP;
+      if (beyond && near > -t.w && near < 50) bits |= IN_JUMP;
+    }
+  }
+  // the low end of a slope in the way: hold down to pass underneath it
+  if (surf && surf.feet) {
+    for (const f of surf.feet) {
+      const ahead = (f.x - cx) * dir; // > 0: still in front of us
+      if (f.up === dir && ahead > -30 && ahead < 60 && (x - f.x) * dir > 0) bits |= IN_DOWN;
     }
   }
   return bits;
@@ -351,7 +395,7 @@ function walk(surf, cx, x) {
 // Up close: run straight at them (or straight away from them).
 function pursue(sim, me, mem, nav) {
   const o = sim.players[mem.direct.slot];
-  if (!o || o.s.dead > 0) {
+  if (!o || o.s.dead > 0 || o.s.orb > 0) {
     mem.direct = null;
     return 0;
   }
@@ -377,9 +421,8 @@ function pursue(sim, me, mem, nav) {
         bits |= IN_JUMP;
       }
     }
-    if (s.dashCd === 0 && Math.abs(dx) < 90 && rnd() < 0.25) bits |= IN_DASH;
-    else if (s.ground && Math.abs(dx) < 100 && Math.abs(dy) < 60 && rnd() < 0.3) bits |= IN_JUMP;
-    else if (!s.ground && s.air > 0 && s.vy > 60 && Math.abs(dx) < 90 && rnd() < 0.2) bits |= IN_JUMP;
+    if (s.ground && Math.abs(dx) < 110 && Math.abs(dy) < 60 && rnd() < 0.3) bits |= IN_JUMP;
+    else if (!s.ground && s.air > 0 && s.vy > 60 && Math.abs(dx) < 100 && rnd() < 0.2) bits |= IN_JUMP;
     if (s.vy < 0 && !s.ground && mem.pressed & IN_JUMP) bits |= IN_JUMP;
     return bits | dirBits(dir);
   }
@@ -387,18 +430,17 @@ function pursue(sim, me, mem, nav) {
   // chasing
   if (s.ground) {
     mem.rejump = 0;
-    if (dy < -44 && Math.abs(dx) < 170) bits |= IN_JUMP;
+    if (dy < -44 && Math.abs(dx) < 190) bits |= IN_JUMP;
     else if (dy > 70 && Math.abs(dx) < 60 && here && here.oneway) bits |= IN_DOWN;
-    else if (s.dashCd === 0 && Math.abs(dx) > 50 && Math.abs(dx) < 175 && Math.abs(dy) < 34 && rnd() < 0.35) bits |= IN_DASH;
   } else {
     if (s.vy < 0 && mem.pressed & IN_JUMP) bits |= IN_JUMP;
     if (mem.rejump > 0) {
       if (--mem.rejump === 0) bits |= IN_JUMP;
       else bits &= ~IN_JUMP;
-    } else if (s.air > 0 && s.vy > -60 && dy < -30 && Math.abs(dx) < 150) {
+    } else if (s.air > 0 && s.vy > -60 && dy < -30 && Math.abs(dx) < 170) {
       mem.rejump = 2;
       bits &= ~IN_JUMP;
-    } else if (s.dashCd === 0 && Math.abs(dx) > 40 && Math.abs(dx) < 150 && Math.abs(dy) < 30 && rnd() < 0.2) bits |= IN_DASH;
+    }
     if (dy > 120 && Math.abs(dx) < 80) bits |= IN_DOWN; // dive
   }
   return bits | dirBits(dir);

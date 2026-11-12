@@ -1,11 +1,26 @@
 // NIGHTMARE - horror. A graveyard under a sick moon. Fog, lightning, things
 // with eyes in the dark, and the players are restless spirits.
+//
+// The graveyard and its darkness are painted once. Each frame only adds a few
+// small things that move: eyes, bats, wisps of mist, now and then a bolt of
+// lightning. Every spirit carries a pre-rendered pool of light.
 
 import { ART_W as W, ART_H as H, PW } from '/shared/config.js';
-import { rgba, lighten, darken, vnoise, hash1, clamp, squashAt, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
+import { rgba, lighten, vnoise, hash1, clamp, squashAt, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
 
 const BONE = '#d9d4c4';
 const BLOOD = '#b3121d';
+const EMBER = '#ff2a1f'; // whoever is "it" burns this colour
+const VOID = '#050607';
+const AIR = '#b4f2d6'; // updraft columns: cold breath from below
+const COLORS = ['#ff5d52', '#62adff', '#72f08f', '#ffe066'];
+const MOON = [598, 122];
+const SLAB = 14; // how thick ledges and slopes are
+const LIP = 16; // flat bit at a loose end of a slope (a player's centre rides the slope, so half of them hangs over)
+const COURSE = 40 / 3; // one row of bricks: three rows to a tile, so rows line up from block to block
+
+// Canvas pixels per unit: glow is sized with this so it looks the same on every screen.
+const unit = (g) => g.getTransform().a;
 
 function tree(g, rnd, x, y, len, ang, width, depth, nodes) {
   const x2 = x + Math.cos(ang) * len;
@@ -39,73 +54,185 @@ function tombstone(g, x, y, w, h, cross) {
   }
 }
 
-function drawPlatform(g, p, rnd) {
-  // cold stone body
-  const body = g.createLinearGradient(0, p.y, 0, p.y + Math.min(p.h, 160));
+// A soft blob of colour fading out to nothing (mist, cloud, light).
+function puff(g, x, y, rx, ry, color, alpha) {
+  g.save();
+  g.translate(x, y);
+  g.scale(1, ry / rx);
+  const rg = g.createRadialGradient(0, 0, 0, 0, 0, rx);
+  rg.addColorStop(0, rgba(color, alpha));
+  rg.addColorStop(0.6, rgba(color, alpha * 0.45));
+  rg.addColorStop(1, rgba(color, 0));
+  g.fillStyle = rg;
+  g.fillRect(-rx, -rx, rx * 2, rx * 2);
+  g.restore();
+}
+
+// The parts of a solid block's top edge with nothing built on them.
+function openTop(p, arena) {
+  let spans = [[p.x, p.x + p.w]];
+  for (const o of arena.platforms) {
+    if (!o.ground || Math.abs(o.y + o.h - p.y) > 1) continue;
+    spans = spans.flatMap(([a, b]) => {
+      const l = Math.max(a, o.x);
+      const r = Math.min(b, o.x + o.w);
+      return l >= r ? [[a, b]] : [[a, l], [r, b]].filter(([s, e]) => e - s > 1);
+    });
+  }
+  return spans;
+}
+
+// Is there a platform whose top runs along y from xa to xb?
+const meets = (arena, xa, xb, y) => arena.platforms.some((p) => Math.abs(p.y - y) < 1 && p.x <= xa + 1 && p.x + p.w >= xb - 1);
+
+// Rows of bricks filling a box; rows and joints sit on a grid shared by all stonework.
+function bricks(g, x, y, w, h) {
+  g.strokeStyle = 'rgba(5,7,8,.75)';
+  g.lineWidth = 1.2;
+  g.beginPath();
+  for (let row = Math.floor(y / COURSE + 0.01) + 1; row * COURSE < y + h + 0.5; row++) {
+    const ly = row * COURSE;
+    g.moveTo(x, ly);
+    g.lineTo(x + w, ly);
+    const shift = row % 2 ? 14 : 0;
+    for (let bx = Math.floor((x - shift) / 28) * 28 + shift + 28; bx < x + w; bx += 28) {
+      g.moveTo(bx, ly - COURSE);
+      g.lineTo(bx, ly);
+    }
+  }
+  g.stroke();
+}
+
+// Moonlit edge and dead grass along a top surface, so you can always read where the ground is.
+function turf(g, x0, x1, y, rnd) {
+  g.fillStyle = '#c6dad4';
+  g.fillRect(x0, y, x1 - x0, 2.5);
+  g.fillStyle = 'rgba(198,218,212,.28)';
+  g.fillRect(x0, y + 2.5, x1 - x0, 2.5);
+  g.strokeStyle = '#7d9474';
+  g.lineWidth = 1.3;
+  g.lineCap = 'round';
+  g.beginPath();
+  for (let x = x0 + 3; x < x1 - 3; x += 4 + rnd() * 9) {
+    const hgt = 3 + rnd() * 7;
+    g.moveTo(x, y + 1);
+    g.lineTo(x + (rnd() - 0.5) * 6, y - hgt);
+  }
+  g.stroke();
+}
+
+// Blood running down from a top edge.
+function drips(g, bx, y, reach, rnd) {
+  g.fillStyle = '#9c1019';
+  for (let i = 0; i < 3; i++) {
+    const w = 2 + rnd() * 2.5;
+    const len = 6 + rnd() * reach;
+    const x = bx + (i - 1) * 5;
+    g.fillRect(x, y + 1, w, len);
+    g.beginPath();
+    g.arc(x + w / 2, y + 1 + len, w / 2 + 0.4, 0, 6.283);
+    g.fill();
+  }
+}
+
+// A thin slab of old stonework with a ragged underside.
+function ledge(g, x, y, w, rnd, plain) {
+  const body = g.createLinearGradient(0, y, 0, y + SLAB);
   body.addColorStop(0, '#566669');
   body.addColorStop(1, '#1f282b');
   g.fillStyle = body;
   g.beginPath();
-  g.moveTo(p.x, p.y);
-  g.lineTo(p.x + p.w, p.y);
-  if (p.ground) {
-    g.lineTo(p.x + p.w, p.y + p.h);
-    g.lineTo(p.x, p.y + p.h);
-  } else {
-    // ragged underside
-    let x = p.x + p.w;
-    g.lineTo(x, p.y + p.h - 3);
-    while (x > p.x + 6) {
-      const step = 6 + rnd() * 10;
-      const nx = Math.max(p.x, x - step);
-      g.lineTo((x + nx) / 2, p.y + p.h + 3 + rnd() * (rnd() < 0.25 ? 20 : 8));
-      g.lineTo(nx, p.y + p.h - 2 - rnd() * 2);
-      x = nx;
-    }
-    g.lineTo(p.x, p.y + p.h - 3);
+  g.moveTo(x, y);
+  g.lineTo(x + w, y);
+  let px = x + w;
+  g.lineTo(px, y + SLAB - 3);
+  while (px > x + 6) {
+    const nx = Math.max(x, px - 6 - rnd() * 10);
+    g.lineTo((px + nx) / 2, y + SLAB + 3 + rnd() * (rnd() < 0.25 ? 20 : 8));
+    g.lineTo(nx, y + SLAB - 2 - rnd() * 2);
+    px = nx;
   }
+  g.lineTo(x, y + SLAB - 3);
   g.closePath();
   g.fill();
 
   g.save();
   g.beginPath();
-  g.rect(p.x, p.y, p.w, p.h);
+  g.rect(x, y, w, SLAB);
   g.clip();
-  // brickwork
-  g.strokeStyle = 'rgba(5,7,8,.75)';
-  g.lineWidth = 1.2;
-  g.beginPath();
-  let row = 0;
-  for (let y = p.y + 13; y < p.y + p.h + 14; y += 14, row++) {
-    g.moveTo(p.x, y);
-    g.lineTo(p.x + p.w, y);
-    for (let x = p.x + (row % 2 ? 14 : 28); x < p.x + p.w; x += 28) {
-      g.moveTo(x, y - 14);
-      g.lineTo(x, y);
+  bricks(g, x, y, w, SLAB);
+  if (!plain) {
+    g.strokeStyle = 'rgba(0,0,0,.8)';
+    g.lineWidth = 1.4;
+    for (let i = 0; i < Math.max(1, Math.floor(w / 90)); i++) {
+      let cx = x + 10 + rnd() * (w - 20);
+      let cy = y + 2;
+      g.beginPath();
+      g.moveTo(cx, cy);
+      for (let k = 0; k < 2; k++) {
+        cx += (rnd() - 0.5) * 16;
+        cy += 6 + rnd() * 12;
+        g.lineTo(cx, cy);
+      }
+      g.stroke();
     }
   }
-  g.stroke();
-  // cracks
-  g.strokeStyle = 'rgba(0,0,0,.8)';
-  g.lineWidth = 1.4;
-  const cracks = Math.max(1, Math.floor(p.w / 90));
-  for (let i = 0; i < cracks; i++) {
-    let x = p.x + 10 + rnd() * (p.w - 20);
-    let y = p.y + 2;
+  g.restore();
+
+  turf(g, x, x + w, y, rnd);
+  if (plain) return;
+  if (rnd() < 0.7) drips(g, rnd() < 0.5 ? x + 3 + rnd() * 14 : x + w - 6 - rnd() * 14, y, 22, rnd);
+  // roots dangling underneath
+  g.strokeStyle = 'rgba(31,40,43,.95)';
+  g.lineWidth = 1.2;
+  for (let i = 0; i < Math.floor(w / 30); i++) {
+    const rx = x + 8 + rnd() * (w - 16);
+    const len = 10 + rnd() * 26;
     g.beginPath();
-    g.moveTo(x, y);
-    const n = p.ground ? 4 + Math.floor(rnd() * 4) : 2;
-    for (let k = 0; k < n; k++) {
-      x += (rnd() - 0.5) * 16;
-      y += 6 + rnd() * 12;
-      g.lineTo(x, y);
-    }
+    g.moveTo(rx, y + SLAB);
+    g.quadraticCurveTo(rx + (rnd() - 0.5) * 14, y + SLAB + len * 0.6, rx + (rnd() - 0.5) * 10, y + SLAB + len);
     g.stroke();
   }
-  if (p.ground && p.h > 70) {
+}
+
+// A solid block of the crypt wall, any height.
+function block(g, p, rnd, arena) {
+  const open = openTop(p, arena);
+  g.fillStyle = '#222c2f';
+  g.fillRect(p.x, p.y, p.w, p.h);
+  // moonlight soaks a little way down from the open top
+  const depth = Math.min(p.h, 150);
+  const lit = g.createLinearGradient(0, p.y, 0, p.y + depth);
+  lit.addColorStop(0, '#566669');
+  lit.addColorStop(1, 'rgba(86,102,105,0)');
+  g.fillStyle = lit;
+  for (const [a, b] of open) g.fillRect(a, p.y, b - a, depth);
+
+  g.save();
+  g.beginPath();
+  g.rect(p.x, p.y, p.w, p.h);
+  g.clip();
+  bricks(g, p.x, p.y, p.w, p.h);
+  // cracks running down from the surface
+  g.strokeStyle = 'rgba(0,0,0,.8)';
+  g.lineWidth = 1.4;
+  for (const [a, b] of open) {
+    for (let i = 0; i < Math.max(1, Math.floor((b - a) / 90)); i++) {
+      let cx = a + 10 + rnd() * (b - a - 20);
+      let cy = p.y + 2;
+      g.beginPath();
+      g.moveTo(cx, cy);
+      for (let k = 4 + Math.floor(rnd() * 4); k > 0; k--) {
+        cx += (rnd() - 0.5) * 16;
+        cy += 6 + rnd() * 12;
+        g.lineTo(cx, cy);
+      }
+      g.stroke();
+    }
+  }
+  if (p.h > 70) {
     // something buried in the wall
-    const n = Math.max(1, Math.floor((p.w * p.h) / 26000));
-    for (let i = 0; i < n; i++) {
+    for (let i = Math.max(1, Math.floor((p.w * p.h) / 26000)); i > 0; i--) {
       const sx = p.x + 24 + rnd() * (p.w - 48);
       const sy = p.y + 40 + rnd() * (p.h - 60);
       g.fillStyle = 'rgba(190,185,165,.22)';
@@ -120,113 +247,66 @@ function drawPlatform(g, p, rnd) {
       g.fill();
       g.fillRect(sx - 0.7, sy + 3, 1.4, 3);
     }
+  }
+  if (p.y + p.h >= arena.h - 1) {
     // darkness creeping up from below
-    const dk = g.createLinearGradient(0, p.y + p.h - 90, 0, p.y + p.h);
+    const rise = Math.min(140, p.h * 0.75);
+    const dk = g.createLinearGradient(0, p.y + p.h - rise, 0, p.y + p.h);
     dk.addColorStop(0, 'rgba(0,0,0,0)');
     dk.addColorStop(1, 'rgba(0,0,0,.75)');
     g.fillStyle = dk;
-    g.fillRect(p.x, p.y + p.h - 90, p.w, 90);
+    g.fillRect(p.x, p.y + p.h - rise, p.w, rise);
   }
   g.restore();
 
-  // moonlit top edge so you can always read where the ground is
-  g.fillStyle = '#c6dad4';
-  g.fillRect(p.x, p.y, p.w, 2.5);
-  g.fillStyle = 'rgba(198,218,212,.28)';
-  g.fillRect(p.x, p.y + 2.5, p.w, 2.5);
-  // dead grass
-  g.strokeStyle = '#7d9474';
-  g.lineWidth = 1.3;
-  g.lineCap = 'round';
-  g.beginPath();
-  for (let x = p.x + 3; x < p.x + p.w - 3; x += 4 + rnd() * 9) {
-    const hgt = 3 + rnd() * 7;
-    g.moveTo(x, p.y + 1);
-    g.lineTo(x + (rnd() - 0.5) * 6, p.y - hgt);
-  }
-  g.stroke();
-  // blood running down an edge
-  if (rnd() < 0.7) {
-    const bx = rnd() < 0.5 ? p.x + 3 + rnd() * 14 : p.x + p.w - 6 - rnd() * 14;
-    g.fillStyle = '#9c1019';
-    for (let i = 0; i < 3; i++) {
-      const w = 2 + rnd() * 2.5;
-      const len = 6 + rnd() * Math.min(26, p.h + 8);
-      const x = bx + (i - 1) * 5;
-      g.fillRect(x, p.y + 1, w, len);
-      g.beginPath();
-      g.arc(x + w / 2, p.y + 1 + len, w / 2 + 0.4, 0, 6.283);
-      g.fill();
-    }
-  }
-  // roots dangling under floating slabs
-  if (!p.ground) {
-    g.strokeStyle = 'rgba(31,40,43,.95)';
-    g.lineWidth = 1.2;
-    for (let i = 0; i < Math.floor(p.w / 30); i++) {
-      const x = p.x + 8 + rnd() * (p.w - 16);
-      const len = 10 + rnd() * 26;
-      g.beginPath();
-      g.moveTo(x, p.y + p.h);
-      g.quadraticCurveTo(x + (rnd() - 0.5) * 14, p.y + p.h + len * 0.6, x + (rnd() - 0.5) * 10, p.y + p.h + len);
-      g.stroke();
-    }
+  for (const [a, b] of open) {
+    turf(g, a, b, p.y, rnd);
+    if (rnd() < 0.7) drips(g, rnd() < 0.5 ? a + 3 + rnd() * 14 : b - 6 - rnd() * 14, p.y, 26, rnd);
   }
 }
 
-function bolt(rnd) {
-  const pts = [];
-  let x = 80 + rnd() * (W - 160);
-  let y = -10;
-  while (y < 330) {
-    pts.push([x, y]);
-    x += (rnd() - 0.5) * 60;
-    y += 18 + rnd() * 34;
-  }
-  return pts;
+// A soft round light, baked once and stamped wherever something has to glow.
+function glowSprite(sprite, color, alpha) {
+  return sprite(64, 64, (g) => {
+    const rg = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    rg.addColorStop(0, rgba(color, alpha));
+    rg.addColorStop(0.4, rgba(color, alpha * 0.45));
+    rg.addColorStop(1, rgba(color, 0));
+    g.fillStyle = rg;
+    g.fillRect(0, 0, 64, 64);
+  });
+}
+
+// Everything in the arena as boxes [x0, y0, x1, y1], with a little room around each.
+function boxes(arena) {
+  const out = [];
+  for (const p of arena.platforms) out.push([p.x - 6, p.y - 12, p.x + p.w + 6, p.y + p.h + (p.ground ? 0 : 30)]);
+  for (const r of arena.ramps) out.push([r.x0 - LIP - 6, Math.min(r.y0, r.y1) - 12, r.x1 + LIP + 6, Math.max(r.y0, r.y1) + SLAB + 30]);
+  for (const po of arena.portals) out.push([po.cx - 46, po.cy - 56, po.cx + 46, po.cy + 56]);
+  for (const tr of arena.tramps) out.push([tr.x - 10, tr.y - 34, tr.x + tr.w + 10, tr.y + tr.h]);
+  for (const z of arena.lifts) out.push([z.x, z.y, z.x + z.w, z.y + z.h]);
+  return out;
 }
 
 export default {
   id: 'nightmare',
-  colors: ['#ff5d52', '#62adff', '#72f08f', '#ffe066'],
+  colors: COLORS,
   letterbox: '#020303',
+  lift: AIR,
   label: {
     font: '13px "Special Elite", monospace',
-    size: 12,
     color: BONE,
     stroke: 'rgba(0,0,0,.92)',
     strokeWidth: 3.5,
     you: '#ffffff',
-    youFont: '20px Creepster, fantasy',
-    stun: '#ffe066',
-  },
-  labelGap: 9,
-  hud: {
-    font: 'Creepster, fantasy',
-    weight: 400,
-    scale: 1.18,
-    labelFont: '"Special Elite", monospace',
-    labelWeight: 400,
-    labelScale: 0.95,
-    text: '#e9e2cf',
-    dim: 'rgba(205,198,180,.55)',
-    warn: '#ff2a2a',
-    glow: 'rgba(190,10,22,.95)',
-    glowBlur: 14,
-    chip: 'rgba(6,7,8,.8)',
-    chipLine: 'rgba(150,140,120,.32)',
-    chipIt: 'rgba(130,8,16,.6)',
-    big: '#e9e2cf',
-    bigStroke: 'rgba(110,0,0,.75)',
-    radius: 2,
-    timerDy: 2,
+    gap: 9,
   },
 
   build(env) {
-    const { rnd, layer } = env;
-    const eyes = [];
+    const { rnd, layer, sprite, arena } = env;
     const nodes = [];
     const windows = [];
+    const [mx, my] = MOON;
 
     const ridge = (x) => 372 + 34 * vnoise(x / 130, 7) + 12 * vnoise(x / 37, 9);
 
@@ -242,8 +322,6 @@ export default {
         g.fillRect(rnd() * W, rnd() * 240, 1.2, 1.2);
       }
       // the moon, with a blood-tinged halo
-      const mx = 598;
-      const my = 122;
       let rg = g.createRadialGradient(mx, my, 40, mx, my, 260);
       rg.addColorStop(0, 'rgba(200,50,45,.42)');
       rg.addColorStop(0.45, 'rgba(120,150,150,.16)');
@@ -268,6 +346,12 @@ export default {
       g.fillStyle = rg;
       g.fillRect(mx - 70, my - 70, 140, 140);
       g.restore();
+      // rags of cloud dragged across the sky
+      for (const [cx, cy, cw] of [[mx - 30, my + 34, 150], [mx + 90, my - 30, 120], [250, 90, 170], [90, 170, 130], [430, 200, 110]]) {
+        puff(g, cx, cy, cw, cw * 0.16, '#04070a', 0.8);
+        puff(g, cx + cw * 0.4, cy + 9, cw * 0.7, cw * 0.12, '#04070a', 0.7);
+        puff(g, cx - cw * 0.45, cy - 6, cw * 0.6, cw * 0.1, '#04070a', 0.6);
+      }
 
       // far hills with graves
       g.fillStyle = '#0b171d';
@@ -303,7 +387,15 @@ export default {
       g.lineTo(hx + 54, hy - 76);
       g.lineTo(hx + 54, hy);
       g.fill();
-      windows.push({ x: hx - 24, y: hy - 42, w: 9, h: 13 }, { x: hx + 37, y: hy - 70, w: 8, h: 12 });
+      // a light left on
+      for (const w of [{ x: hx - 24, y: hy - 42, w: 9, h: 13 }, { x: hx + 37, y: hy - 70, w: 8, h: 12 }]) {
+        windows.push(w);
+        g.fillStyle = 'rgba(255,150,50,.5)';
+        g.fillRect(w.x, w.y, w.w, w.h);
+        g.fillStyle = '#05080a';
+        g.fillRect(w.x + w.w / 2 - 0.6, w.y, 1.2, w.h);
+        g.fillRect(w.x, w.y + w.h / 2 - 0.6, w.w, 1.2);
+      }
 
       // dead trees
       g.strokeStyle = '#04080b';
@@ -330,57 +422,17 @@ export default {
       fog.addColorStop(1, 'rgba(150,180,175,.3)');
       g.fillStyle = fog;
       g.fillRect(0, H - 170, W, 170);
+
+      // the dark: everything away from the moon sinks into it
+      const dk = g.createRadialGradient(mx, my, 70, mx, my, 560);
+      dk.addColorStop(0, 'rgba(0,2,5,0)');
+      dk.addColorStop(0.5, 'rgba(0,2,5,.42)');
+      dk.addColorStop(1, 'rgba(0,2,5,.6)');
+      g.fillStyle = dk;
+      g.fillRect(0, 0, W, H);
     });
 
-    // where the eyes can be
-    for (const n of nodes.slice(0, 6)) eyes.push({ x: n.x, y: n.y, s: 2.6 + rnd() * 1.4, red: rnd() < 0.3, ph: rnd() * 40 });
-    for (let i = 0; i < 5; i++) {
-      const x = 60 + rnd() * (W - 120);
-      eyes.push({ x, y: ridge(x) + 30 + rnd() * 40, s: 2.2 + rnd() * 1.6, red: rnd() < 0.3, ph: rnd() * 40 });
-    }
-
-    const vignette = layer((g) => {
-      const v = g.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, H * 0.98);
-      v.addColorStop(0, 'rgba(0,0,0,0)');
-      v.addColorStop(1, 'rgba(0,0,0,.8)');
-      g.fillStyle = v;
-      g.fillRect(0, 0, W, H);
-    }, 0.5);
-
-    // soft fog puff, reused for every wisp
-    const puff = document.createElement('canvas');
-    puff.width = 256;
-    puff.height = 96;
-    {
-      const g = puff.getContext('2d');
-      g.translate(128, 48);
-      g.scale(1, 0.375);
-      const rg = g.createRadialGradient(0, 0, 0, 0, 0, 128);
-      rg.addColorStop(0, 'rgba(170,190,185,.55)');
-      rg.addColorStop(1, 'rgba(170,190,185,0)');
-      g.fillStyle = rg;
-      g.fillRect(-128, -128, 256, 256);
-    }
-    const cloud = document.createElement('canvas');
-    cloud.width = 256;
-    cloud.height = 96;
-    {
-      const g = cloud.getContext('2d');
-      g.translate(128, 48);
-      g.scale(1, 0.375);
-      const rg = g.createRadialGradient(0, 0, 0, 0, 0, 128);
-      rg.addColorStop(0, 'rgba(4,7,10,.85)');
-      rg.addColorStop(0.6, 'rgba(4,7,10,.5)');
-      rg.addColorStop(1, 'rgba(4,7,10,0)');
-      g.fillStyle = rg;
-      g.fillRect(-128, -128, 256, 256);
-    }
-    const wisps = [];
-    for (let i = 0; i < 7; i++) wisps.push({ x: rnd() * W, y: 250 + rnd() * 230, w: 300 + rnd() * 320, h: 70 + rnd() * 80, v: (rnd() < 0.5 ? -1 : 1) * (6 + rnd() * 14), a: 0.1 + rnd() * 0.12 });
-    const clouds = [];
-    for (let i = 0; i < 4; i++) clouds.push({ x: rnd() * W, y: 60 + rnd() * 120, w: 220 + rnd() * 200, h: 40 + rnd() * 40, v: 5 + rnd() * 8 });
-
-    // film grain tile
+    // laid over the stonework too: banks of fog, dark corners, film grain
     const grain = document.createElement('canvas');
     grain.width = grain.height = 128;
     {
@@ -393,121 +445,252 @@ export default {
       }
       g.putImageData(img, 0, 0);
     }
+    const shade = layer((g) => {
+      for (let i = 0; i < 7; i++) {
+        const w = 150 + rnd() * 160;
+        puff(g, rnd() * W, 270 + rnd() * 210, w, 18 + rnd() * 20, '#aabeb9', 0.1 + rnd() * 0.1);
+      }
+      const v = g.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, H * 0.98);
+      v.addColorStop(0, 'rgba(0,0,0,0)');
+      v.addColorStop(1, 'rgba(0,0,0,.8)');
+      g.fillStyle = v;
+      g.fillRect(0, 0, W, H);
+      for (let y = 0; y < H; y += 128) for (let x = 0; x < W; x += 128) g.drawImage(grain, x, y);
+    });
 
-    // low-res darkness buffer; players punch holes of light into it
-    const dark = document.createElement('canvas');
-    dark.width = W / 4;
-    dark.height = H / 4;
+    // where eyes could open: up in the trees and down among the graves
+    const eyes = [];
+    for (const n of nodes) eyes.push({ x: n.x, y: n.y, s: 1.7 + rnd() * 0.9, red: rnd() < 0.3, ph: rnd() * 40 });
+    for (let i = 0; i < 10; i++) {
+      const x = 40 + rnd() * (W - 80);
+      eyes.push({ x, y: ridge(x) + 30 + rnd() * 40, s: 1.5 + rnd() * 0.9, red: rnd() < 0.3, ph: rnd() * 40 });
+    }
+
+    const bats = [];
+    for (let i = 0; i < 3; i++) bats.push({ x: rnd() * W, y: my - 50 + i * 45, v: (i % 2 ? -1 : 1) * (26 + rnd() * 22), f: 0.8 + rnd(), ph: rnd() * 6, s: 4.5 + rnd() * 2 });
+
+    // wisps of mist that creep back and forth along open ground (world positions)
+    const beds = [];
+    for (const p of arena.platforms) {
+      if (p.ground) for (const [a, b] of openTop(p, arena)) if (b - a > 280) beds.push([a, b, p.y]);
+    }
+    const mist = [];
+    for (let i = 0; i < 6 && beds.length; i++) {
+      const [a, b, y] = beds[i % beds.length];
+      mist.push({ a: a + 70, len: b - a - 140, y: y - 34 + rnd() * 12, w: 130 + rnd() * 40, v: 9 + rnd() * 14, ph: rnd() * 2 });
+    }
 
     return {
       bg,
-      vignette,
-      puff,
-      cloud,
-      wisps,
-      clouds,
-      grain,
-      dark,
-      darkCtx: dark.getContext('2d'),
+      shade,
       eyes,
       windows,
-      rnd,
-      nextBolt: 4 + rnd() * 6,
-      boltAt: -10,
-      bolt: null,
+      bats,
+      mist,
+      arena,
+      solid: boxes(arena),
+      // light sprites: one per spirit, one for whoever is "it", one for the toadstools, one wisp of mist
+      pal: COLORS.map((c) => ({ glow: glowSprite(sprite, c, 0.42), hi: lighten(c, 0.45) })),
+      itGlow: glowSprite(sprite, EMBER, 0.7),
+      capGlow: glowSprite(sprite, '#ff2a2a', 0.5),
+      wisp: sprite(96, 28, (g) => puff(g, 48, 14, 48, 14, '#aabeb9', 0.3)),
+      seen: COLORS.map(() => ({ x: 0, y: 0, t: -9 })), // where each spirit was last drawn
       wispT: [0, 0, 0, 0],
+      nextBolt: null,
+      boltAt: -9,
+      flashed: -9,
+      bolt: [],
     };
   },
 
-  back(g, sc, t, view, pvs) {
+  back(g, sc) {
+    sc.art = g.getTransform(); // remembered so decor() can work out where the world sits on the art board
     g.drawImage(sc.bg, 0, 0, W, H);
+  },
 
-    // lightning
-    if (sc.t0 == null) sc.t0 = t;
-    const lt = t - sc.t0;
-    if (lt > sc.nextBolt) {
-      sc.boltAt = lt;
-      sc.bolt = bolt(Math.random);
-      sc.nextBolt = lt + 7 + Math.random() * 12;
-    }
-    const since = lt - sc.boltAt;
-    sc.flash = since < 0.5 ? Math.max(0, 1 - since / 0.1) + (since > 0.16 ? Math.max(0, 1 - (since - 0.16) / 0.3) * 0.7 : 0) : 0;
-    if (sc.flash > 0.05 && sc.bolt) {
-      g.strokeStyle = `rgba(225,235,255,${Math.min(1, sc.flash)})`;
-      g.lineWidth = 2.2;
-      g.lineJoin = 'round';
+  platform(g, p, i, rnd, arena) {
+    if (p.ground) block(g, p, rnd, arena);
+    else ledge(g, p.x, p.y, p.w, rnd);
+  },
+
+  // A slope is a ledge sheared along the incline, so its roots and drips still hang straight down.
+  ramp(g, r, i, rnd, arena) {
+    // where the low end lands on a solid block, the slab tapers into it instead of sinking in
+    const [lx, ly] = r.y0 > r.y1 ? [r.x0, r.y0] : [r.x1, r.y1];
+    const floor = arena.platforms.find((p) => p.ground && Math.abs(p.y - ly) < 1 && p.x <= lx && p.x + p.w >= lx);
+    if (floor) {
       g.beginPath();
-      sc.bolt.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
-      g.stroke();
+      g.rect(r.x0 - 80, floor.y - 4000, r.x1 - r.x0 + 160, 4000);
+      g.clip();
     }
+    // a short flat lip wherever an end hangs loose
+    if (!meets(arena, r.x0 - LIP, r.x0, r.y0)) ledge(g, r.x0 - LIP, r.y0, LIP + 3, rnd, true);
+    if (!meets(arena, r.x1, r.x1 + LIP, r.y1)) ledge(g, r.x1 - 3, r.y1, LIP + 3, rnd, true);
+    g.translate(r.x0, r.y0);
+    g.transform(1, (r.y1 - r.y0) / (r.x1 - r.x0), 0, 1, 0, 0);
+    ledge(g, 0, 0, r.x1 - r.x0, rnd);
+  },
 
-    // clouds sliding across the moon
-    for (const c of sc.clouds) {
-      const x = ((c.x + t * c.v) % (W + c.w * 1.4)) - c.w * 1.2;
-      g.drawImage(sc.cloud, x, c.y - c.h / 2, c.w, c.h);
-      g.drawImage(sc.cloud, x + c.w * 0.35, c.y - c.h * 0.2, c.w * 0.8, c.h * 0.8);
-      g.drawImage(sc.cloud, x - c.w * 0.2, c.y - c.h * 0.1, c.w * 0.7, c.h * 0.7);
+  // Cold light under the updrafts. Also works out what the animated things may use.
+  decor(g, sc, arena) {
+    // world (x, y) sits at art-board (wx + x * k, wy + y * k)
+    const m = g.getTransform();
+    const k = m.a / sc.art.a;
+    const wx = (m.e - sc.art.e) / sc.art.a;
+    const wy = (m.f - sc.art.f) / sc.art.d;
+    sc.world = { k, x: wx, y: wy };
+
+    // eyes and the lit windows are drawn on top of the picture, so only keep those nothing stands in front of
+    const clear = (x0, y0, x1, y1) => {
+      const a = (x0 - wx) / k;
+      const b = (y0 - wy) / k;
+      const c = (x1 - wx) / k;
+      const d = (y1 - wy) / k;
+      return !sc.solid.some((s) => c > s[0] && a < s[2] && d > s[1] && b < s[3]);
+    };
+    sc.eyes = sc.eyes.filter((e) => clear(e.x - e.s * 5, e.y - e.s * 2, e.x + e.s * 5, e.y + e.s * 2)).slice(0, 7);
+    sc.windows = sc.windows.filter((w) => clear(w.x, w.y, w.x + w.w, w.y + w.h));
+
+    for (const z of arena.lifts) {
+      const by = z.y + z.h;
+      const up = g.createLinearGradient(0, by - 110, 0, by);
+      up.addColorStop(0, rgba(AIR, 0));
+      up.addColorStop(1, rgba(AIR, 0.34));
+      g.fillStyle = up;
+      g.fillRect(z.x, by - 110, z.w, 110);
+      // an iron grate the cold comes up through
+      g.fillStyle = '#0a0d0e';
+      g.fillRect(z.x - 3, by - 6, z.w + 6, 6);
+      g.fillStyle = AIR;
+      for (let x = z.x + 3; x < z.x + z.w - 4; x += 9) g.fillRect(x, by - 4.5, 5, 2.5);
     }
+  },
 
-    // a light left on in the house
+  // static: fog, dark corners and film grain over everything
+  front(g, sc) {
+    g.drawImage(sc.shade, 0, 0, W, H);
+  },
+
+  // every frame: a few small things that move in the dark
+  live(g, sc, t) {
+    const w = sc.world;
+
+    // the light in the house gutters
     for (let i = 0; i < sc.windows.length; i++) {
-      const w = sc.windows[i];
-      const a = 0.35 + 0.5 * vnoise(t * 6 + i * 20, 3);
-      g.fillStyle = `rgba(255,150,50,${a})`;
-      g.fillRect(w.x, w.y, w.w, w.h);
-      g.fillStyle = '#05080a';
-      g.fillRect(w.x + w.w / 2 - 0.6, w.y, 1.2, w.h);
-      g.fillRect(w.x, w.y + w.h / 2 - 0.6, w.w, 1.2);
+      const r = sc.windows[i];
+      g.fillStyle = `rgba(255,170,70,${(0.1 + 0.5 * vnoise(t * 6 + i * 20, 3)).toFixed(2)})`;
+      g.fillRect(r.x, r.y, r.w / 2 - 0.6, r.h / 2 - 0.6);
+      g.fillRect(r.x + r.w / 2 + 0.6, r.y, r.w / 2 - 0.6, r.h / 2 - 0.6);
+      g.fillRect(r.x, r.y + r.h / 2 + 0.6, r.w / 2 - 0.6, r.h / 2 - 0.6);
+      g.fillRect(r.x + r.w / 2 + 0.6, r.y + r.h / 2 + 0.6, r.w / 2 - 0.6, r.h / 2 - 0.6);
     }
 
     // eyes in the dark: they open, look at whoever is nearest, and close again
     for (let i = 0; i < sc.eyes.length; i++) {
       const e = sc.eyes[i];
-      const cyc = Math.sin(t * 0.45 + e.ph);
-      const vis = clamp((cyc - 0.15) * 3, 0, 1);
+      const vis = clamp((Math.sin(t * 0.45 + e.ph) - 0.15) * 3, 0, 1);
       if (vis <= 0) continue;
       const blink = hash1(Math.floor(t * 2.5 + e.ph * 3), i) < 0.1 ? 0.15 : 1;
-      let lx = 0;
+      let look = 0;
       let best = 1e9;
-      for (const p of pvs) {
-        const d = Math.abs(p.ax - e.x) + Math.abs(p.ay - e.y);
+      for (const p of sc.seen) {
+        if (t - p.t > 0.5) continue;
+        const dx = w.x + p.x * w.k - e.x;
+        const d = Math.abs(dx) + Math.abs(w.y + p.y * w.k - e.y);
         if (d < best) {
           best = d;
-          lx = clamp((p.ax - e.x) / 120, -1, 1);
+          look = clamp(dx / 120, -1, 1);
         }
       }
       const col = e.red ? '255,50,40' : '240,226,150';
       const gap = e.s * 2.1;
-      for (const sx of [-gap, gap]) {
-        g.fillStyle = `rgba(${col},${0.18 * vis})`;
-        g.beginPath();
-        g.ellipse(e.x + sx, e.y, e.s * 2.3, e.s * 1.9, 0, 0, 6.283);
-        g.fill();
-        g.fillStyle = `rgba(${col},${vis})`;
-        g.beginPath();
-        g.ellipse(e.x + sx, e.y, e.s, Math.max(0.4, e.s * 0.62 * blink * vis), 0, 0, 6.283);
-        g.fill();
-        if (blink > 0.5 && vis > 0.6) {
-          g.fillStyle = '#000';
-          g.fillRect(e.x + sx + lx * e.s * 0.5 - 0.5, e.y - e.s * 0.55, 1, e.s * 1.1);
-        }
+      g.fillStyle = `rgba(${col},${(0.18 * vis).toFixed(2)})`;
+      g.beginPath();
+      g.ellipse(e.x - gap, e.y, e.s * 2.3, e.s * 1.9, 0, 0, 6.283);
+      g.ellipse(e.x + gap, e.y, e.s * 2.3, e.s * 1.9, 0, 0, 6.283);
+      g.fill();
+      g.fillStyle = `rgba(${col},${vis.toFixed(2)})`;
+      g.beginPath();
+      g.ellipse(e.x - gap, e.y, e.s, Math.max(0.4, e.s * 0.62 * blink * vis), 0, 0, 6.283);
+      g.ellipse(e.x + gap, e.y, e.s, Math.max(0.4, e.s * 0.62 * blink * vis), 0, 0, 6.283);
+      g.fill();
+      if (blink > 0.5 && vis > 0.6) {
+        g.fillStyle = '#000000';
+        g.fillRect(e.x - gap + look * e.s * 0.5 - 0.5, e.y - e.s * 0.55, 1, e.s * 1.1);
+        g.fillRect(e.x + gap + look * e.s * 0.5 - 0.5, e.y - e.s * 0.55, 1, e.s * 1.1);
       }
+    }
+
+    // bats crossing the moon
+    g.fillStyle = '#04070a';
+    g.beginPath();
+    for (const b of sc.bats) {
+      const span = W + 120;
+      const x = ((((b.x + t * b.v) % span) + span) % span) - 60;
+      const y = b.y + Math.sin(t * b.f + b.ph) * 16;
+      const flap = Math.sin(t * 13 + b.ph) * b.s * 0.9;
+      g.moveTo(x, y + 1);
+      g.quadraticCurveTo(x - b.s * 0.6, y - flap * 0.3, x - b.s * 1.6, y - flap);
+      g.lineTo(x - b.s * 0.6, y + 1.6);
+      g.lineTo(x, y + 2.8);
+      g.lineTo(x + b.s * 0.6, y + 1.6);
+      g.lineTo(x + b.s * 1.6, y - flap);
+      g.quadraticCurveTo(x + b.s * 0.6, y - flap * 0.3, x, y + 1);
+    }
+    g.fill();
+
+    // lightning: rare, brief, and it always comes down on something
+    if (sc.nextBolt === null) sc.nextBolt = t + 6 + Math.random() * 8;
+    if (t > sc.nextBolt) {
+      sc.nextBolt = t + 14 + Math.random() * 16;
+      sc.boltAt = t;
+      const pts = (sc.bolt = []);
+      let x = 80 + Math.random() * (W - 160);
+      let y = -10;
+      while (y < 340) {
+        pts.push(x, y);
+        // stop where it strikes a platform
+        const px = (x - w.x) / w.k;
+        const py = (y - w.y) / w.k;
+        if (sc.solid.some((s) => px > s[0] && px < s[2] && py > s[1] && py < s[3])) break;
+        x += (Math.random() - 0.5) * 60;
+        y += 14 + Math.random() * 26;
+      }
+    }
+    const since = t - sc.boltAt;
+    if (since < 0.3 && (since < 0.09 || since > 0.15)) {
+      const pts = sc.bolt;
+      g.lineJoin = 'round';
+      g.beginPath();
+      g.moveTo(pts[0], pts[1]);
+      for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+      g.strokeStyle = 'rgba(190,210,255,.3)';
+      g.lineWidth = 6;
+      g.stroke();
+      g.strokeStyle = '#eef3ff';
+      g.lineWidth = since < 0.09 ? 2.2 : 1.3;
+      g.stroke();
+    }
+
+    // mist creeping along the ground
+    g.translate(w.x, w.y);
+    g.scale(w.k, w.k);
+    for (const m of sc.mist) {
+      const f = ((t * m.v) / m.len + m.ph) % 2;
+      const x = m.a + (f < 1 ? f : 2 - f) * m.len;
+      g.drawImage(sc.wisp, x - m.w / 2, m.y, m.w, m.w * 0.29);
     }
   },
 
-  platPad: { x: 8, top: 14, bottom: 34 },
-  platform(g, p, i, rnd) {
-    drawPlatform(g, p, rnd);
-  },
-
   // a fat pale toadstool
-  trampoline(g, tr, t, k) {
+  trampoline(g, tr, t, k, sc) {
     const cx = tr.x + tr.w / 2;
     const base = tr.y + tr.h;
     const top = tr.y - 6 + k * 9;
+    g.drawImage(sc.capGlow, tr.x - 10, top - 14, tr.w + 20, 38);
     g.fillStyle = '#b8b39d';
     g.fillRect(cx - 7, top + 8, 14, base - top - 8);
-    g.fillStyle = 'rgba(0,0,0,.25)';
+    g.fillStyle = '#8a8674';
     g.fillRect(cx + 2, top + 8, 5, base - top - 8);
     g.beginPath();
     g.moveTo(tr.x - 3, top + 12);
@@ -515,27 +698,21 @@ export default {
     g.quadraticCurveTo(tr.x + tr.w - 2, top - 6 + k * 4, tr.x + tr.w + 3, top + 12);
     g.quadraticCurveTo(cx, top + 16, tr.x - 3, top + 12);
     g.closePath();
-    g.fillStyle = '#8c1620';
-    g.shadowColor = '#ff2a2a';
-    g.shadowBlur = 6 + k * 14;
+    g.fillStyle = k > 0.3 ? '#d02a35' : '#a51a25';
     g.fill();
-    g.shadowBlur = 0;
     g.fillStyle = '#e6dfc6';
+    g.beginPath();
     for (const [dx, dy, r] of [[-18, 4, 4], [-4, -1, 5], [12, 3, 4.2], [24, 7, 2.6]]) {
-      g.beginPath();
+      g.moveTo(cx + dx + r, top + dy + k * 3);
       g.ellipse(cx + dx, top + dy + k * 3, r, r * 0.7, 0, 0, 6.283);
-      g.fill();
     }
+    g.fill();
   },
 
   // a stone arch with something burning inside
-  portal(g, po, t) {
+  portal(g, po) {
     const col = PORTAL_COLORS[po.pair % PORTAL_COLORS.length];
-    const cx = po.cx;
-    const x = po.x;
-    const y = po.y;
-    const w = po.w;
-    const h = po.h;
+    const { cx, cy, x, y, w, h } = po;
     const arch = (inset) => {
       g.beginPath();
       g.moveTo(x + inset, y + h);
@@ -545,66 +722,98 @@ export default {
       g.lineTo(x + w - inset, y + h);
       g.closePath();
     };
+    // light spilling out around it
+    puff(g, cx, cy + 4, 44, 52, col, 0.5);
     arch(-3);
-    g.fillStyle = '#3d484b';
+    g.fillStyle = '#48565a';
     g.fill();
     g.strokeStyle = '#0b0e0f';
     g.lineWidth = 1.5;
     g.stroke();
+    // joints between the stones
+    g.beginPath();
+    for (const jy of [h - 14, h - 30, h - 46]) {
+      g.moveTo(x - 3, y + jy);
+      g.lineTo(x + 4, y + jy);
+      g.moveTo(x + w - 4, y + jy);
+      g.lineTo(x + w + 3, y + jy);
+    }
+    for (const a of [-2.5, -2.05, -1.57, -1.09, -0.64]) {
+      g.moveTo(cx + Math.cos(a) * 17, y + 22 + Math.sin(a) * 17);
+      g.lineTo(cx + Math.cos(a) * 26, y + 22 + Math.sin(a) * 26);
+    }
+    g.stroke();
     arch(4);
-    g.fillStyle = '#050607';
+    g.fillStyle = VOID;
     g.fill();
     g.save();
     g.clip();
-    for (let n = 0; n < 5; n++) {
-      const ph = (t * 0.7 + n / 5) % 1;
-      const fy = y + h - ph * h;
-      const r = 16 * (1 - ph * 0.6);
-      const rg = g.createRadialGradient(cx + Math.sin(t * 3 + n * 2) * 6, fy, 1, cx, fy, r);
-      rg.addColorStop(0, rgba(lighten(col, 0.4), 0.9 * (1 - ph)));
-      rg.addColorStop(1, rgba(col, 0));
-      g.fillStyle = rg;
-      g.fillRect(x, fy - r, w, r * 2);
+    // the fire: a hot bed, then tongues climbing out of it
+    const bed = g.createLinearGradient(0, y + h, 0, y + 6);
+    bed.addColorStop(0, rgba(lighten(col, 0.6), 0.95));
+    bed.addColorStop(0.3, rgba(col, 0.75));
+    bed.addColorStop(1, rgba(col, 0.12));
+    g.fillStyle = bed;
+    g.fillRect(x, y, w, h);
+    for (const [fx, fh, fw] of [[-7, 44, 9], [6, 56, 10], [0, 30, 12]]) {
+      const tongue = g.createLinearGradient(0, y + h, 0, y + h - fh);
+      tongue.addColorStop(0, rgba('#ffffff', 0.85));
+      tongue.addColorStop(1, rgba(lighten(col, 0.5), 0));
+      g.fillStyle = tongue;
+      g.beginPath();
+      g.moveTo(cx + fx - fw, y + h);
+      g.quadraticCurveTo(cx + fx - fw * 0.9, y + h - fh * 0.5, cx + fx + fw * 0.2, y + h - fh);
+      g.quadraticCurveTo(cx + fx + fw * 0.6, y + h - fh * 0.4, cx + fx + fw, y + h);
+      g.fill();
     }
     g.restore();
-    g.globalCompositeOperation = 'lighter';
-    const halo = g.createRadialGradient(cx, po.cy, 4, cx, po.cy, 54);
-    halo.addColorStop(0, rgba(col, 0.28));
-    halo.addColorStop(1, rgba(col, 0));
-    g.fillStyle = halo;
-    g.fillRect(cx - 54, po.cy - 54, 108, 108);
-    g.globalCompositeOperation = 'source-over';
+    // moonlight on the top of the arch
+    g.strokeStyle = 'rgba(198,218,212,.8)';
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(x - 2, y + 20);
+    g.quadraticCurveTo(x - 2, y - 2, cx, y - 2);
+    g.quadraticCurveTo(x + w + 2, y - 2, x + w + 2, y + 20);
+    g.stroke();
   },
 
   // a will-o'-the-wisp with the power inside it
-  pickup(g, kind, x, y, t) {
+  pickup(g, kind, x, y) {
     const col = KIND_COLORS[kind];
-    g.globalCompositeOperation = 'lighter';
-    const rg = g.createRadialGradient(x, y, 2, x, y, 34);
-    rg.addColorStop(0, rgba(col, 0.75));
-    rg.addColorStop(0.4, rgba(col, 0.3));
-    rg.addColorStop(1, rgba(col, 0));
-    g.fillStyle = rg;
-    g.fillRect(x - 34, y - 34, 68, 68);
-    g.globalCompositeOperation = 'source-over';
+    puff(g, x, y, 34, 34, col, 0.7);
+    // a wisp of flame on top
+    g.fillStyle = rgba(col, 0.95);
+    g.beginPath();
+    g.moveTo(x - 7, y - 12);
+    g.quadraticCurveTo(x - 3, y - 22, x + 2, y - 30);
+    g.quadraticCurveTo(x + 5, y - 20, x + 7, y - 12);
+    g.fill();
     g.fillStyle = '#07090a';
     g.beginPath();
-    g.arc(x, y, 12.5, 0, 6.283);
+    g.arc(x, y + 1, 16, 0, 6.283);
     g.fill();
     g.strokeStyle = col;
-    g.lineWidth = 2;
+    g.lineWidth = 2.8;
     g.stroke();
-    // a wisp of flame on top
-    g.fillStyle = rgba(col, 0.9);
-    g.beginPath();
-    g.moveTo(x - 5, y - 11);
-    g.quadraticCurveTo(x + Math.sin(t * 6 + x) * 4, y - 26 - Math.sin(t * 9) * 3, x + 5, y - 11);
-    g.fill();
-    drawIcon(g, kind, x, y, 6.5, lighten(col, 0.35));
+    drawIcon(g, kind, x, y + 1, 9.5, lighten(col, 0.35));
   },
 
-  player(g, pv, t) {
+  player(g, pv, t, sc) {
     const { x, y, cx, feet, color } = pv;
+    const pal = sc.pal[pv.slot];
+    const seen = sc.seen[pv.slot];
+    seen.x = cx;
+    seen.y = y + 18;
+    seen.t = t;
+
+    // every spirit carries its own light; whoever is "it" burns red
+    if (pv.isIt) {
+      const r = 64 + 7 * Math.sin(t * 9);
+      g.drawImage(sc.itGlow, cx - r, y + 18 - r, r * 2, r * 2);
+    } else {
+      const r = pv.local ? 56 : 48;
+      g.drawImage(pal.glow, cx - r, y + 18 - r, r * 2, r * 2);
+    }
     squashAt(g, cx, feet, pv.squash);
     const hover = pv.ground ? Math.sin(t * 4 + pv.seed) * 1.2 : 0;
     const lean = clamp(pv.vx / 260, -1, 1) * 5;
@@ -613,6 +822,20 @@ export default {
     const hem = feet - 3 + hover;
     const top = y + hover;
 
+    if (pv.isIt) {
+      // horns
+      g.fillStyle = EMBER;
+      g.beginPath();
+      g.moveTo(cx - 13, top + 6);
+      g.lineTo(cx - 15, top - 7);
+      g.lineTo(cx - 5, top + 1);
+      g.moveTo(cx + 13, top + 6);
+      g.lineTo(cx + 15, top - 7);
+      g.lineTo(cx + 5, top + 1);
+      g.fill();
+    }
+
+    // sheet with a fluttering hem
     g.beginPath();
     g.moveTo(left, top + 17);
     g.bezierCurveTo(left, top - 6, right, top - 6, right, top + 17);
@@ -626,44 +849,37 @@ export default {
     }
     g.lineTo(left, top + 17);
     g.closePath();
-    const grad = g.createLinearGradient(0, top, 0, feet);
-    grad.addColorStop(0, lighten(color, 0.35));
-    grad.addColorStop(0.5, color);
-    grad.addColorStop(1, rgba(darken(color, 0.55), 0.5));
-    g.shadowColor = pv.isIt ? '#ff1414' : color;
-    g.shadowBlur = pv.isIt ? 20 + 6 * Math.sin(t * 9) : 12;
-    g.fillStyle = grad;
+    g.fillStyle = color;
     g.fill();
-    g.shadowBlur = 0;
+    // pale crown
+    g.fillStyle = pal.hi;
+    g.beginPath();
+    g.ellipse(cx - pv.face * 2, top + 5.5, 8.5, 3.6, 0, 0, 6.283);
+    g.fill();
 
     // face: hollow sockets
     const ex = cx + pv.face * 4;
     const ey = top + 15;
     const open = 1 - pv.blink;
-    g.fillStyle = '#050607';
+    g.fillStyle = VOID;
     if (pv.isIt) {
+      g.beginPath();
       for (const s of [-1, 1]) {
-        g.beginPath();
         g.moveTo(ex + s * 10, ey - 5);
         g.lineTo(ex + s * 2, ey - 0.5);
         g.lineTo(ex + s * 3, ey + 4);
         g.lineTo(ex + s * 9.5, ey + 2.5);
         g.closePath();
-        g.fill();
       }
       // jagged grin
-      g.beginPath();
       g.moveTo(ex - 8, ey + 8);
       for (let i = 0; i <= 8; i++) g.lineTo(ex - 8 + i * 2, ey + 8 + (i % 2 ? 3.2 : 0));
       for (let i = 8; i >= 0; i--) g.lineTo(ex - 8 + i * 2, ey + 12 + (i % 2 ? 0 : 2.6));
       g.closePath();
       g.fill();
-      g.fillStyle = '#ff2a1f';
-      g.shadowColor = '#ff2a1f';
-      g.shadowBlur = 6;
-      g.fillRect(ex - 6.5 + pv.face, ey - 0.5, 2.2, 2.2);
-      g.fillRect(ex + 4.3 + pv.face, ey - 0.5, 2.2, 2.2);
-      g.shadowBlur = 0;
+      g.fillStyle = EMBER;
+      g.fillRect(ex - 7 + pv.face, ey - 0.8, 2.8, 2.8);
+      g.fillRect(ex + 4.2 + pv.face, ey - 0.8, 2.8, 2.8);
     } else {
       g.beginPath();
       g.ellipse(ex - 5.5, ey, 3.7, 0.7 + 4.6 * open, 0, 0, 6.283);
@@ -680,137 +896,83 @@ export default {
     }
   },
 
-  marker(g, cx, cy, t) {
+  // written in blood, and it drips
+  marker(g, cx, cy) {
+    const u = unit(g);
     g.save();
     g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.font = '26px Creepster, fantasy';
-    g.lineWidth = 5;
-    g.strokeStyle = '#000';
-    g.strokeText('IT', cx, cy);
+    g.textBaseline = 'alphabetic';
+    g.font = '46px Creepster, fantasy';
+    g.lineJoin = 'round';
     g.shadowColor = '#ff0000';
-    g.shadowBlur = 12;
-    g.fillStyle = '#d3131f';
-    g.fillText('IT', cx, cy);
+    g.shadowBlur = 10 * u;
+    g.lineWidth = 7;
+    g.strokeStyle = '#120000';
+    g.strokeText('IT', cx, cy);
     g.shadowBlur = 0;
-    // it drips
-    for (let i = 0; i < 2; i++) {
-      const ph = (t * 0.9 + i * 0.5) % 1;
-      const x = cx - 5 + i * 9;
-      g.fillRect(x, cy + 8, 2, 2 + ph * 5);
-      g.globalAlpha = 1 - ph;
+    g.fillStyle = '#ff3a34';
+    g.fillText('IT', cx, cy);
+    for (const [dx, len] of [[-10, 5], [7, 8]]) {
+      g.fillRect(cx + dx, cy - 2, 3, len);
       g.beginPath();
-      g.arc(x + 1, cy + 11 + ph * 16, 1.5, 0, 6.283);
+      g.arc(cx + dx + 1.5, cy - 2 + len, 2.3, 0, 6.283);
       g.fill();
-      g.globalAlpha = 1;
     }
+    g.beginPath();
+    g.arc(cx + 8.5, cy + 14, 2, 0, 6.283);
+    g.fill();
     g.restore();
-  },
-
-  front(g, sc, t, view, pvs) {
-    // drifting fog
-    for (const w of sc.wisps) {
-      const span = W + w.w;
-      const x = ((((w.x + t * w.v) % span) + span) % span) - w.w;
-      g.globalAlpha = w.a * (0.7 + 0.3 * Math.sin(t * 0.5 + w.y));
-      g.drawImage(sc.puff, x, w.y - w.h / 2, w.w, w.h);
-    }
-    g.globalAlpha = 1;
-
-    // darkness, with a pool of light around every spirit
-    const d = sc.darkCtx;
-    const flash = sc.flash || 0;
-    d.globalCompositeOperation = 'source-over';
-    d.clearRect(0, 0, W / 4, H / 4);
-    d.fillStyle = `rgba(0,2,5,${0.66 * (1 - Math.min(1, flash) * 0.85)})`;
-    d.fillRect(0, 0, W / 4, H / 4);
-    d.globalCompositeOperation = 'destination-out';
-    for (const p of pvs) {
-      const r = ((p.local ? 220 : 160) * p.ak) / 4;
-      const px = p.ax / 4;
-      const py = p.ay / 4;
-      const rg = d.createRadialGradient(px, py, 2, px, py, r);
-      rg.addColorStop(0, 'rgba(0,0,0,1)');
-      rg.addColorStop(0.5, 'rgba(0,0,0,.6)');
-      rg.addColorStop(1, 'rgba(0,0,0,0)');
-      d.fillStyle = rg;
-      d.fillRect(px - r, py - r, r * 2, r * 2);
-    }
-    {
-      const rg = d.createRadialGradient(598 / 4, 122 / 4, 4, 598 / 4, 122 / 4, 46);
-      rg.addColorStop(0, 'rgba(0,0,0,.8)');
-      rg.addColorStop(1, 'rgba(0,0,0,0)');
-      d.fillStyle = rg;
-      d.fillRect(598 / 4 - 46, 122 / 4 - 46, 92, 92);
-    }
-    g.drawImage(sc.dark, 0, 0, W, H);
-
-    // each spirit throws a little light of its own colour
-    g.globalCompositeOperation = 'lighter';
-    for (const p of pvs) {
-      const r = 100 * p.ak;
-      const rg = g.createRadialGradient(p.ax, p.ay, 3, p.ax, p.ay, r);
-      rg.addColorStop(0, rgba(p.isIt ? '#ff2a1f' : p.color, 0.2));
-      rg.addColorStop(1, rgba(p.isIt ? '#ff2a1f' : p.color, 0));
-      g.fillStyle = rg;
-      g.fillRect(p.ax - r, p.ay - r, r * 2, r * 2);
-    }
-    g.globalCompositeOperation = 'source-over';
-
-    if (flash > 0.02) {
-      g.fillStyle = `rgba(200,215,255,${0.22 * Math.min(1, flash)})`;
-      g.fillRect(0, 0, W, H);
-    }
-    g.drawImage(sc.vignette, 0, 0, W, H);
-    // grain
-    const ox = Math.floor(Math.random() * 128);
-    const oy = Math.floor(Math.random() * 128);
-    for (let y = -oy; y < H; y += 128) for (let x = -ox; x < W; x += 128) g.drawImage(sc.grain, x, y);
   },
 
   fx: {
     trail(R, pv, dt, t) {
       const sc = R.scene;
-      if (t - sc.wispT[pv.slot] < (Math.abs(pv.vx) > 60 || !pv.ground ? 0.05 : 0.22)) return;
+      // the flash that goes with a bolt of lightning
+      if (sc.boltAt > sc.flashed) {
+        sc.flashed = sc.boltAt;
+        R.flash('#c8d7ff', 0.11);
+      }
+      // wisps of the spirit left hanging in the air
+      if (t - sc.wispT[pv.slot] < (Math.abs(pv.vx) > 60 || !pv.ground ? 0.08 : 0.3)) return;
       sc.wispT[pv.slot] = t;
       R.emit({
         x: pv.cx + (Math.random() - 0.5) * 16,
         y: pv.feet - 6 - Math.random() * 16,
         vx: -pv.vx * 0.08 + (Math.random() - 0.5) * 14,
         vy: -12 - Math.random() * 18,
-        life: 0.5 + Math.random() * 0.3,
+        life: 0.45 + Math.random() * 0.25,
         size: 5 + Math.random() * 4,
         grow: -6,
-        alpha: 0.28,
+        alpha: 0.3,
         color: pv.isIt ? '#ff3b30' : pv.color,
         back: true,
       });
     },
     jump(R, pv) {
-      for (let i = 0; i < 5; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 22, y: pv.feet - 2, vx: (Math.random() - 0.5) * 70, vy: -8 - Math.random() * 20, life: 0.5, size: 5, grow: 14, alpha: 0.22, color: '#aebfba', back: true });
+      for (let i = 0; i < 4; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 22, y: pv.feet - 2, vx: (Math.random() - 0.5) * 70, vy: -8 - Math.random() * 20, life: 0.5, size: 5, grow: 14, alpha: 0.22, color: '#aebfba', back: true });
     },
     land(R, pv, impact) {
-      for (let i = 0; i < 6 + impact * 6; i++) {
+      for (let i = 0; i < 4 + impact * 4; i++) {
         const dir = i % 2 ? 1 : -1;
         R.emit({ x: pv.cx + dir * 6, y: pv.feet - 2, vx: dir * (40 + Math.random() * 110), vy: -6 - Math.random() * 14, drag: 3, life: 0.55, size: 4, grow: 16, alpha: 0.22, color: '#aebfba' });
       }
     },
     respawn(R, pv) {
-      for (let i = 0; i < 14; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 30, y: pv.y - 40 + Math.random() * 70, vy: 30 + Math.random() * 60, life: 0.7, size: 6, grow: 10, alpha: 0.25, color: pv.color });
+      for (let i = 0; i < 10; i++) R.emit({ x: pv.cx + (Math.random() - 0.5) * 30, y: pv.y - 40 + Math.random() * 70, vy: 30 + Math.random() * 60, life: 0.7, size: 6, grow: 10, alpha: 0.25, color: pv.color });
     },
     tag(R, to, from) {
-      R.flash('#a00010', 0.42);
+      R.flash('#a00010', 0.28);
       R.shake(14);
       const x = to.cx;
       const y = to.y + 18;
       // blood
-      for (let i = 0; i < 26; i++) {
+      for (let i = 0; i < 18; i++) {
         const a = Math.random() * 6.283;
         const v = 80 + Math.random() * 300;
-        R.emit({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80, g: 900, life: 0.5 + Math.random() * 0.5, size: 1.5 + Math.random() * 2.5, color: i % 3 ? BLOOD : '#5e0a10' });
+        R.emit({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80, g: 900, life: 0.5 + Math.random() * 0.5, size: 1.5 + Math.random() * 2.5, color: i % 3 ? BLOOD : '#e0202c' });
       }
       // a burst of bats
-      for (let i = 0; i < 9; i++) {
+      for (let i = 0; i < 7; i++) {
         const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.6;
         const v = 140 + Math.random() * 160;
         R.emit({

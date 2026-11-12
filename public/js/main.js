@@ -1,14 +1,16 @@
-// Menus, lobby, and the glue between the network, the game and the renderer.
+// You're It! - everything outside the match itself: menus, lobby, heads-up
+// display, results. One screen is visible at a time; every screen can be
+// driven with the keyboard (arrows + Enter, Esc to go back).
 
-import { io } from '/socket.io/socket.io.esm.min.js';
-import { THEMES, THEME_IDS, DEFAULT_THEME, MODES, MODE_IDS, DURATIONS, DEFAULT_DURATION, MAX_PLAYERS, MIN_PLAYERS, NAME_MAX, PICKUP_TYPES } from '/shared/config.js';
+import { MODES, DURATIONS, DEFAULT_DURATION, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, PICKUP_TYPES, TICK_RATE, PLAYER_COLORS } from '/shared/config.js';
 import { ARENAS, ARENA_IDS, arenaById } from '/shared/arenas.js';
 import { Renderer } from './renderer.js';
 import { Input } from './input.js';
 import { Sfx } from './audio.js';
-import { LocalGame } from './local.js';
 import { NetGame } from './net.js';
-import { drawAvatar, arenaThumb, styleThumb } from './art.js';
+import { LocalGame } from './local.js';
+import { scenePreview, clearPreviews } from './art.js';
+import { loadTheme } from './themes/index.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -18,600 +20,908 @@ const el = (tag, cls, text) => {
   return e;
 };
 const store = {
-  get(k, d = null) {
+  get(key, fallback = '') {
     try {
-      return localStorage.getItem(k) ?? d;
+      return localStorage.getItem(key) ?? fallback;
     } catch {
-      return d;
+      return fallback;
     }
   },
-  set(k, v) {
+  set(key, value) {
     try {
-      localStorage.setItem(k, v);
+      localStorage.setItem(key, value);
     } catch {}
   },
 };
-const pickRandom = (list, avoid) => {
-  const pool = list.length > 1 ? list.filter((x) => x !== avoid) : list;
-  return pool[Math.floor(Math.random() * pool.length)];
-};
+const cleanName = (raw) =>
+  String(raw ?? '')
+    .replace(/[\u0000-\u001f\u007f<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, NAME_MAX);
+const pickRandom = (list) => list[Math.floor(Math.random() * list.length)];
+const isTouch = matchMedia('(pointer: coarse)').matches;
 
-// ---------------------------------------------------------------------------
-// Core objects
-// ---------------------------------------------------------------------------
-const renderer = new Renderer($('stage'));
+// on touch screens the view can scroll a little past the floor, so the buttons never cover you
+const renderer = new Renderer($('stage'), { padBottom: isTouch ? 104 : 0 });
 const input = new Input();
 const sfx = new Sfx();
-// Default transport order on purpose: plain HTTP first (gets through school and
-// office firewalls), then upgrade to a WebSocket whenever one is allowed.
 const socket = io({ tryAllTransports: true });
 const net = new NetGame(socket, input, onGameEvent);
-const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 
-let mode = 'backdrop'; // backdrop | practice | net
-let local = null; // LocalGame for backdrop / practice
-let room = null; // latest online room state from the server
-let lobbyKind = 'online'; // online | solo
-let screen = 'home';
+let myName = cleanName(store.get('tag.name'));
+let screen = ''; // name | home | join | lobby | game
+let overlay = ''; // '' | results | pause | help
+let helpFrom = '';
+let kind = 'online'; // what the lobby screen is showing: online | practice
+let room = null; // latest room state from the server
+let game = null; // the match on screen: `net` or a LocalGame
+let running = false;
+let afterName = null;
+let lastResults = null;
+let nextTimer = 0;
 
-// Practice setup, remembered between visits.
-const solo = { mode: MODE_IDS[0], arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true, bots: 3 };
+const practice = { mode: 'potato', arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true, bots: 3 };
 try {
-  const saved = JSON.parse(store.get('tag.solo', '{}'));
-  if (MODE_IDS.includes(saved.mode)) solo.mode = saved.mode;
-  if (saved.arena === 'random' || ARENA_IDS.includes(saved.arena)) solo.arena = saved.arena;
-  if (saved.theme === 'random' || THEME_IDS.includes(saved.theme)) solo.theme = saved.theme;
-  if (DURATIONS.includes(saved.duration)) solo.duration = saved.duration;
-  if (typeof saved.powerups === 'boolean') solo.powerups = saved.powerups;
-  if ([1, 2, 3].includes(saved.bots)) solo.bots = saved.bots;
+  Object.assign(practice, JSON.parse(store.get('tag.practice', '{}')));
 } catch {}
-
-input.bindTouch($('touch'));
-$('btn-mute').classList.toggle('off', sfx.muted);
 
 // ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
+const SCREENS = ['name', 'home', 'join', 'lobby'];
+const OVERLAYS = ['results', 'pause', 'help'];
+
 function show(name) {
   screen = name;
-  $('home').classList.toggle('hidden', name !== 'home');
-  $('lobby').classList.toggle('hidden', name !== 'lobby');
-  $('results').classList.toggle('hidden', name !== 'results');
-  const inMatch = name === 'game' || name === 'results';
-  $('btn-exit').classList.toggle('hidden', !inMatch);
-  $('touch').classList.toggle('hidden', !(name === 'game' && isTouch));
-  input.active = name === 'game';
+  for (const s of SCREENS) $(`s-${s}`).hidden = s !== name;
+  $('game').hidden = name !== 'game';
+  document.body.classList.toggle('in-game', name === 'game');
+  setOverlay('');
+  if (name !== 'game') stopLoop();
 }
 
-// Behind every menu: bots playing in the house style.
-function showBackdrop() {
-  sfx.setTheme(DEFAULT_THEME);
-  if (mode === 'backdrop' && local) return;
-  const arena = arenaById(pickRandom(ARENA_IDS, local?.arena.id));
-  local = new LocalGame({ arena, themeId: DEFAULT_THEME, bots: 4, backdrop: true });
-  mode = 'backdrop';
-  renderer.setScene(arena, DEFAULT_THEME);
+function setOverlay(name) {
+  overlay = name;
+  for (const o of OVERLAYS) $(`s-${o}`).hidden = o !== name;
+  input.active = screen === 'game' && !name;
+  if (!input.active) input.clear();
+  focusFirst();
+}
+
+const topRoot = () => $(`s-${overlay || screen}`);
+
+function focusFirst() {
+  const root = topRoot();
+  if (!root) return document.activeElement?.blur();
+  const target = root.querySelector('[data-autofocus]:not([hidden]):not(:disabled)');
+  // on a phone, focusing a button only leaves a stray outline; text fields still get focus
+  if (target && (!isTouch || target.tagName === 'INPUT')) target.focus({ preventScroll: true });
+  else document.activeElement?.blur();
+}
+
+// Up / down walk through the controls of the current screen.
+function moveFocus(dir) {
+  const root = topRoot();
+  if (!root) return;
+  const stops = [...root.querySelectorAll('button, input[type="text"], .seg, .step')].filter((e) => {
+    if (e.closest('.step') && e.tagName === 'BUTTON') return false;
+    if (e.closest('.numpad') || e.closest('.locked')) return false;
+    return !e.disabled && e.offsetParent !== null;
+  });
+  if (!stops.length) return;
+  const cur = stops.findIndex((s) => s === document.activeElement || s.contains(document.activeElement));
+  const next = stops[cur < 0 ? (dir > 0 ? 0 : stops.length - 1) : (cur + dir + stops.length) % stops.length];
+  (next.classList.contains('seg') ? next.querySelector('input:checked') || next.querySelector('input') : next).focus();
+}
+
+function toast(text) {
+  const t = el('div', '', text);
+  $('toasts').append(t);
+  setTimeout(() => t.remove(), 3000);
 }
 
 function toHome(message = '') {
   room = null;
-  net.round = null;
-  history.replaceState(null, '', location.pathname);
+  game = null;
+  $('home-name').textContent = myName;
   $('home-error').textContent = message;
-  showBackdrop();
   show('home');
 }
 
-function toast(text) {
-  const t = el('div', 'toast', text);
-  $('toasts').appendChild(t);
-  setTimeout(() => t.remove(), 3100);
+// ---------------------------------------------------------------------------
+// Name: nobody plays without one
+// ---------------------------------------------------------------------------
+function askName(then) {
+  afterName = then || null;
+  $('name').value = myName;
+  $('name-error').textContent = '';
+  show('name');
 }
 
-const me = () => room?.players.find((p) => p.id === socket.id) || null;
-const amHost = () => !!room && room.hostId === socket.id;
-const playerName = () => {
-  const n = $('name').value.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX);
-  return n || 'Player';
-};
-
-// ---------------------------------------------------------------------------
-// Home
-// ---------------------------------------------------------------------------
-$('name').value = store.get('tag.name', '');
-$('name').addEventListener('input', () => store.set('tag.name', $('name').value));
-$('name').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') $('btn-create').click();
+$('name-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = cleanName($('name').value);
+  if (!name) {
+    $('name-error').textContent = 'Type a name to continue.';
+    $('name').focus();
+    return;
+  }
+  myName = name;
+  store.set('tag.name', name);
+  const then = afterName;
+  afterName = null;
+  if (then) then();
+  else toHome();
 });
+$('name').addEventListener('input', () => ($('name-error').textContent = ''));
+$('btn-rename').addEventListener('click', () => askName());
 
+// ---------------------------------------------------------------------------
+// Talking to the server
+// ---------------------------------------------------------------------------
 function request(event, payload) {
   return new Promise((resolve) => {
-    if (!socket.connected) $('home-error').textContent = 'Waking up the server, hang on…';
-    socket.timeout(45000).emit(event, payload, (err, res) => {
-      resolve(err ? { error: 'The server did not answer. Try again in a moment.' } : res);
+    // free hosting sleeps when idle: give it time to wake up
+    socket.timeout(socket.connected ? 8000 : 60000).emit(event, payload, (err, res) => {
+      resolve(err ? { error: 'The server did not answer. Check your connection and try again.' } : res);
     });
   });
 }
 
 let busy = false;
-async function enterRoom(event, payload) {
-  if (busy) return;
+async function enterRoom(event, payload, errorEl) {
+  if (busy) return false;
   busy = true;
-  sfx.play('click');
+  errorEl.textContent = socket.connected ? '' : 'Waking up the server - this can take up to a minute...';
   const res = await request(event, payload);
   busy = false;
   if (!res || res.error) {
-    $('home-error').textContent = res?.error || 'Something went wrong.';
-    return;
+    if (res?.needName) askName(() => enterRoom(event, { ...payload, name: myName }, errorEl));
+    else errorEl.textContent = res?.error || 'Something went wrong.';
+    return false;
   }
-  $('home-error').textContent = '';
+  errorEl.textContent = '';
   room = res.room;
-  lobbyKind = 'online';
-  history.replaceState(null, '', `?room=${room.code}`);
+  net.code = room.code;
+  kind = 'online';
   sfx.play('join');
-  onRoom();
+  openLobby();
+  return true;
 }
 
-$('btn-create').addEventListener('click', () => enterRoom('create', { name: playerName() }));
-$('code').addEventListener('input', () => {
-  $('code').value = $('code').value.toUpperCase().replace(/[^A-Z]/g, '');
-});
-$('join-form').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const code = $('code').value.trim().toUpperCase();
-  if (code.length !== 4) {
-    $('home-error').textContent = 'Room codes are 4 letters.';
-    $('code').focus();
-    return;
-  }
-  enterRoom('join', { code, name: playerName() });
-});
-$('btn-practice').addEventListener('click', () => {
-  sfx.play('click');
-  lobbyKind = 'solo';
-  renderLobby();
-  show('lobby');
-});
-
-// the character on the home scroll: yours, standing in the wind
-function heroFrame(now) {
-  if (screen === 'home') drawAvatar($('hero-avatar'), 0, { t: now / 1000, vx: 150, scale: 2.4, shift: 12, blink: now % 3600 < 130 ? 1 : 0 });
-  requestAnimationFrame(heroFrame);
-}
-requestAnimationFrame(heroFrame);
-
-// ---------------------------------------------------------------------------
-// Lobby (an online room, or the practice setup - same screen)
-// ---------------------------------------------------------------------------
-const settingsNow = () => (lobbyKind === 'solo' ? solo : room.settings);
-const canEdit = () => lobbyKind === 'solo' || amHost();
-
-function changeSetting(patch) {
-  if (!canEdit()) return;
-  sfx.play('click');
-  if (lobbyKind === 'solo') {
-    Object.assign(solo, patch);
-    store.set('tag.solo', JSON.stringify(solo));
-    renderLobby();
-  } else {
-    socket.emit('settings', patch);
-  }
-}
-
-function buildOptions() {
-  const add = (parent, key, value, build) => {
-    const b = el('button', 'opt');
-    b.type = 'button';
-    b.dataset.value = String(value);
-    build(b);
-    b.addEventListener('click', () => changeSetting({ [key]: value }));
-    $(parent).appendChild(b);
-    return b;
-  };
-  const svg = (id) => {
-    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    const u = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    u.setAttribute('href', `#${id}`);
-    s.appendChild(u);
-    return s;
-  };
-
-  for (const m of MODES) {
-    add('opt-mode', 'mode', m.id, (b) => {
-      const txt = el('span');
-      txt.append(el('b', '', m.name), el('small', '', m.blurb));
-      b.append(svg(m.id === 'potato' ? 'i-potato' : 'i-hourglass'), txt);
-    });
-  }
-
-  const thumb = (b, id, name, dice) => {
-    const pic = el('span', dice ? 'pic dice' : 'pic', dice ? '?' : null);
-    if (!dice) pic.id = `pic-${id}`;
-    b.append(pic, el('span', 'cap', name));
-  };
-  add('opt-theme', 'theme', 'random', (b) => thumb(b, '', 'Surprise me', true));
-  for (const t of THEMES) add('opt-theme', 'theme', t.id, (b) => thumb(b, `theme-${t.id}`, t.name)).title = t.blurb;
-  add('opt-arena', 'arena', 'random', (b) => thumb(b, '', 'Surprise me', true));
-  for (const a of ARENAS) add('opt-arena', 'arena', a.id, (b) => thumb(b, `arena-${a.id}`, a.name)).title = a.blurb;
-
-  for (const d of DURATIONS) add('opt-duration', 'duration', d, (b) => (b.textContent = `${d}s`));
-  add('opt-powerups', 'powerups', true, (b) => (b.textContent = 'On'));
-  add('opt-powerups', 'powerups', false, (b) => (b.textContent = 'Off'));
-  for (const n of [1, 2, 3]) add('opt-bots', 'bots', n, (b) => (b.textContent = String(n)));
-}
-buildOptions();
-
-// The picture cards are painted with the real game renderer, a few at a time
-// so the page never freezes.
-function paintThumbs() {
-  const jobs = [];
-  for (const a of ARENAS) jobs.push(() => ($(`pic-arena-${a.id}`).style.backgroundImage = `url(${arenaThumb(a)})`));
-  const stage = arenaById('dojo');
-  for (const t of THEMES) jobs.push(() => ($(`pic-theme-${t.id}`).style.backgroundImage = `url(${styleThumb(t.id, stage)})`));
-  const next = () => {
-    const job = jobs.shift();
-    if (!job) return;
-    try {
-      job();
-    } catch (err) {
-      console.error(err);
-    }
-    setTimeout(next, 30);
-  };
-  next();
-}
-
-function plaque(p) {
-  const li = el('li', 'plaque');
-  const c = el('canvas', 'avatar');
-  c.width = 56;
-  c.height = 56;
-  const who = el('div', 'who');
-  who.appendChild(el('b', '', p.name));
-  const tags = el('div', 'tags');
-  if (p.host) tags.appendChild(el('span', 'host', 'Host'));
-  if (p.you) tags.appendChild(el('span', 'you', 'You'));
-  if (p.bot) tags.appendChild(el('span', 'bot', 'Bot'));
-  who.appendChild(tags);
-  li.append(c, who);
-  if (p.wins) li.appendChild(el('span', 'wins', `★ ${p.wins}`));
-  requestAnimationFrame(() => drawAvatar(c, p.slot, { vx: 90, t: p.slot * 0.7 }));
-  return li;
-}
-
-function renderLobby() {
-  const s = settingsNow();
-  const isSolo = lobbyKind === 'solo';
-  const edit = canEdit();
-
-  // header
-  $('room-label').textContent = isSolo ? 'Solo' : 'Room code';
-  const tiles = $('room-code');
-  tiles.textContent = '';
-  tiles.classList.toggle('word', isSolo);
-  if (isSolo) tiles.textContent = 'Practice';
-  else for (const ch of room.code) tiles.appendChild(el('span', '', ch));
-  $('btn-copy').classList.toggle('hidden', isSolo);
-  $('bots-row').classList.toggle('hidden', !isSolo);
-
-  // players
-  const list = $('players');
-  list.textContent = '';
-  let count = 0;
-  if (isSolo) {
-    list.appendChild(plaque({ name: playerName(), slot: 0, you: true }));
-    for (let i = 1; i <= solo.bots; i++) list.appendChild(plaque({ name: `Bot ${i}`, slot: i, bot: true }));
-    count = 1 + solo.bots;
-  } else {
-    for (const p of [...room.players].sort((a, b) => a.slot - b.slot)) {
-      list.appendChild(plaque({ name: p.name, slot: p.slot, host: p.id === room.hostId, you: p.id === socket.id, wins: p.wins }));
-    }
-    count = room.players.length;
-  }
-  for (let i = count; i < MAX_PLAYERS; i++) list.appendChild(el('li', 'plaque empty', isSolo ? 'No bot' : 'Empty seat'));
-
-  // settings
-  const mark = (id, value) => {
-    for (const b of $(id).children) {
-      b.classList.toggle('on', b.dataset.value === String(value));
-      b.disabled = !edit;
-    }
-  };
-  mark('opt-mode', s.mode);
-  mark('opt-theme', s.theme);
-  mark('opt-arena', s.arena);
-  mark('opt-duration', s.duration);
-  mark('opt-powerups', s.powerups);
-  mark('opt-bots', solo.bots);
-  $('settings-note').textContent = edit ? '' : 'the host decides';
-
-  const enough = isSolo || room.players.length >= MIN_PLAYERS;
-  $('btn-start').classList.toggle('hidden', !edit);
-  $('btn-start').disabled = !enough;
-  $('btn-start').textContent = isSolo ? 'Start practice' : 'Start match';
-  $('lobby-wait').textContent = edit ? (enough ? '' : 'Share the code. You need at least 2 players') : 'Waiting for the host to start';
-  showBackdrop();
-}
-
-function leaveRoom() {
-  if (lobbyKind === 'online') socket.emit('leave');
-  toHome();
-}
-
-$('btn-leave').addEventListener('click', leaveRoom);
-$('btn-start').addEventListener('click', () => {
-  sfx.play('click');
-  if (lobbyKind === 'solo') startPractice();
-  else socket.emit('start');
-});
-$('btn-copy').addEventListener('click', async () => {
-  const url = `${location.origin}/?room=${room.code}`;
-  try {
-    await navigator.clipboard.writeText(url);
-    toast('Invite link copied');
-  } catch {
-    prompt('Copy this link and send it to your friends:', url);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Practice
-// ---------------------------------------------------------------------------
-function startPractice(arenaId, themeId) {
-  const arena = arenaById(arenaId || (solo.arena === 'random' ? pickRandom(ARENA_IDS, local?.arena.id) : solo.arena));
-  const theme = themeId || (solo.theme === 'random' ? pickRandom(THEME_IDS) : solo.theme);
-  lobbyKind = 'solo';
-  local = new LocalGame({ arena, themeId: theme, mode: solo.mode, duration: solo.duration, human: playerName(), bots: solo.bots, input, onEvent: onGameEvent });
-  local.sim.powerups = solo.powerups;
-  mode = 'practice';
-  sfx.setTheme(theme);
-  renderer.setScene(arena, theme);
-  show('game');
-}
-
-// ---------------------------------------------------------------------------
-// Results
-// ---------------------------------------------------------------------------
-function showResults(res) {
-  const practice = lobbyKind === 'solo';
-  const mySlot = practice ? 0 : (me()?.slot ?? -1);
-  const played = res.rows.some((r) => r.slot === mySlot);
-  const iWon = played && res.winners.includes(mySlot);
-  const nameOf = (slot) => res.rows.find((r) => r.slot === slot)?.name ?? 'Nobody';
-  const seal = $('results-seal');
-  let title;
-  let sub;
-  if (res.reason === 'forfeit') {
-    title = iWon ? 'You win!' : `${nameOf(res.winners[0])} wins!`;
-    sub = 'Everyone else left the match.';
-    seal.textContent = '勝';
-  } else if (res.mode === 'potato') {
-    const loser = nameOf(res.loser);
-    title = !played ? `${loser} lost!` : iWon ? "You're safe!" : "You're it. You lose!";
-    sub = iWon || !played ? `${loser} was it when the clock ran out.` : 'You were still it when the clock ran out.';
-    seal.textContent = played && !iWon ? '鬼' : '勝';
-  } else {
-    const winners = res.rows.filter((r) => res.winners.includes(r.slot));
-    title = winners.length > 1 ? "It's a tie!" : iWon ? 'You win!' : `${winners[0]?.name ?? 'Nobody'} wins!`;
-    sub = winners.length > 1 ? `${winners.map((w) => w.name).join(' and ')} spent exactly the same time as it.` : 'Least time spent as it.';
-    seal.textContent = played && !iWon ? '負' : '勝';
-  }
-  seal.classList.toggle('dark', played && !iWon);
-  // restart the stamp animation
-  seal.style.animation = 'none';
-  void seal.offsetWidth;
-  seal.style.animation = '';
-  $('results-title').textContent = title;
-  $('results-sub').textContent = sub;
-
-  const list = $('results-list');
-  list.textContent = '';
-  for (const r of res.rows) {
-    const win = res.winners.includes(r.slot);
-    const lose = r.slot === res.loser;
-    const li = el('li', lose ? 'lose' : win ? 'win' : '');
-    const c = el('canvas', 'avatar');
-    c.width = 50;
-    c.height = 50;
-    const who = el('div', 'who');
-    who.appendChild(el('b', '', r.name + (r.slot === mySlot ? ' (you)' : '')));
-    const stat = (label, value, cls = '') => {
-      const d = el('div', `stat ${cls}`);
-      d.append(el('small', '', label), document.createTextNode(value));
-      return d;
-    };
-    li.append(c, who, stat('As it', `${(r.ms / 1000).toFixed(1)}s`), stat('Tags', String(r.tags ?? 0), 'tags'));
-    if (res.mode === 'potato' && res.reason !== 'forfeit') li.appendChild(el('span', `stamp ${lose ? 'it' : 'safe'}`, lose ? 'IT' : 'SAFE'));
-    else if (win) li.appendChild(el('span', 'stamp win', 'WIN'));
-    else li.appendChild(el('span'));
-    list.appendChild(li);
-    requestAnimationFrame(() => drawAvatar(c, r.slot, { vx: win ? 90 : 0, isIt: lose, t: r.slot }));
-  }
-  renderResultButtons();
-  show('results');
-  if (played) sfx.play(iWon ? 'win' : 'lose');
-}
-
-function renderResultButtons() {
-  const practice = lobbyKind === 'solo';
-  const host = practice || amHost();
-  $('btn-again').textContent = host ? 'Play again' : 'Ask for a rematch';
-  $('btn-again').disabled = !practice && host && room.players.length < MIN_PLAYERS;
-  $('btn-tolobby').classList.toggle('hidden', !host);
-  $('btn-quit').textContent = practice ? 'Quit' : 'Leave room';
-  $('results-wait').textContent = practice ? '' : host ? (room.players.length < MIN_PLAYERS ? 'Waiting for another player to join' : '') : 'Waiting for the host to start the next round';
-}
-
-$('btn-again').addEventListener('click', () => {
-  sfx.play('click');
-  if (lobbyKind === 'solo') startPractice();
-  else if (amHost()) socket.emit('start');
-  else {
-    socket.emit('rematch');
-    toast('Asked the host for a rematch');
-  }
-});
-$('btn-tolobby').addEventListener('click', () => {
-  if (lobbyKind === 'solo') {
-    renderLobby();
-    show('lobby');
-  } else socket.emit('lobby');
-});
-$('btn-quit').addEventListener('click', leaveRoom);
-$('btn-exit').addEventListener('click', () => {
-  if (mode === 'practice') {
-    renderLobby();
-    show('lobby');
-  } else if (confirm('Leave this match?')) leaveRoom();
-});
-addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && mode === 'practice' && screen === 'game') $('btn-exit').click();
-});
-$('btn-mute').addEventListener('click', () => {
-  $('btn-mute').classList.toggle('off', sfx.toggle());
-});
-$('btn-full').addEventListener('click', () => {
-  if (document.fullscreenElement) document.exitFullscreen?.();
-  else document.documentElement.requestFullscreen?.().catch(() => {});
-});
-
-// ---------------------------------------------------------------------------
-// Server events
-// ---------------------------------------------------------------------------
-function onRoom() {
-  if (!room) return;
-  net.code = room.code;
-  if (room.phase === 'lobby') {
-    renderLobby();
-    if (screen !== 'lobby') show('lobby');
-  } else if (room.phase === 'results') {
-    if (screen === 'results') renderResultButtons();
-  }
-}
-
-socket.on('room', (r) => {
-  if (!room || room.code !== r.code) return; // not in (or no longer in) this room
-  room = r;
-  onRoom();
-});
-
-socket.on('round', (msg) => {
-  if (!room) return;
-  const arena = arenaById(msg.arena);
-  const mine = me();
-  const mySlot = mine && msg.players.some((p) => p.slot === mine.slot) ? mine.slot : -1;
-  net.onRound(msg, arena, mySlot);
-  net.code = room.code;
-  mode = 'net';
-  sfx.setTheme(msg.theme);
-  renderer.setScene(arena, msg.theme);
-  show('game');
-});
-
-socket.on('s', (m) => {
-  if (mode === 'net') net.onSnap(m);
-});
-socket.on('go', (it) => {
-  if (mode === 'net') net.onGo(it);
-});
-socket.on('tag', (from, to) => {
-  if (mode === 'net') onGameEvent('tag', from, to);
-});
-socket.on('block', (from, to) => {
-  if (mode === 'net') onGameEvent('block', from, to);
-});
-socket.on('pick', (slot, kind) => {
-  if (mode === 'net') onGameEvent('pick', slot, kind);
-});
-socket.on('end', (res) => {
-  if (!room) return;
-  net.onEnd();
-  showResults(res);
-});
-socket.on('toast', (text) => toast(String(text)));
-socket.on('q', (ack) => {
-  if (typeof ack === 'function') ack(); // the server timing our connection
-});
+const me = () => room?.players.find((p) => p.id === socket.id) || null;
+const amHost = () => !!room && room.hostId === socket.id;
 
 function setConn(cls, text) {
   $('conn').className = `conn ${cls}`;
   $('conn').textContent = text;
 }
+setConn('', 'Connecting...');
 socket.on('connect', () => setConn('ok', 'Server online'));
+socket.on('connect_error', () => setConn('bad', 'Waking up the server - free hosting naps when idle, give it up to a minute.'));
 socket.on('disconnect', () => {
-  setConn('bad', 'Reconnecting…');
-  if (room) toHome('Lost connection to the server. Rejoin with the room code.');
+  setConn('bad', 'Reconnecting...');
+  if (room) {
+    stopLoop();
+    toHome('Lost the connection to the server.');
+  }
 });
-socket.on('connect_error', () => setConn('bad', 'Waking up the server… free hosting naps when idle, give it up to a minute'));
 
-setInterval(() => {
-  if (mode !== 'net' || !socket.connected) return;
-  const t0 = performance.now();
-  socket.emit('p', () => {
-    const rtt = performance.now() - t0;
-    net.ping = net.ping == null ? rtt : net.ping * 0.6 + rtt * 0.4;
+// ---------------------------------------------------------------------------
+// Home
+// ---------------------------------------------------------------------------
+$('btn-create').addEventListener('click', () => enterRoom('create', { name: myName }, $('home-error')));
+$('btn-join').addEventListener('click', () => openJoin(''));
+$('btn-practice').addEventListener('click', () => {
+  kind = 'practice';
+  openLobby();
+});
+$('btn-help').addEventListener('click', () => openHelp());
+const soundLabel = () => `Sound: ${sfx.muted ? 'off' : 'on'}`;
+function paintSound() {
+  $('btn-sound').textContent = soundLabel();
+  $('pause-sound').textContent = soundLabel();
+}
+for (const id of ['btn-sound', 'btn-pause-sound']) {
+  $(id).addEventListener('click', () => {
+    sfx.toggle();
+    paintSound();
+    sfx.play('click');
   });
-}, 2000);
+}
+paintSound();
+
+function openHelp() {
+  helpFrom = overlay;
+  setOverlay('help');
+}
+function closeHelp() {
+  setOverlay(helpFrom);
+}
+$('btn-help-back').addEventListener('click', closeHelp);
 
 // ---------------------------------------------------------------------------
-// Game events -> sound + effects
+// Join: four digits, typed on our own number pad (or a real keyboard)
 // ---------------------------------------------------------------------------
+let code = '';
+let codeTried = '';
+
+function openJoin(start) {
+  $('join-error').textContent = '';
+  codeTried = '';
+  show('join');
+  setCode(start);
+}
+
+function setCode(next) {
+  code = String(next).replace(/\D/g, '').slice(0, CODE_LEN);
+  const boxes = $('digits').children;
+  for (let i = 0; i < CODE_LEN; i++) {
+    boxes[i].textContent = code[i] || '';
+    boxes[i].classList.toggle('next', i === code.length);
+  }
+  $('digits').classList.remove('bad');
+  $('digits').setAttribute('aria-label', `Room code: ${code.split('').join(' ') || 'empty'}`);
+  $('btn-join-go').disabled = code.length !== CODE_LEN;
+  if (code.length < CODE_LEN) $('join-error').textContent = '';
+  // the fourth digit joins straight away (once per code, so a wrong one can be corrected)
+  if (code.length === CODE_LEN && code !== codeTried) submitCode();
+}
+
+async function submitCode() {
+  if (code.length !== CODE_LEN || busy) return;
+  codeTried = code;
+  const ok = await enterRoom('join', { code, name: myName }, $('join-error'));
+  if (!ok && screen === 'join') {
+    $('digits').classList.add('bad');
+    sfx.play('lose');
+  }
+}
+
+$('numpad').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const d = b.dataset.d;
+  if (d === 'back') setCode(code.slice(0, -1));
+  else if (d === 'go') {
+    codeTried = '';
+    submitCode();
+  } else setCode(code + d);
+  sfx.play('click');
+});
+$('btn-join-back').addEventListener('click', () => toHome());
+addEventListener('paste', (e) => {
+  if (screen !== 'join' || overlay) return;
+  const text = e.clipboardData?.getData('text') || '';
+  if (/\d/.test(text)) setCode(text);
+});
+
+// ---------------------------------------------------------------------------
+// Lobby (an online room) / practice setup
+// ---------------------------------------------------------------------------
+const OPTIONS = [
+  { key: 'game', label: 'Game', only: 'online', type: 'seg', values: [['quick', 'Quick match'], ['cup', 'Tournament']] },
+  { key: 'mode', label: 'Rules', type: 'seg', values: MODES.map((m) => [m.id, m.name]), show: (s) => s.game !== 'cup', hint: (s) => MODES.find((m) => m.id === s.mode)?.blurb },
+  { key: 'rounds', label: 'Rounds', only: 'online', type: 'seg', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup', hint: () => 'Points every round. The leader starts as it. The last round counts double.' },
+  { key: 'bots', label: 'Bots', only: 'practice', type: 'seg', values: [[1, '1'], [2, '2'], [3, '3']] },
+  { key: 'arena', label: 'Arena', type: 'step', values: [['random', 'Random'], ...ARENAS.map((a) => [a.id, a.name])] },
+  { key: 'theme', label: 'Style', type: 'step', values: [['random', 'Random'], ...THEMES.map((t) => [t.id, t.name])] },
+  { key: 'duration', label: 'Length', type: 'seg', values: DURATIONS.map((d) => [d, `${d} s`]) },
+  { key: 'powerups', label: 'Power-ups', type: 'seg', values: [[true, 'On'], [false, 'Off']] },
+];
+let previewWant = '';
+const settings = () => (kind === 'practice' ? practice : room.settings);
+const locked = () => kind === 'online' && !amHost();
+
+function changeSetting(patch) {
+  if (kind === 'practice') {
+    Object.assign(practice, patch);
+    store.set('tag.practice', JSON.stringify(practice));
+  } else {
+    if (!amHost()) return;
+    Object.assign(room.settings, patch);
+    socket.emit('settings', patch);
+  }
+  syncOptions();
+}
+
+function buildOptions() {
+  const box = $('options');
+  box.textContent = '';
+  for (const o of OPTIONS) {
+    if (o.only && o.only !== kind) continue;
+    const row = el('div', 'opt');
+    row.dataset.key = o.key;
+    row.append(el('span', 'lab', o.label));
+    if (o.type === 'seg') {
+      const seg = el('div', 'seg');
+      seg.setAttribute('role', 'radiogroup');
+      seg.setAttribute('aria-label', o.label);
+      for (const [value, text] of o.values) {
+        const lab = el('label');
+        const inp = document.createElement('input');
+        inp.type = 'radio';
+        inp.name = `opt-${o.key}`;
+        inp.value = String(value);
+        inp.addEventListener('change', () => changeSetting({ [o.key]: value }));
+        lab.append(inp, text);
+        seg.append(lab);
+      }
+      row.append(seg);
+    } else {
+      // a stepper: < value >  (left / right keys when focused)
+      const step = el('div', 'step');
+      step.setAttribute('role', 'group');
+      step.setAttribute('aria-label', `${o.label} (left and right arrows to change)`);
+      const move = (dir) => {
+        const i = o.values.findIndex(([v]) => v === settings()[o.key]);
+        changeSetting({ [o.key]: o.values[(i + dir + o.values.length) % o.values.length][0] });
+      };
+      const prev = el('button');
+      const next = el('button');
+      prev.innerHTML = '<svg class="ic"><use href="#i-left" /></svg>';
+      next.innerHTML = '<svg class="ic"><use href="#i-right" /></svg>';
+      prev.tabIndex = next.tabIndex = -1;
+      prev.setAttribute('aria-label', `Previous ${o.label.toLowerCase()}`);
+      next.setAttribute('aria-label', `Next ${o.label.toLowerCase()}`);
+      prev.addEventListener('click', () => move(-1));
+      next.addEventListener('click', () => move(1));
+      step.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        if (!locked()) move(e.key === 'ArrowLeft' ? -1 : 1);
+      });
+      const val = el('span', 'val');
+      val.setAttribute('aria-live', 'polite');
+      step.append(prev, val, next);
+      row.append(step);
+    }
+    if (o.hint) row.append(el('span', 'hint'));
+    box.append(row);
+  }
+}
+
+function syncOptions() {
+  const s = settings();
+  const lock = locked();
+  $('options').classList.toggle('locked', lock);
+  for (const row of $('options').children) {
+    const o = OPTIONS.find((x) => x.key === row.dataset.key);
+    row.hidden = !!o.show && !o.show(s);
+    if (o.type === 'seg') {
+      for (const inp of row.querySelectorAll('input')) {
+        inp.checked = inp.value === String(s[o.key]);
+        inp.disabled = lock;
+      }
+    } else {
+      row.querySelector('.val').textContent = o.values.find(([v]) => v === s[o.key])?.[1] || '';
+      row.querySelector('.step').tabIndex = lock ? -1 : 0;
+    }
+    const hint = row.querySelector('.hint');
+    if (hint) hint.textContent = o.hint(s) || '';
+  }
+  // a picture of what the match will look like
+  const arenaName = s.arena === 'random' ? 'Random arena' : arenaById(s.arena).name;
+  const styleName = s.theme === 'random' ? 'random style' : THEMES.find((t) => t.id === s.theme).name;
+  $('preview-cap').textContent = `${arenaName} - ${styleName}`;
+  const themeId = s.theme === 'random' ? DEFAULT_THEME : s.theme;
+  const want = (previewWant = `${s.arena}/${themeId}`);
+  loadTheme(themeId).then(() => {
+    if (want === previewWant && screen === 'lobby') $('preview').src = scenePreview(s.arena, themeId);
+  });
+}
+
+function openLobby() {
+  show('lobby');
+  buildOptions();
+  renderLobby();
+  focusFirst();
+}
+
+function renderLobby() {
+  const online = kind === 'online';
+  $('lobby-title').textContent = online ? 'Room' : 'Practice';
+  $('lobby-code').hidden = !online;
+  $('btn-copy').hidden = !online;
+  $('btn-leave').setAttribute('aria-label', online ? 'Leave room' : 'Back (Esc)');
+  const list = $('players');
+  list.textContent = '';
+  const rows = online
+    ? room.players.slice().sort((a, b) => a.slot - b.slot).map((p) => ({ slot: p.slot, name: p.name, host: p.id === room.hostId, you: p.id === socket.id, score: p.wins ? `${p.wins} win${p.wins > 1 ? 's' : ''}` : '' }))
+    : [{ slot: 0, name: myName, you: true }, ...Array.from({ length: practice.bots }, (_, i) => ({ slot: i + 1, name: 'Bot', bot: true }))];
+  for (const r of rows) {
+    const li = el('li');
+    const dot = el('span', 'dot');
+    dot.style.background = PLAYER_COLORS[r.slot];
+    li.append(dot, el('span', 'nm', r.name));
+    if (r.host) li.append(el('span', 'tag', 'HOST'));
+    if (r.you) li.append(el('span', 'tag you', 'YOU'));
+    if (r.score) li.append(el('span', 'score', r.score));
+    list.append(li);
+  }
+  for (let i = rows.length; i < (online ? MAX_PLAYERS : 0); i++) list.append(el('li', 'empty', 'Waiting for a player...'));
+
+  const start = $('btn-start');
+  if (online) {
+    $('lobby-code').textContent = room.code;
+    $('players-title').textContent = `Players ${room.players.length}/${MAX_PLAYERS}`;
+    const host = room.players.find((p) => p.id === room.hostId);
+    const enough = room.players.length >= MIN_PLAYERS;
+    start.hidden = !amHost();
+    start.disabled = !enough;
+    start.textContent = room.settings.game === 'cup' ? 'Start tournament' : 'Start match';
+    $('lobby-note').textContent = enough ? '' : 'Share the code with your friends - you need at least 2 players.';
+    $('start-note').textContent = amHost() ? '' : `Waiting for ${host ? host.name : 'the host'} to start...`;
+  } else {
+    $('players-title').textContent = 'Players';
+    $('lobby-note').textContent = '';
+    $('start-note').textContent = '';
+    start.hidden = false;
+    start.disabled = false;
+    start.textContent = 'Start';
+  }
+  start.toggleAttribute('data-autofocus', !start.hidden);
+  syncOptions();
+}
+
+function leaveRoom() {
+  if (kind === 'online' && room) socket.emit('leave');
+  stopLoop();
+  toHome();
+}
+$('btn-leave').addEventListener('click', leaveRoom);
+$('btn-start').addEventListener('click', () => {
+  sfx.play('click');
+  if (kind === 'practice') startPractice();
+  else socket.emit('start');
+});
+$('btn-copy').addEventListener('click', async () => {
+  const link = `${location.origin}/?room=${room.code}`;
+  try {
+    await navigator.clipboard.writeText(link);
+    toast('Invite link copied');
+  } catch {
+    toast(link);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A match on screen
+// ---------------------------------------------------------------------------
+const hud = { sec: -1, count: 0, pills: [], buffs: '', label: '' };
+const fonts = Promise.all(['Kaushan Script', 'Shippori Mincho', 'Cormorant Garamond', 'Orbitron', 'Rajdhani', 'Creepster', 'Special Elite', 'Permanent Marker', 'Patrick Hand', 'Press Start 2P'].map((f) => document.fonts.load(`16px "${f}"`).catch(() => {})));
+let fontsIn = false;
+fonts.then(() => {
+  fontsIn = true;
+  clearPreviews();
+  if (renderer.arena) renderer.layout(true); // names and signs were drawn with a fallback font
+  if (screen === 'lobby') syncOptions();
+});
+
+function beginMatch(g, arena, themeId, info) {
+  game = g;
+  sfx.setTheme(themeId);
+  show('game');
+  renderer.setScene(arena, themeId);
+  $('game').style.background = renderer.theme.letterbox;
+  // reset the heads-up display
+  hud.sec = -1;
+  hud.count = 0;
+  hud.buffs = '';
+  hud.pills = [];
+  $('pills').textContent = '';
+  $('buffs').textContent = '';
+  $('count').textContent = '';
+  $('banner').className = '';
+  const mode = MODES.find((m) => m.id === info.mode)?.name || '';
+  let label = kind === 'practice' ? `Practice - ${mode}` : mode;
+  let hint = '';
+  if (info.cup) {
+    label = info.cup.double ? 'Final round - double points' : `Round ${info.cup.round} of ${info.cup.rounds}`;
+    if (info.twist && info.twist.id !== 'none') {
+      label += ` - ${info.twist.name}`;
+      hint = `Twist: ${info.twist.name} - ${info.twist.blurb.toLowerCase()}. `;
+    }
+    if (info.cup.leader >= 0) hint += `${nameOf(info.cup.leader)} leads, so starts as it.`;
+  }
+  // the first few matches on a keyboard start with a reminder of the keys
+  const played = Number(store.get('tag.played', '0')) || 0;
+  if (!hint && !isTouch && played < 3) hint = 'Arrows or A / D to run - Up, W or Space to jump, again in the air for a second jump - Down to drop';
+  store.set('tag.played', String(played + 1));
+  $('round-label').textContent = label;
+  hud.hint = hint;
+  $('touch').hidden = !isTouch;
+  document.body.classList.toggle('touch-on', isTouch);
+  startLoop();
+}
+
+const nameOf = (slot) => game?.names?.[slot] || `Player ${slot + 1}`;
+
+async function startPractice() {
+  const s = practice;
+  const arena = arenaById(s.arena === 'random' ? pickRandom(ARENA_IDS) : s.arena);
+  const themeId = s.theme === 'random' ? pickRandom(THEMES).id : s.theme;
+  await loadTheme(themeId);
+  kind = 'practice';
+  const g = new LocalGame({ arena, mode: s.mode, duration: s.duration, powerups: s.powerups, name: myName, bots: s.bots, input, onEvent: onGameEvent });
+  beginMatch(g, arena, themeId, { mode: s.mode, cup: null, twist: null });
+}
+
+function startLoop() {
+  if (running) return;
+  running = true;
+  requestAnimationFrame(frame);
+}
+function stopLoop() {
+  running = false;
+}
+
+let hudAt = 0;
+function frame(now) {
+  if (!running || !game) return (running = false);
+  requestAnimationFrame(frame);
+  const view = game.update(now);
+  if (!view) return;
+  renderer.draw(view, now);
+  if (now - hudAt > 100) {
+    hudAt = now;
+    updateHud(view);
+  }
+}
+
+function updateHud(view) {
+  const sec = view.phase === 'countdown' ? view.duration : Math.ceil(view.timeLeft);
+  if (sec !== hud.sec) {
+    hud.sec = sec;
+    $('timer').textContent = String(sec);
+    $('timer').classList.toggle('low', view.phase === 'playing' && sec <= 10);
+  }
+  // one pill per player: colour, name, seconds spent as it
+  const seen = [false, false, false, false];
+  for (const p of view.players) {
+    seen[p.slot] = true;
+    let pill = hud.pills[p.slot];
+    if (!pill) {
+      const li = el('li');
+      const dot = el('span', 'dot');
+      dot.style.background = renderer.theme.colors[p.slot];
+      const val = el('span', 'val');
+      li.append(dot, el('span', 'nm', p.name), val);
+      li.classList.toggle('me', !!p.local);
+      $('pills').append(li);
+      pill = hud.pills[p.slot] = { li, val, text: '', it: false };
+    }
+    const text = `${Math.floor((p.itTicks || 0) / TICK_RATE)}s`;
+    if (text !== pill.text) pill.val.textContent = pill.text = text;
+    const it = view.it === p.slot;
+    if (it !== pill.it) pill.li.classList.toggle('it', (pill.it = it));
+  }
+  hud.pills.forEach((pill, slot) => pill && pill.li.classList.toggle('gone', !seen[slot]));
+  // the power-ups you are carrying
+  const m = view.me;
+  const buffs = m ? [m.spd > 0 && ['speed', m.spd], m.jmp > 0 && ['jump', m.jmp], m.shd > 0 && ['shield', m.shd]].filter(Boolean) : [];
+  const sig = buffs.map(([k, t]) => `${k}${Math.ceil(t / TICK_RATE)}`).join();
+  if (sig !== hud.buffs) {
+    hud.buffs = sig;
+    const box = $('buffs');
+    box.textContent = '';
+    for (const [k, t] of buffs) {
+      const d = el('div');
+      d.innerHTML = `<svg class="ic"><use href="#i-${k}" /></svg>`;
+      d.append(`${Math.ceil(t / TICK_RATE)}s`);
+      box.append(d);
+    }
+  }
+  if (view.phase === 'countdown') {
+    const n = Math.min(3, Math.max(1, Math.ceil((view.countdownMs || 0) / 1000)));
+    if (n !== hud.count) {
+      hud.count = n;
+      pop(String(n));
+    }
+  }
+  const hint = view.spectating ? 'Watching - you play in the next round' : view.phase === 'countdown' ? hud.hint : '';
+  if (hint !== hud.label) $('hint').textContent = hud.label = hint;
+}
+
+function pop(text) {
+  const c = $('count');
+  c.textContent = text;
+  c.classList.remove('pop');
+  void c.offsetWidth;
+  c.classList.add('pop');
+}
+
+function banner(text, red) {
+  const b = $('banner');
+  b.textContent = text;
+  b.className = '';
+  void b.offsetWidth;
+  b.className = red ? 'show red' : 'show';
+}
+
 function onGameEvent(type, a, b) {
-  const mySlot = mode === 'net' ? net.mySlot : mode === 'practice' ? 0 : -1;
+  const mySlot = game === net ? net.mySlot : 0;
   if (type === 'tag') {
     renderer.tagFx(a, b);
-    if (mode !== 'backdrop') sfx.play(b === mySlot ? 'tagged' : 'tag');
+    sfx.play(b === mySlot ? 'tagged' : 'tag');
+    if (b === mySlot) banner("You're it!", true);
+    else if (a === mySlot) banner(`You tagged ${nameOf(b)}!`);
+    else banner(`${nameOf(b)} is it`);
   } else if (type === 'block') {
     renderer.blockFx(a, b);
-    if (mode !== 'backdrop') sfx.play('block');
+    sfx.play('block');
   } else if (type === 'pick') {
     renderer.pickFx(a, b);
-    if (mode !== 'backdrop') sfx.play(PICKUP_TYPES[b] === 'freeze' ? 'freeze' : 'pick', a === mySlot ? 1 : 0.5);
+    sfx.play(PICKUP_TYPES[b] === 'freeze' ? 'freeze' : 'pick', a === mySlot ? 1 : 0.5);
   } else if (type === 'count') sfx.play('count');
   else if (type === 'go') {
     sfx.play('go');
-    renderer.flash('#ffffff', 0.25); // the moment someone becomes "it"
-    renderer.shake(5);
+    hud.count = 0;
+    pop('GO!');
+    setTimeout(() => $('count').textContent === 'GO!' && ($('count').textContent = ''), 900);
+    banner(a === mySlot ? "You're it - catch someone!" : `${nameOf(a)} is it - run!`, a === mySlot);
+    renderer.shake(4);
   } else if (type === 'tick') sfx.play('tick');
   else if (type === 'end') showResults(a);
 }
 
-renderer.onEvent = (type, pv) => {
-  if (mode === 'backdrop') return;
-  sfx.play(type, pv.local ? 1 : 0.35);
-};
+renderer.onEvent = (type, pv) => sfx.play(type, pv.local ? 1 : 0.35);
 
 // ---------------------------------------------------------------------------
-// Main loop
+// Pause menu
 // ---------------------------------------------------------------------------
-function frame(now) {
-  const view = mode === 'net' ? net.update(now) : local?.update(now);
-  if (view) renderer.draw(view, now);
-  requestAnimationFrame(frame);
+function openPause() {
+  if (screen !== 'game' || overlay) return;
+  $('pause-note').textContent = kind === 'practice' ? 'The match is on hold.' : `Room ${room?.code || ''} - the match carries on without you.`;
+  $('btn-pause-full').hidden = !document.documentElement.requestFullscreen;
+  if (kind === 'practice') stopLoop(); // really pause: nobody else is waiting
+  setOverlay('pause');
 }
+function closePause() {
+  setOverlay('');
+  if (game && game !== net) game.lastNow = null;
+  startLoop();
+}
+$('btn-pause').addEventListener('click', openPause);
+$('btn-resume').addEventListener('click', closePause);
+$('btn-pause-help').addEventListener('click', openHelp);
+$('btn-pause-full').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else document.documentElement.requestFullscreen?.().catch(() => {});
+  closePause();
+});
+$('btn-quit').addEventListener('click', leaveRoom);
+
+// ---------------------------------------------------------------------------
+// Results
+// ---------------------------------------------------------------------------
+const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
+const list = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] || '');
+
+function showResults(res) {
+  lastResults = res;
+  clearInterval(nextTimer);
+  const mySlot = game === net ? net.mySlot : 0;
+  const cup = res.cup;
+  const iWon = res.winners.includes(mySlot);
+  const nameOf = (slot) => (res.rows.find((r) => r.slot === slot) || cup?.table.find((r) => r.slot === slot))?.name || `Player ${slot + 1}`;
+  const winners = res.winners.map(nameOf);
+  let kicker;
+  let title;
+  let sub = '';
+  if (cup) {
+    kicker = cup.final ? 'Tournament over' : `Round ${cup.round} of ${cup.rounds}`;
+    if (cup.final) {
+      title = iWon ? 'You win the tournament!' : `${list(winners)} win${winners.length > 1 ? '' : 's'} the tournament!`;
+      sub = res.reason === 'forfeit' ? 'Everyone else left.' : 'Final standings.';
+    } else {
+      const lead = cup.table[0];
+      const tied = cup.table.filter((r) => r.pts === lead.pts).length > 1;
+      title = tied ? 'Level at the top' : lead.slot === mySlot ? 'You are in the lead' : `${lead.name} is in the lead`;
+      sub = 'Points for the least time as it, plus one if you were not it at the buzzer.';
+    }
+  } else if (res.reason === 'forfeit') {
+    kicker = 'Match over';
+    title = iWon ? 'You win!' : `${list(winners)} wins!`;
+    sub = 'Everyone else left.';
+  } else if (res.mode === 'potato') {
+    kicker = 'Hot Potato';
+    title = res.loser === mySlot ? 'You were it. You lose!' : iWon ? 'You got away!' : `${nameOf(res.loser)} loses!`;
+    sub = `${res.loser === mySlot ? 'You were' : `${nameOf(res.loser)} was`} it when the clock ran out.`;
+  } else {
+    kicker = 'Least Time';
+    title = iWon ? (winners.length > 1 ? 'You share the win!' : 'You win!') : `${list(winners)} win${winners.length > 1 ? '' : 's'}!`;
+    sub = 'Least time as it wins.';
+  }
+  $('res-kicker').textContent = kicker;
+  $('res-title').textContent = title;
+  $('res-sub').textContent = sub;
+
+  // the table
+  const table = $('res-table');
+  table.textContent = '';
+  const head = el('tr');
+  for (const h of cup ? ['', 'Player', 'As it', 'Round', 'Total'] : ['', 'Player', 'As it', 'Tags']) head.append(el('th', '', h));
+  table.append(head);
+  const colors = renderer.theme?.colors || PLAYER_COLORS;
+  const rows = cup ? cup.table.map((t) => ({ ...t, row: res.rows.find((r) => r.slot === t.slot) })) : res.rows.map((r) => ({ slot: r.slot, name: r.name, row: r }));
+  rows.forEach((r, i) => {
+    const tr = el('tr');
+    const final = !cup || cup.final;
+    if (final && res.winners.includes(r.slot)) tr.classList.add('win');
+    if (res.loser === r.slot && res.reason !== 'forfeit') tr.classList.add('lose');
+    if (r.slot === mySlot) tr.classList.add('me');
+    const who = el('td', 'who');
+    const dot = el('span', 'dot');
+    dot.style.background = colors[r.slot];
+    who.append(dot, r.name);
+    tr.append(el('td', '', String(i + 1)), who, el('td', '', r.row ? secs(r.row.ms) : '-'));
+    if (cup) tr.append(el('td', 'gain', r.row ? `+${r.gained}` : '-'), el('td', '', `${r.pts} pts`));
+    else tr.append(el('td', '', String(r.row.tags)));
+    table.append(tr);
+  });
+
+  renderResultButtons();
+  setOverlay('results');
+  if (cup && !cup.final) {
+    // the next round starts by itself
+    const until = performance.now() + cup.next;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((until - performance.now()) / 1000));
+      if (lastResults === res) $('res-note').textContent = `Next round in ${left}...`;
+    };
+    tick();
+    nextTimer = setInterval(tick, 250);
+  }
+  sfx.play(iWon || (cup && !cup.final && res.loser !== mySlot) ? 'win' : 'lose');
+}
+
+function renderResultButtons() {
+  const res = lastResults;
+  if (!res) return;
+  const back = $('btn-res-back');
+  const again = $('btn-res-again');
+  const between = res.cup && !res.cup.final;
+  if (kind === 'practice') {
+    back.textContent = 'Menu';
+    again.textContent = 'Play again';
+    again.hidden = false;
+    $('res-note').textContent = '';
+  } else {
+    const host = amHost();
+    back.textContent = host ? (between ? 'End tournament' : 'Back to lobby') : 'Leave';
+    again.hidden = !host || between;
+    again.textContent = res.cup ? 'New tournament' : 'Play again';
+    again.disabled = !room || room.players.length < MIN_PLAYERS;
+    if (!between) {
+      const h = room?.players.find((p) => p.id === room.hostId);
+      $('res-note').textContent = host ? (again.disabled ? 'Waiting for another player...' : '') : `Waiting for ${h ? h.name : 'the host'}...`;
+    }
+  }
+  again.toggleAttribute('data-autofocus', !again.hidden);
+  back.toggleAttribute('data-autofocus', again.hidden);
+}
+
+$('btn-res-again').addEventListener('click', () => {
+  sfx.play('click');
+  if (kind === 'practice') startPractice();
+  else socket.emit('start');
+});
+$('btn-res-back').addEventListener('click', () => {
+  clearInterval(nextTimer);
+  if (kind === 'practice') {
+    stopLoop();
+    kind = 'practice';
+    openLobby();
+  } else if (amHost()) socket.emit('lobby');
+  else leaveRoom();
+});
+
+// ---------------------------------------------------------------------------
+// Server events
+// ---------------------------------------------------------------------------
+socket.on('room', (r) => {
+  if (!room || room.code !== r.code) return; // not in (or no longer in) this room
+  room = r;
+  net.code = r.code;
+  if (r.phase === 'lobby') {
+    clearInterval(nextTimer);
+    if (screen !== 'lobby' || kind !== 'online') {
+      kind = 'online';
+      openLobby();
+    } else renderLobby();
+  } else if (overlay === 'results') renderResultButtons();
+});
+
+socket.on('round', (msg) => {
+  if (!room) return;
+  clearInterval(nextTimer);
+  const arena = arenaById(msg.arena);
+  const mine = me();
+  const mySlot = mine && msg.players.some((p) => p.slot === mine.slot) ? mine.slot : -1;
+  net.onRound(msg, arena, mySlot);
+  net.code = room.code;
+  kind = 'online';
+  game = net; // snapshots count from now, even while the art style is still loading
+  loadTheme(msg.theme).then(() => {
+    if (net.round === msg && room) beginMatch(net, arena, msg.theme, { mode: msg.mode, cup: msg.cup, twist: net.twist });
+  });
+});
+socket.on('s', (m) => game === net && net.onSnap(m));
+socket.on('go', (it) => game === net && net.onGo(it));
+socket.on('tag', (from, to) => game === net && onGameEvent('tag', from, to));
+socket.on('block', (from, to) => game === net && onGameEvent('block', from, to));
+socket.on('pick', (slot, k) => game === net && onGameEvent('pick', slot, k));
+socket.on('end', (res) => {
+  if (!room) return;
+  if (game !== net) {
+    // joined while the scoreboard was up: nothing to show behind it yet
+    game = net;
+    show('game');
+  }
+  net.onEnd();
+  showResults(res);
+});
+socket.on('toast', (text) => toast(String(text)));
+socket.on('q', (ack) => typeof ack === 'function' && ack()); // the server timing our connection
+
+// ---------------------------------------------------------------------------
+// Keyboard
+// ---------------------------------------------------------------------------
+function goBack() {
+  if (overlay === 'help') closeHelp();
+  else if (overlay === 'pause') closePause();
+  else if (overlay === 'results') return;
+  else if (screen === 'game') openPause();
+  else if (screen === 'join' || (screen === 'lobby' && kind === 'practice')) toHome();
+  else if (screen === 'name' && myName) toHome();
+}
+
+addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const key = e.key;
+  if (key === 'Escape') {
+    e.preventDefault();
+    return goBack();
+  }
+  const top = overlay || screen;
+  if (top === 'game') return; // the match has the keyboard
+  if (top === 'join') {
+    if (/^\d$/.test(key)) setCode(code + key);
+    else if (key === 'Backspace') setCode(code.slice(0, -1));
+    else if (key === 'Enter' && document.activeElement?.tagName !== 'BUTTON') {
+      codeTried = '';
+      submitCode();
+    } else return;
+    return e.preventDefault();
+  }
+  if (top === 'home' && /^[123]$/.test(key)) {
+    e.preventDefault();
+    return [$('btn-create'), $('btn-join'), $('btn-practice')][Number(key) - 1].click();
+  }
+  if (key === 'ArrowDown' || key === 'ArrowUp') {
+    e.preventDefault();
+    moveFocus(key === 'ArrowDown' ? 1 : -1);
+  }
+});
 
 let resizeTimer = 0;
 addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => renderer.resize(), 120);
+  resizeTimer = setTimeout(() => renderer.arena && screen === 'game' && renderer.resize(), 120);
 });
 
-// Canvas text needs the fonts loaded; re-bake the scenery once they are in,
-// then paint the picture cards.
-const FONTS = ['Kaushan Script', 'Shippori Mincho', 'Cormorant Garamond', 'Orbitron', 'Rajdhani', 'Creepster', 'Special Elite', 'Permanent Marker', 'Patrick Hand', 'Press Start 2P'];
-Promise.all(FONTS.map((f) => document.fonts.load(`16px "${f}"`).catch(() => {}))).then(() => {
-  renderer.rebuild();
-  paintThumbs();
-});
+input.bindTouch($('touch'));
 
-const invite = new URLSearchParams(location.search).get('room');
-toHome();
-if (invite && /^[A-Za-z]{4}$/.test(invite)) {
-  $('code').value = invite.toUpperCase();
-  history.replaceState(null, '', `?room=${invite.toUpperCase()}`);
-  $('code').focus();
-}
-requestAnimationFrame(frame);
+// ---------------------------------------------------------------------------
+// Go
+// ---------------------------------------------------------------------------
+const invite = (new URLSearchParams(location.search).get('room') || '').replace(/\D/g, '').slice(0, CODE_LEN);
+if (invite) history.replaceState(null, '', location.pathname);
+const start = () => (invite.length === CODE_LEN ? openJoin(invite) : toHome());
+if (myName) start();
+else askName(start);
 
-// Handy for debugging from the browser console.
-window.__tag = { renderer, net, socket, practice: startPractice, get mode() { return mode; }, get local() { return local; } };
+// Handy for debugging from the browser console (and used by the automated checks).
+window.__tag = { renderer, net, socket, input, get game() { return game; }, get screen() { return overlay || screen; }, get room() { return room; }, fontsReady: () => fontsIn };

@@ -194,38 +194,14 @@ export default {
   id: 'ink',
   colors: ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12'],
   letterbox: '#ddd2b8',
+  lift: '#4f6f8f', // colour of the air in updraft columns
   label: {
     font: '600 15px "Cormorant Garamond", Georgia, serif',
-    size: 13,
     color: INK,
     stroke: 'rgba(239,230,210,.92)',
     strokeWidth: 4,
     you: RED,
-    youFont: '16px "Kaushan Script", cursive',
-    stun: RED,
-  },
-  labelGap: 9,
-  hud: {
-    font: '"Kaushan Script", cursive',
-    weight: 400,
-    scale: 1.02,
-    labelFont: '"Cormorant Garamond", Georgia, serif',
-    labelWeight: 600,
-    labelScale: 1.18,
-    text: INK,
-    dim: 'rgba(60,50,40,.7)',
-    warn: RED,
-    outline: 'rgba(239,230,210,.88)',
-    outlineWidth: 5,
-    chip: 'rgba(246,239,223,.92)',
-    chipLine: 'rgba(28,27,31,.5)',
-    chipIt: RED,
-    chipItText: '#fff6e8',
-    big: INK,
-    bigStroke: 'rgba(239,230,210,.92)',
-    radius: 2,
-    swatchRadius: 6,
-    swatchLine: 'rgba(255,246,232,.85)',
+    gap: 8,
   },
 
   build(env) {
@@ -344,7 +320,7 @@ export default {
     }, 0.5);
 
     const petals = [];
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 22; i++) {
       petals.push({ x: rnd() * W, y: rnd() * H, vy: 22 + rnd() * 30, vx: -(10 + rnd() * 26), amp: 10 + rnd() * 22, f: 0.6 + rnd() * 1.2, ph: rnd() * 6.283, s: 2.6 + rnd() * 2.6, light: rnd() < 0.5 });
     }
     return { bg, shade, petals };
@@ -354,8 +330,7 @@ export default {
     g.drawImage(sc.bg, 0, 0, W, H);
   },
 
-  // one platform, painted once and cached by the renderer
-  platPad: { x: 10, top: 18, bottom: 30 },
+  // one platform (or, tilted by the renderer, one slope)
   platform(g, p, i, rnd) {
     drawPlatform(g, rnd, p);
   },
@@ -624,8 +599,13 @@ export default {
     g.restore();
   },
 
-  front(g, sc, t) {
-    // petals on the wind
+  // static: soft darkening towards the corners of the paper
+  front(g, sc) {
+    g.drawImage(sc.shade, 0, 0, W, H);
+  },
+
+  // every frame: petals on the wind
+  live(g, sc, t) {
     for (let i = 0; i < sc.petals.length; i++) {
       const p = sc.petals[i];
       const y = ((p.y + t * p.vy) % (H + 30)) - 15;
@@ -639,7 +619,6 @@ export default {
       g.fill();
       g.restore();
     }
-    g.drawImage(sc.shade, 0, 0, W, H);
   },
 
   fx: {

@@ -1,29 +1,35 @@
-// SKETCHBOOK - everything is a doodle on lined paper. Lines are redrawn a few
-// times a second with a slightly different wobble, so the whole page "boils"
-// like a flip-book.
+// SKETCHBOOK - everything is a doodle on lined notebook paper: pencil outlines,
+// felt-tip colour, lines that never quite meet. The page is drawn once. The
+// characters, the springs and the few things that fly are redrawn with a new
+// wobble several times a second, so they "boil" like a flip-book.
 
 import { ART_W as W, ART_H as H, PW } from '/shared/config.js';
-import { hash1, lighten, squashAt, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
+import { hash1, lighten, rgba, squashAt, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
 
 const INK = '#2b2b30';
 const PAPER = '#fbf7e9';
-const PENCILS = ['#f29d38', '#4a9be8', '#e2607a', '#58b368', '#9b6fd6'];
-const BOIL = 3; // number of pre-drawn wobble variants
+const CARD = '#fffdf5'; // a touch whiter than the page, so shapes lift off it
+const RED = '#e23b3b';
+const PEN = '#3a6fd8'; // ball-point blue
+const GRAPHITE = 'rgba(70,70,85,.55)';
+const LEVELS = ['#4a9be8', '#e2607a', '#58b368', '#9b6fd6']; // ledge colours, one per storey
+const SLOPE = '#f29d38';
+const THICK = 14; // how thick ledges and slopes are
+const LIP = 16; // slopes carry on flat this far past each end
+const BURST_W = 150; // the "TAG!" burst sprite
+const BURST_H = 104;
 
-// One hand-drawn stroke: never perfectly straight, never ending exactly on target.
+// One hand-drawn stroke: never perfectly straight, never ending exactly on
+// target. Long strokes wander a little instead of looking ruled.
 function wline(g, rnd, x1, y1, x2, y2, amp = 1.4) {
   const j = () => (rnd() - 0.5) * amp * 2;
+  const n = Math.max(1, Math.round(Math.hypot(x2 - x1, y2 - y1) / 120));
   g.moveTo(x1 + j(), y1 + j());
-  g.quadraticCurveTo((x1 + x2) / 2 + j() * 1.5, (y1 + y2) / 2 + j() * 1.5, x2 + j(), y2 + j());
-}
-
-function wrect(g, rnd, x, y, w, h, amp) {
-  g.beginPath();
-  wline(g, rnd, x - 2, y, x + w + 2, y, amp);
-  wline(g, rnd, x + w, y - 2, x + w, y + h + 2, amp);
-  wline(g, rnd, x + w + 2, y + h, x - 2, y + h, amp);
-  wline(g, rnd, x, y + h + 2, x, y - 2, amp);
-  g.stroke();
+  for (let i = 1; i <= n; i++) {
+    const a = (i - 0.5) / n;
+    const b = i / n;
+    g.quadraticCurveTo(x1 + (x2 - x1) * a + j() * 1.5, y1 + (y2 - y1) * a + j() * 1.5, x1 + (x2 - x1) * b + j(), y1 + (y2 - y1) * b + j());
+  }
 }
 
 function wcircle(g, rnd, cx, cy, r, amp = 1.2) {
@@ -41,79 +47,264 @@ function wcircle(g, rnd, cx, cy, r, amp = 1.2) {
   g.stroke();
 }
 
-function hatch(g, rnd, x, y, w, h, gap, color, width, slope = 1) {
-  g.save();
-  g.beginPath();
-  g.rect(x, y, w, h);
-  g.clip();
+// Slanted pencil strokes across a box. The caller clips to the real shape.
+function strokes(g, rnd, x, y, w, h, gap, color, width, slope = 1) {
   g.strokeStyle = color;
   g.lineWidth = width;
   g.lineCap = 'round';
   g.beginPath();
-  for (let d = -h; d < w + h; d += gap * (0.75 + rnd() * 0.5)) {
-    wline(g, rnd, x + d, y + h + 2, x + d + h * slope, y - 2, 1.2);
-  }
+  for (let d = -h; d < w + h; d += gap * (0.75 + rnd() * 0.5)) wline(g, rnd, x + d, y + h + 2, x + d + h * slope, y - 2, 1.2);
   g.stroke();
+}
+
+function hatch(g, rnd, x, y, w, h, gap, color, width, slope) {
+  g.save();
+  g.beginPath();
+  g.rect(x, y, w, h);
+  g.clip();
+  strokes(g, rnd, x, y, w, h, gap, color, width, slope);
   g.restore();
 }
 
-function drawPlatform(g, rnd, p, i) {
-  // soft pencil shadow so shapes lift off the page
-  hatch(g, rnd, p.x + 5, p.y + 6, p.w, p.h, 5, 'rgba(40,40,60,.13)', 1.4, -1);
-  g.fillStyle = '#fffdf5';
-  g.fillRect(p.x, p.y, p.w, p.h);
-  if (p.ground) {
-    g.fillStyle = '#f5e8c9';
-    g.fillRect(p.x, p.y, p.w, p.h);
-    hatch(g, rnd, p.x, p.y + 10, p.w, p.h - 10, 11, 'rgba(160,110,60,.5)', 1.3, 1);
-    hatch(g, rnd, p.x, p.y + 10, p.w, p.h - 10, 17, 'rgba(160,110,60,.32)', 1.2, -1);
-    // crayon grass along the top
+// Pencil outline along a list of [x1, y1, x2, y2] edges, gone over twice like
+// a kid tracing their own lines.
+function outline(g, rnd, edges) {
+  g.strokeStyle = INK;
+  g.lineCap = 'round';
+  for (const [width, alpha, amp] of [
+    [2.3, 1, 1.1],
+    [1, 0.6, 2],
+  ]) {
+    g.lineWidth = width;
+    g.globalAlpha = alpha;
+    g.beginPath();
+    for (const [x1, y1, x2, y2] of edges) wline(g, rnd, x1, y1, x2, y2, amp);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+}
+
+// The parts of [from, to] that none of the [a, b] intervals cover.
+function gaps(from, to, covers) {
+  let out = [[from, to]];
+  for (const [a, b] of covers) {
+    out = out.flatMap(([s, e]) =>
+      b <= s || a >= e
+        ? [[s, e]]
+        : [
+            [s, Math.min(e, a)],
+            [Math.max(s, b), e],
+          ].filter(([u, v]) => v - u > 1),
+    );
+  }
+  return out;
+}
+
+// A thin ledge: a strip coloured in with a felt-tip.
+function drawLedge(g, rnd, p, col) {
+  const { x, y, w, h } = p;
+  hatch(g, rnd, x + 5, y + 6, w, h, 5, 'rgba(40,40,60,.13)', 1.4, -1); // pencil shadow
+  g.fillStyle = CARD;
+  g.fillRect(x, y, w, h);
+  g.fillStyle = rgba(col, 0.28);
+  g.fillRect(x, y, w, h);
+  hatch(g, rnd, x, y, w, h, 5.5, col, 1.8, 1);
+  outline(g, rnd, [
+    [x - 2, y, x + w + 2, y],
+    [x + w, y - 2, x + w, y + h + 2],
+    [x + w + 2, y + h, x - 2, y + h],
+    [x, y + h + 2, x, y - 2],
+  ]);
+  // thick marker line on the surface you stand on
+  g.lineWidth = 3.4;
+  g.beginPath();
+  wline(g, rnd, x - 1, y, x + w + 1, y, 0.7);
+  g.stroke();
+}
+
+// A solid block of earth, any height: cross-hatched, a few pebbles, and crayon
+// grass along whatever part of the top is open.
+function drawBlock(g, rnd, p, arena) {
+  const { x, y, w, h } = p;
+  const near = (a, b) => Math.abs(a - b) < 1;
+  const others = arena.platforms.filter((q) => q.ground && !(q.x === x && q.y === y));
+  // edges that touch another block stay open, so stacked blocks read as one shape
+  const top = gaps(x, x + w, others.filter((q) => near(q.y + q.h, y)).map((q) => [q.x, q.x + q.w]));
+  const bottom = gaps(x, x + w, others.filter((q) => near(q.y, y + h)).map((q) => [q.x, q.x + q.w]));
+
+  hatch(g, rnd, x + 5, y + 6, w, h, 5, 'rgba(40,40,60,.13)', 1.4, -1); // pencil shadow
+  g.fillStyle = '#f5e8c9';
+  g.fillRect(x, y, w, h);
+  hatch(g, rnd, x, y, w, h, 11, 'rgba(160,110,60,.5)', 1.3, 1);
+  hatch(g, rnd, x, y, w, h, 17, 'rgba(160,110,60,.32)', 1.2, -1);
+  // pebbles, and the odd fossil in the deep parts
+  g.lineWidth = 1.4;
+  g.strokeStyle = 'rgba(120,80,40,.75)';
+  for (let n = Math.floor((w * Math.min(h, 400)) / 16000); n > 0; n--) {
+    const px = x + 14 + rnd() * (w - 28);
+    const py = y + 26 + rnd() * (Math.min(h, 400) - 40);
+    const r = 3.5 + rnd() * 4;
+    if (py > y + h - 8) continue;
+    if (rnd() < 0.2 && py > y + 60) {
+      g.beginPath();
+      for (let a = 0; a < 11; a += 0.4) {
+        const sx = px + Math.cos(a) * a * 0.8;
+        const sy = py + Math.sin(a) * a * 0.8;
+        if (a === 0) g.moveTo(sx, sy);
+        else g.lineTo(sx, sy);
+      }
+      g.stroke();
+    } else {
+      g.fillStyle = '#fbf1d8';
+      g.beginPath();
+      g.ellipse(px, py, r * 1.3, r, rnd() * 3, 0, 6.283);
+      g.fill();
+      g.stroke();
+    }
+  }
+  // crayon grass
+  for (const [a, b] of top) {
     g.fillStyle = '#8fd694';
-    g.fillRect(p.x, p.y, p.w, 10);
+    g.fillRect(a, y, b - a, 10);
     g.strokeStyle = '#3f9d4e';
     g.lineWidth = 1.7;
     g.lineCap = 'round';
     g.beginPath();
-    for (let x = p.x + 2; x < p.x + p.w - 2; x += 5 + rnd() * 3) {
-      g.moveTo(x, p.y + 10 + rnd() * 2);
-      g.lineTo(x + 2.5 + (rnd() - 0.5) * 3, p.y + 1 + rnd() * 3);
+    for (let bx = a + 2; bx < b - 2; bx += 5 + rnd() * 3) {
+      g.moveTo(bx, y + 10 + rnd() * 2);
+      g.lineTo(bx + 2.5 + (rnd() - 0.5) * 3, y + 1 + rnd() * 3);
     }
-    g.stroke();
     // a few tufts poking above the edge
-    g.beginPath();
-    for (let x = p.x + 8 + rnd() * 20; x < p.x + p.w - 8; x += 24 + rnd() * 40) {
+    for (let bx = a + 8 + rnd() * 20; bx < b - 8; bx += 24 + rnd() * 40) {
       for (let k = -1; k <= 1; k++) {
-        g.moveTo(x, p.y + 1);
-        g.lineTo(x + k * 4 + (rnd() - 0.5) * 2, p.y - 6 - rnd() * 4);
+        g.moveTo(bx, y + 1);
+        g.lineTo(bx + k * 4 + (rnd() - 0.5) * 2, y - 6 - rnd() * 4);
       }
     }
     g.stroke();
-  } else {
-    const col = PENCILS[i % PENCILS.length];
-    g.globalAlpha = 0.28;
-    g.fillStyle = col;
-    g.fillRect(p.x, p.y, p.w, p.h);
-    g.globalAlpha = 1;
-    hatch(g, rnd, p.x, p.y, p.w, p.h, 5.5, col, 1.8, 1);
   }
-  // pencil outline, drawn twice like a kid going over their lines
-  g.strokeStyle = INK;
-  g.lineCap = 'round';
-  g.lineWidth = 2.3;
-  wrect(g, rnd, p.x, p.y, p.w, p.h, 1.1);
-  g.lineWidth = 1;
-  g.globalAlpha = 0.6;
-  wrect(g, rnd, p.x, p.y, p.w, p.h, 2);
-  g.globalAlpha = 1;
-  // thick marker line on the surface you stand on
+  outline(g, rnd, [
+    ...top.map(([a, b]) => [a - 2, y, b + 2, y]),
+    ...bottom.map(([a, b]) => [b + 2, y + h, a - 2, y + h]),
+    [x + w, y - 2, x + w, y + h + 2],
+    [x, y + h + 2, x, y - 2],
+  ]);
   g.lineWidth = 3.4;
   g.beginPath();
-  wline(g, rnd, p.x - 1, p.y, p.x + p.w + 1, p.y, 0.7);
+  for (const [a, b] of top) wline(g, rnd, a - 1, y, b + 1, y, 0.7);
   g.stroke();
 }
 
-function doodles(g, rnd) {
-  g.strokeStyle = 'rgba(70,70,85,.55)';
+// A slope: a coloured-in strip like the ledges, but flat only for a short lip
+// at each end - exactly the line the players ride.
+function drawRamp(g, rnd, r, arena) {
+  const solid = arena.platforms.filter((p) => p.ground);
+  const rests = (x, y) => solid.some((p) => Math.abs(p.y - y) < 1 && x >= p.x && x <= p.x + p.w);
+  // an end that sits on solid ground needs no lip
+  const xa = rests(r.x0, r.y0) ? r.x0 : r.x0 - LIP;
+  const xb = rests(r.x1, r.y1) ? r.x1 : r.x1 + LIP;
+  const line = [
+    [xa, r.y0],
+    [r.x0, r.y0],
+    [r.x1, r.y1],
+    [xb, r.y1],
+  ].filter(([px], i, all) => i === 0 || px > all[i - 1][0]);
+  const shape = (dx, dy) => {
+    g.beginPath();
+    line.forEach(([px, py], i) => (i ? g.lineTo(px + dx, py + dy) : g.moveTo(px + dx, py + dy)));
+    for (let i = line.length - 1; i >= 0; i--) g.lineTo(line[i][0] + dx, line[i][1] + THICK + dy);
+    g.closePath();
+  };
+  const x = xa;
+  const y = Math.min(r.y0, r.y1);
+  const w = xb - xa;
+  const h = Math.abs(r.y1 - r.y0) + THICK;
+  const lean = r.y1 < r.y0 ? 1 : -1; // the colouring-in leans uphill
+
+  // never draw over solid ground: the slope stops at the grass
+  g.beginPath();
+  g.rect(-200, -200, arena.w + 400, arena.h + 400);
+  for (const p of solid) g.rect(p.x, p.y, p.w, p.h);
+  g.clip('evenodd');
+
+  g.save();
+  shape(5, 6);
+  g.clip();
+  strokes(g, rnd, x + 5, y + 6, w, h, 5, 'rgba(40,40,60,.13)', 1.4, -lean); // pencil shadow
+  g.restore();
+  shape(0, 0);
+  g.fillStyle = CARD;
+  g.fill();
+  g.fillStyle = rgba(SLOPE, 0.3);
+  g.fill();
+  g.save();
+  g.clip();
+  strokes(g, rnd, x, y, w, h, 5.5, SLOPE, 1.8, lean);
+  g.restore();
+
+  const edges = [];
+  for (let i = 1; i < line.length; i++) {
+    const [ax, ay] = line[i - 1];
+    const [bx, by] = line[i];
+    edges.push([ax, ay, bx, by], [bx, by + THICK, ax, ay + THICK]);
+  }
+  edges.push([xa, r.y0 - 2, xa, r.y0 + THICK + 2], [xb, r.y1 - 2, xb, r.y1 + THICK + 2]);
+  outline(g, rnd, edges);
+  g.lineWidth = 3.4;
+  g.lineJoin = 'round';
+  g.beginPath();
+  for (let i = 1; i < line.length; i++) wline(g, rnd, line[i - 1][0], line[i - 1][1], line[i][0], line[i][1], 0.7);
+  g.stroke();
+}
+
+// The notebook page and everything doodled on it.
+function page(g, rnd) {
+  g.fillStyle = PAPER;
+  g.fillRect(0, 0, W, H);
+  // paper fibre
+  for (let i = 0; i < 2600; i++) {
+    g.fillStyle = `rgba(120,95,60,${0.03 + rnd() * 0.05})`;
+    g.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 1.5, 1);
+  }
+  // coffee ring
+  g.strokeStyle = 'rgba(140,90,40,.1)';
+  g.lineWidth = 5;
+  g.beginPath();
+  g.arc(214, 404, 44, 0.4, 5.6);
+  g.stroke();
+  g.lineWidth = 1.5;
+  g.beginPath();
+  g.arc(214, 404, 49, 1, 5);
+  g.stroke();
+  // ruled lines + margin
+  g.strokeStyle = 'rgba(86,140,220,.36)';
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let y = 36; y < H; y += 25) {
+    g.moveTo(0, y + 0.5);
+    g.lineTo(W, y + 0.5);
+  }
+  g.stroke();
+  g.strokeStyle = 'rgba(226,80,80,.5)';
+  g.lineWidth = 1.5;
+  g.beginPath();
+  g.moveTo(58.5, 0);
+  g.lineTo(58.5, H);
+  g.stroke();
+  // punched holes
+  for (const y of [88, 250, 412]) {
+    g.fillStyle = '#d9d2bd';
+    g.beginPath();
+    g.arc(26, y, 9, 0, 6.283);
+    g.fill();
+    g.strokeStyle = 'rgba(0,0,0,.22)';
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.arc(26, y, 9, 2.6, 5.4);
+    g.stroke();
+  }
+
+  g.strokeStyle = GRAPHITE;
   g.fillStyle = 'rgba(70,70,85,.6)';
   g.lineWidth = 1.5;
   g.lineCap = 'round';
@@ -157,16 +348,6 @@ function doodles(g, rnd) {
     wline(g, rnd, cx - 50 * s, cy + 8 * s, cx + 52 * s, cy + 8 * s, 1);
     g.stroke();
   }
-  // birds
-  g.beginPath();
-  for (let i = 0; i < 6; i++) {
-    const bx = 250 + rnd() * 380;
-    const by = 110 + rnd() * 90;
-    g.moveTo(bx - 8, by - 4);
-    g.quadraticCurveTo(bx - 4, by - 7, bx, by);
-    g.quadraticCurveTo(bx + 4, by - 7, bx + 8, by - 4);
-  }
-  g.stroke();
 
   // a kid's house and tree, way in the back
   g.globalAlpha = 0.75;
@@ -248,6 +429,34 @@ function doodles(g, rnd) {
   g.stroke();
 }
 
+// Comic "TAG!" burst, centred in a BURST_W x BURST_H box.
+function burst(g, rnd) {
+  g.translate(BURST_W / 2, BURST_H / 2);
+  g.rotate(-0.12);
+  g.beginPath();
+  const n = 13;
+  for (let i = 0; i < n * 2; i++) {
+    const ang = (i / (n * 2)) * 6.283;
+    const r = (i % 2 ? 26 : 44) + (rnd() - 0.5) * 8;
+    const px = Math.cos(ang) * r * 1.25;
+    const py = Math.sin(ang) * r * 0.85;
+    if (i === 0) g.moveTo(px, py);
+    else g.lineTo(px, py);
+  }
+  g.closePath();
+  g.fillStyle = '#ffe45e';
+  g.fill();
+  g.strokeStyle = INK;
+  g.lineWidth = 2.6;
+  g.lineJoin = 'round';
+  g.stroke();
+  g.font = '26px "Permanent Marker", cursive';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = RED;
+  g.fillText('TAG!', 0, 1);
+}
+
 // jittered rounded box used for the characters
 function blobPath(g, x, y, w, h, r, j) {
   g.beginPath();
@@ -263,131 +472,115 @@ function blobPath(g, x, y, w, h, r, j) {
   g.closePath();
 }
 
+// lighter felt-tip streak for each player colour, worked out once
+const streaks = new Map();
+function streakOf(color) {
+  if (!streaks.has(color)) streaks.set(color, lighten(color, 0.45));
+  return streaks.get(color);
+}
+
 export default {
   id: 'sketch',
   colors: ['#ee4b4b', '#3f8cf0', '#43b85c', '#f7c531'],
   letterbox: '#e4dcc4',
+  lift: PEN,
   label: {
     font: '16px "Patrick Hand", cursive',
-    size: 13,
     color: '#26262b',
     stroke: 'rgba(251,247,233,.95)',
     strokeWidth: 4,
-    you: '#e23b3b',
-    youFont: '15px "Permanent Marker", cursive',
-    stun: '#e23b3b',
-  },
-  labelGap: 8,
-  hud: {
-    font: '"Permanent Marker", cursive',
-    weight: 400,
-    labelFont: '"Patrick Hand", cursive',
-    labelWeight: 400,
-    labelScale: 1.2,
-    scale: 0.95,
-    text: '#26262b',
-    dim: 'rgba(60,60,75,.7)',
-    warn: '#e23b3b',
-    outline: 'rgba(251,247,233,.9)',
-    outlineWidth: 5,
-    chip: 'rgba(255,253,245,.93)',
-    chipLine: '#2b2b30',
-    chipIt: '#ffe45e',
-    big: '#26262b',
-    bigStroke: 'rgba(251,247,233,.95)',
-    radius: 4,
-    swatchLine: '#2b2b30',
+    you: '#2450c4',
+    gap: 8,
   },
 
   build(env) {
-    const { rnd, layer } = env;
-    const bg = layer((g) => {
-      g.fillStyle = PAPER;
-      g.fillRect(0, 0, W, H);
-      // paper fibre
-      for (let i = 0; i < 2600; i++) {
-        g.fillStyle = `rgba(120,95,60,${0.03 + rnd() * 0.05})`;
-        g.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 1.5, 1);
-      }
-      // coffee ring
-      g.strokeStyle = 'rgba(140,90,40,.1)';
-      g.lineWidth = 5;
-      g.beginPath();
-      g.arc(214, 404, 44, 0.4, 5.6);
-      g.stroke();
-      g.lineWidth = 1.5;
-      g.beginPath();
-      g.arc(214, 404, 49, 1, 5);
-      g.stroke();
-      // ruled lines + margin
-      g.strokeStyle = 'rgba(86,140,220,.36)';
-      g.lineWidth = 1;
-      g.beginPath();
-      for (let y = 36; y < H; y += 25) {
-        g.moveTo(0, y + 0.5);
-        g.lineTo(W, y + 0.5);
-      }
-      g.stroke();
-      g.strokeStyle = 'rgba(226,80,80,.5)';
-      g.lineWidth = 1.5;
-      g.beginPath();
-      g.moveTo(58.5, 0);
-      g.lineTo(58.5, H);
-      g.stroke();
-      // punched holes
-      for (const y of [88, 250, 412]) {
-        g.fillStyle = '#d9d2bd';
-        g.beginPath();
-        g.arc(26, y, 9, 0, 6.283);
-        g.fill();
-        g.strokeStyle = 'rgba(0,0,0,.22)';
-        g.lineWidth = 1.5;
-        g.beginPath();
-        g.arc(26, y, 9, 2.6, 5.4);
-        g.stroke();
-      }
-      doodles(g, rnd);
-    });
-
-    const shade = layer((g) => {
-      const v = g.createRadialGradient(W / 2, H / 2, H * 0.5, W / 2, H / 2, H);
-      v.addColorStop(0, 'rgba(120,95,50,0)');
-      v.addColorStop(1, 'rgba(120,95,50,.22)');
-      g.fillStyle = v;
-      g.fillRect(0, 0, W, H);
-    }, 0.5);
-
-    return { bg, shade, dash: [0, 0, 0, 0] };
+    const { rnd, sprite } = env;
+    // the "TAG!" burst, drawn twice so it can boil
+    const bursts = [0, 1].map(() => sprite(BURST_W, BURST_H, (g) => burst(g, rnd)));
+    const birds = [];
+    for (let i = 0; i < 5; i++) birds.push({ x: rnd() * W, y: 96 + rnd() * 110, v: 9 + rnd() * 9, ph: rnd() * 6.283 });
+    return { rnd, bursts, birds, dash: [0, 0, 0, 0] };
   },
 
-  back(g, sc, t) {
-    g.drawImage(sc.bg, 0, 0, W, H);
-    // paper plane looping across the page
-    const span = W + 300;
-    const x = ((t * 55) % span) - 150;
-    const y = 150 + Math.sin(t * 0.9) * 46;
-    const ang = Math.atan2(Math.cos(t * 0.9) * 46 * 0.9, 55);
-    g.strokeStyle = 'rgba(70,70,85,.5)';
-    g.lineWidth = 1.3;
-    g.setLineDash([5, 6]);
+  back(g, sc) {
+    page(g, sc.rnd);
+  },
+
+  platform(g, p, i, rnd, arena) {
+    if (p.ground) drawBlock(g, rnd, p, arena);
+    else drawLedge(g, rnd, p, LEVELS[Math.floor(p.y / 160) % LEVELS.length]);
+  },
+
+  ramp(g, r, i, rnd, arena) {
+    drawRamp(g, rnd, r, arena);
+  },
+
+  // updrafts: pen arrows pointing up the column
+  decor(g, sc, arena) {
+    const rnd = sc.rnd;
+    g.strokeStyle = rgba(PEN, 0.5);
+    g.lineWidth = 2.2;
+    g.lineCap = 'round';
     g.beginPath();
-    for (let k = 1; k <= 14; k++) {
-      const tt = t - k * 0.12;
-      const px = ((tt * 55) % span) - 150;
-      if (px > x) break;
-      const py = 150 + Math.sin(tt * 0.9) * 46;
-      if (k === 1) g.moveTo(px, py);
-      else g.lineTo(px, py);
+    for (const z of arena.lifts) {
+      const cx = z.x + z.w / 2;
+      let side = 1;
+      for (let y = z.y + z.h - 36; y > z.y + 56; y -= 112) {
+        const x = cx + side * z.w * 0.2;
+        side = -side;
+        wline(g, rnd, x, y, x, y - 46, 1.5);
+        wline(g, rnd, x - 10, y - 33, x, y - 47, 1);
+        wline(g, rnd, x + 10, y - 33, x, y - 47, 1);
+      }
     }
     g.stroke();
-    g.setLineDash([]);
-    g.save();
-    g.translate(x, y);
-    g.rotate(ang);
-    g.fillStyle = '#fffdf5';
-    g.strokeStyle = INK;
-    g.lineWidth = 1.5;
+  },
+
+  // soft darkening towards the corners of the page
+  front(g) {
+    const v = g.createRadialGradient(W / 2, H / 2, H * 0.5, W / 2, H / 2, H);
+    v.addColorStop(0, 'rgba(120,95,50,0)');
+    v.addColorStop(1, 'rgba(120,95,50,.22)');
+    g.fillStyle = v;
+    g.fillRect(0, 0, W, H);
+  },
+
+  // every frame: a few birds, a butterfly and a paper plane cross the page
+  live(g, sc, t) {
+    g.lineCap = 'round';
     g.lineJoin = 'round';
+    g.strokeStyle = GRAPHITE;
+    g.lineWidth = 1.5;
+    g.beginPath();
+    for (let i = 0; i < sc.birds.length; i++) {
+      const b = sc.birds[i];
+      const x = ((b.x + t * b.v) % (W + 40)) - 20;
+      const y = b.y + Math.sin(t * 0.7 + b.ph) * 7;
+      const flap = Math.sin(t * 7 + b.ph);
+      g.moveTo(x - 8, y - 2 - flap * 4);
+      g.quadraticCurveTo(x - 4, y - 5 - flap, x, y);
+      g.quadraticCurveTo(x + 4, y - 5 - flap, x + 8, y - 2 - flap * 4);
+    }
+    // the plane's dotted trail
+    const span = W + 300;
+    const px = ((t * 55) % span) - 150;
+    const py = 150 + Math.sin(t * 0.9) * 46;
+    for (let k = 1; k < 13; k += 2) {
+      const ta = t - k * 0.12;
+      const tb = ta - 0.07;
+      const ax = ((ta * 55) % span) - 150;
+      if (ax > px) break; // the plane has just wrapped round to the left edge
+      g.moveTo(ax, 150 + Math.sin(ta * 0.9) * 46);
+      g.lineTo(ax - 0.07 * 55, 150 + Math.sin(tb * 0.9) * 46);
+    }
+    g.stroke();
+
+    // paper plane
+    g.save();
+    g.translate(px, py);
+    g.rotate(Math.atan2(Math.cos(t * 0.9) * 46 * 0.9, 55));
+    g.fillStyle = CARD;
+    g.strokeStyle = INK;
     g.beginPath();
     g.moveTo(16, 0);
     g.lineTo(-12, -9);
@@ -395,50 +588,53 @@ export default {
     g.lineTo(-12, 8);
     g.closePath();
     g.fill();
-    g.stroke();
-    g.beginPath();
     g.moveTo(16, 0);
     g.lineTo(-6, 0);
     g.stroke();
     g.restore();
-  },
 
-  // every platform is drawn a few times with a different wobble; the renderer flips between them
-  platPad: { x: 12, top: 16, bottom: 16 },
-  platVariants: BOIL,
-  platform(g, p, i, rnd) {
-    drawPlatform(g, rnd, p, (p.x / 40 + p.y / 40) | 0);
+    // butterfly: two pencil wings that open and close
+    const bx = 170 + Math.sin(t * 0.43) * 90 + Math.sin(t * 2.1) * 12;
+    const by = 300 + Math.sin(t * 0.31 + 1) * 60 + Math.sin(t * 2.9) * 8;
+    const open = 0.25 + 0.75 * Math.abs(Math.sin(t * 9));
+    g.fillStyle = '#f7d3da';
+    g.strokeStyle = 'rgb(120,120,135)';
+    g.lineWidth = 1.1;
+    g.beginPath();
+    g.ellipse(bx - 3.2 * open, by - 1, 3.2 * open, 4.4, -0.3, 0, 6.283);
+    g.ellipse(bx + 3.2 * open, by - 1, 3.2 * open, 4.4, 0.3, 0, 6.283);
+    g.fill();
+    g.stroke();
   },
 
   // a doodled spring with a plank on top
   trampoline(g, tr, t, k) {
     const frame = Math.floor(t * 8);
     const j = (n) => (hash1(frame * 13 + n, tr.x) - 0.5) * 1.6;
-    const x0 = tr.x + 6;
-    const x1 = tr.x + tr.w - 6;
-    const top = tr.y - 4 + k * 9;
+    const top = tr.y - 5 + k * 9;
     const base = tr.y + tr.h;
     g.lineCap = 'round';
     g.lineJoin = 'round';
-    g.strokeStyle = '#e23b3b';
-    g.lineWidth = 2.4;
+    g.strokeStyle = RED;
+    g.lineWidth = 2.6;
     g.beginPath();
     const coils = 5;
-    for (const sx of [x0 + 8, x1 - 8]) {
-      g.moveTo(sx, top + 4);
-      for (let c = 1; c <= coils; c++) g.lineTo(sx + (c % 2 ? 7 : -7) + j(c), top + 4 + ((base - top - 4) * c) / coils);
+    for (const sx of [tr.x + 14, tr.x + tr.w - 14]) {
+      g.moveTo(sx, top + 5);
+      for (let c = 1; c <= coils; c++) g.lineTo(sx + (c % 2 ? 8 : -8) + j(c), top + 5 + ((base - top - 5) * c) / coils);
     }
     g.stroke();
-    g.strokeStyle = INK;
-    g.lineWidth = 3.2;
+    // the plank
     g.beginPath();
     g.moveTo(tr.x - 2 + j(20), top + j(21));
     g.lineTo(tr.x + tr.w + 2 + j(22), top + j(23));
-    g.stroke();
-    g.lineWidth = 1.4;
-    g.beginPath();
-    g.moveTo(tr.x - 1 + j(24), top + 4.5 + j(25));
-    g.lineTo(tr.x + tr.w + 1 + j(26), top + 4.5 + j(27));
+    g.lineTo(tr.x + tr.w + 1 + j(24), top + 6 + j(25));
+    g.lineTo(tr.x - 1 + j(26), top + 6 + j(27));
+    g.closePath();
+    g.fillStyle = '#ff9c8f';
+    g.fill();
+    g.strokeStyle = INK;
+    g.lineWidth = 2.2;
     g.stroke();
     if (k > 0.05) {
       g.globalAlpha = k;
@@ -454,30 +650,41 @@ export default {
   },
 
   // a scribbled whirlpool
-  portal(g, po, t) {
+  portal(g, po) {
     const col = PORTAL_COLORS[po.pair % PORTAL_COLORS.length];
-    const frame = Math.floor(t * 8);
-    const j = (n) => (hash1(frame * 7 + n, po.x) - 0.5) * 2.4;
+    const j = (n) => (hash1(n, po.pair + 3) - 0.5) * 2.4;
     const cx = po.cx;
     const cy = po.cy + 2;
     g.lineCap = 'round';
-    g.fillStyle = '#fffdf5';
+    g.lineJoin = 'round';
     g.beginPath();
     g.ellipse(cx, cy, 20, 34, 0, 0, 6.283);
+    g.fillStyle = CARD;
+    g.fill();
+    g.fillStyle = rgba(col, 0.22);
     g.fill();
     g.strokeStyle = col;
-    g.lineWidth = 2.2;
+    g.lineWidth = 3;
     g.beginPath();
-    for (let a = 0; a < 15; a += 0.32) {
-      const r = a * 1.25;
-      const px = cx + Math.cos(a - t * 4) * r + j(a * 10);
-      const py = cy + Math.sin(a - t * 4) * r * 1.7 + j(a * 10 + 5);
+    for (let a = 0; a < 14.6; a += 0.32) {
+      const r = a * 1.2;
+      const px = cx + Math.cos(a) * r + j(a * 10) * 0.6;
+      const py = cy + Math.sin(a) * r * 1.7 + j(a * 10 + 5) * 0.6;
       if (a === 0) g.moveTo(px, py);
       else g.lineTo(px, py);
     }
     g.stroke();
+    // little dashes flying off it
+    g.lineWidth = 2.2;
+    g.beginPath();
+    for (let n = 0; n < 8; n++) {
+      const a = (n / 8) * 6.283 + 0.4;
+      g.moveTo(cx + Math.cos(a) * 26, cy + Math.sin(a) * 40);
+      g.lineTo(cx + Math.cos(a) * 31, cy + Math.sin(a) * 46);
+    }
+    g.stroke();
     g.strokeStyle = INK;
-    g.lineWidth = 2.6;
+    g.lineWidth = 2.8;
     for (let pass = 0; pass < 2; pass++) {
       g.beginPath();
       for (let n = 0; n <= 16; n++) {
@@ -493,31 +700,28 @@ export default {
   },
 
   // a sticker
-  pickup(g, kind, x, y, t) {
+  pickup(g, kind, x, y) {
     const col = KIND_COLORS[kind];
-    const frame = Math.floor(t * 8);
-    const j = (n) => (hash1(frame * 11 + n, x) - 0.5) * 1.8;
+    const j = (n) => (hash1(n, kind.length) - 0.5) * 1.8;
     g.translate(x, y);
-    g.rotate(Math.sin(t * 2 + x) * 0.12);
+    g.rotate(-0.1);
     g.beginPath();
     for (let n = 0; n < 16; n++) {
       const a = (n / 16) * 6.283;
-      const r = (n % 2 ? 13 : 17) + j(n);
+      const r = (n % 2 ? 15.5 : 20) + j(n);
       if (n === 0) g.moveTo(Math.cos(a) * r, Math.sin(a) * r);
       else g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
     }
     g.closePath();
-    g.fillStyle = '#fffdf5';
+    g.fillStyle = CARD;
     g.fill();
-    g.globalAlpha = 0.35;
-    g.fillStyle = col;
+    g.fillStyle = rgba(col, 0.6);
     g.fill();
-    g.globalAlpha = 1;
     g.strokeStyle = INK;
-    g.lineWidth = 2.2;
+    g.lineWidth = 2.4;
     g.lineJoin = 'round';
     g.stroke();
-    drawIcon(g, kind, 0, 0, 7, INK);
+    drawIcon(g, kind, 0, 0, 9, INK);
   },
 
   player(g, pv, t) {
@@ -525,17 +729,34 @@ export default {
     const frame = Math.floor(t * 8);
     const j = (i) => (hash1(frame * 31 + i, pv.seed) - 0.5) * 1.8;
     squashAt(g, cx, feet, pv.squash);
+    const air = !pv.ground;
     const moving = pv.ground && Math.abs(pv.vx) > 30;
     const sw = moving ? Math.sin(pv.run) : 0;
     const bob = moving ? Math.abs(Math.cos(pv.run)) * 1.6 : 0;
     const by = y + 1 - bob;
     const bh = 29;
-    const air = !pv.ground;
-
-    g.strokeStyle = INK;
     g.lineCap = 'round';
     g.lineJoin = 'round';
-    g.lineWidth = 2.6;
+
+    if (pv.isIt) {
+      // whoever is it gets an angry red scribble crackling around them
+      g.strokeStyle = RED;
+      g.lineWidth = 2.6;
+      g.beginPath();
+      const n = 18;
+      for (let i = 0; i <= n; i++) {
+        const a = ((i + (frame % 2) * 0.5) / n) * 6.283;
+        const r = i % 2 ? 1 : 1.26;
+        const px = cx + Math.cos(a) * 24 * r + j(60 + (i % n));
+        const py = by + 19 + Math.sin(a) * 27 * r + j(80 + (i % n));
+        if (i === 0) g.moveTo(px, py);
+        else g.lineTo(px, py);
+      }
+      g.stroke();
+    }
+
+    g.strokeStyle = INK;
+    g.lineWidth = 2.8;
     // stick legs with little feet
     g.beginPath();
     const hip = by + bh - 1;
@@ -574,59 +795,63 @@ export default {
     }
     g.stroke();
 
-    // marker-coloured body
+    // body, coloured in with a felt-tip
     blobPath(g, x + 2, by, PW - 4, bh, 9, j);
     g.fillStyle = color;
     g.fill();
-    g.save();
-    g.clip();
-    g.strokeStyle = lighten(color, 0.45);
-    g.lineWidth = 2.2;
-    g.beginPath();
-    for (let k = 0; k < 5; k++) {
-      const d = k * 9 - 6 + j(50 + k);
-      g.moveTo(x + d, by + bh + 2);
-      g.lineTo(x + d + 22, by - 2);
-    }
     g.stroke();
-    g.restore();
-    g.strokeStyle = INK;
-    g.lineWidth = 2.6;
-    blobPath(g, x + 2, by, PW - 4, bh, 9, j);
+    g.strokeStyle = streakOf(color);
+    g.lineWidth = 2.4;
+    g.beginPath();
+    for (let k = 0; k < 3; k++) {
+      const d = 7 + k * 7 + j(50 + k);
+      g.moveTo(x + d, by + bh - 5);
+      g.lineTo(x + d + 5, by + 5);
+    }
     g.stroke();
 
     // googly face
     const ex = cx + pv.face * 3;
     const ey = by + 11;
-    const open = pv.blink < 0.5;
+    g.strokeStyle = INK;
     g.lineWidth = 1.6;
     for (const s of [-1, 1]) {
-      if (open) {
+      const ox = ex + s * 5.5;
+      if (pv.stunned) {
+        // seeing stars
+        g.beginPath();
+        g.moveTo(ox - 3, ey - 3);
+        g.lineTo(ox + 3, ey + 3);
+        g.moveTo(ox + 3, ey - 3);
+        g.lineTo(ox - 3, ey + 3);
+        g.stroke();
+      } else if (pv.blink < 0.5) {
         g.fillStyle = '#fff';
         g.beginPath();
-        g.arc(ex + s * 5.5, ey, 4.8, 0, 6.283);
+        g.arc(ox, ey, 4.8, 0, 6.283);
         g.fill();
         g.stroke();
         g.fillStyle = INK;
         g.beginPath();
-        g.arc(ex + s * 5.5 + pv.face * 1.8, ey + (air ? (pv.vy < 0 ? -1.2 : 1.4) : 0.4), 2.1, 0, 6.283);
+        g.arc(ox + pv.face * 1.8, ey + (air ? (pv.vy < 0 ? -1.2 : 1.4) : 0.4), 2.2, 0, 6.283);
         g.fill();
       } else {
         g.beginPath();
-        g.moveTo(ex + s * 5.5 - 4, ey);
-        g.lineTo(ex + s * 5.5 + 4, ey);
+        g.moveTo(ox - 4, ey);
+        g.lineTo(ox + 4, ey);
         g.stroke();
       }
     }
-    g.lineWidth = 1.8;
     g.beginPath();
     if (pv.isIt) {
       // angry eyebrows and a big toothy grin
+      g.lineWidth = 2.4;
       g.moveTo(ex - 11, ey - 8);
       g.lineTo(ex - 2, ey - 4);
       g.moveTo(ex + 11, ey - 8);
       g.lineTo(ex + 2, ey - 4);
       g.stroke();
+      g.lineWidth = 1.6;
       g.fillStyle = '#fff';
       g.beginPath();
       g.moveTo(ex - 8, ey + 8);
@@ -643,44 +868,51 @@ export default {
       }
       g.stroke();
     } else if (air) {
+      g.lineWidth = 1.8;
       g.arc(ex, ey + 11, 2.6, 0, 6.283);
       g.stroke();
     } else {
+      g.lineWidth = 1.8;
       g.arc(ex, ey + 7, 6, 0.3, Math.PI - 0.3);
       g.stroke();
     }
   },
 
-  marker(g, cx, cy, t) {
-    const frame = Math.floor(t * 8);
-    const j = (i) => (hash1(frame * 17 + i, 5) - 0.5) * 1.6;
-    g.save();
-    g.translate(cx + j(1), cy + j(2));
-    g.rotate(-0.1);
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.font = '22px "Permanent Marker", cursive';
-    g.lineWidth = 5;
-    g.strokeStyle = PAPER;
-    g.strokeText('IT!', 0, -4);
-    g.fillStyle = '#e23b3b';
-    g.fillText('IT!', 0, -4);
-    g.strokeStyle = '#e23b3b';
-    g.lineWidth = 2.2;
+  // "IT!" in red marker over a swipe of highlighter, with an arrow down to the player
+  marker(g, cx, cy) {
     g.lineCap = 'round';
     g.lineJoin = 'round';
+    g.save();
+    g.translate(cx, cy - 21);
+    g.rotate(-0.09);
+    g.strokeStyle = '#ffe45e';
+    g.lineWidth = 19;
     g.beginPath();
-    g.moveTo(20, -8);
-    g.quadraticCurveTo(28 + j(3), 4, 12, 11 + j(4));
-    g.moveTo(18, 5);
-    g.lineTo(12, 11);
-    g.lineTo(20, 13);
+    g.moveTo(-21, 2);
+    g.lineTo(22, -1);
     g.stroke();
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = '27px "Permanent Marker", cursive';
+    g.lineWidth = 4;
+    g.strokeStyle = INK;
+    g.strokeText('IT!', 0, 1);
+    g.fillStyle = RED;
+    g.fillText('IT!', 0, 1);
     g.restore();
-  },
-
-  front(g, sc) {
-    g.drawImage(sc.shade, 0, 0, W, H);
+    g.strokeStyle = INK;
+    g.lineWidth = 5.5;
+    for (let pass = 0; pass < 2; pass++) {
+      g.beginPath();
+      g.moveTo(cx - 1, cy - 5);
+      g.lineTo(cx, cy + 9);
+      g.moveTo(cx - 7, cy + 2);
+      g.lineTo(cx, cy + 10);
+      g.lineTo(cx + 7, cy + 2);
+      g.stroke();
+      g.strokeStyle = RED;
+      g.lineWidth = 2.8;
+    }
   },
 
   fx: {
@@ -689,24 +921,7 @@ export default {
       if (Math.abs(pv.vx) < 200 || t - sc.dash[pv.slot] < 0.07) return;
       sc.dash[pv.slot] = t;
       // speed lines
-      R.emit({
-        x: pv.cx - pv.face * 20,
-        y: pv.y + 6 + Math.random() * 26,
-        life: 0.22,
-        size: 8 + Math.random() * 10,
-        face: pv.face,
-        back: true,
-        draw(g, p, k) {
-          g.globalAlpha = k * 0.7;
-          g.strokeStyle = INK;
-          g.lineWidth = 1.6;
-          g.lineCap = 'round';
-          g.beginPath();
-          g.moveTo(p.x, p.y);
-          g.lineTo(p.x - p.face * p.size, p.y);
-          g.stroke();
-        },
-      });
+      R.emit({ x: pv.cx - pv.face * 20, y: pv.y + 6 + Math.random() * 26, life: 0.22, shape: 'line', width: 1.6, lx: -pv.face * (8 + Math.random() * 10), color: INK, alpha: 0.7, back: true });
     },
     jump(R, pv) {
       for (let i = 0; i < 3; i++) puff(R, pv.cx + (i - 1) * 9, pv.feet - 2, (i - 1) * 30, -10);
@@ -722,8 +937,8 @@ export default {
       for (let i = 0; i < 4; i++) puff(R, pv.cx + (Math.random() - 0.5) * 30, pv.y - 10 + Math.random() * 30, (Math.random() - 0.5) * 60, 20, 6);
     },
     tag(R, to) {
-      R.shake(8);
-      const seed = Math.random() * 100;
+      const sc = R.scene;
+      // comic burst: pops out, then holds while it boils
       R.emit({
         x: to.cx,
         y: to.y + 12,
@@ -731,37 +946,9 @@ export default {
         fade: false,
         draw(g, p, k) {
           const a = 1 - k;
-          const sc = a < 0.25 ? 0.4 + a * 2.8 : 1.1 - (a - 0.25) * 0.15;
-          const frame = Math.floor(p.age * 12);
-          g.save();
-          g.translate(p.x, p.y);
-          g.scale(sc, sc);
-          g.rotate(-0.12);
+          const s = a < 0.25 ? 0.4 + a * 2.8 : 1.1 - (a - 0.25) * 0.15;
           g.globalAlpha = k < 0.25 ? k * 4 : 1;
-          // comic burst
-          g.beginPath();
-          const n = 13;
-          for (let i = 0; i < n * 2; i++) {
-            const ang = (i / (n * 2)) * 6.283;
-            const r = (i % 2 ? 26 : 46) + (hash1(i + frame * 7, seed) - 0.5) * 8;
-            const px = Math.cos(ang) * r * 1.25;
-            const py = Math.sin(ang) * r * 0.85;
-            if (i === 0) g.moveTo(px, py);
-            else g.lineTo(px, py);
-          }
-          g.closePath();
-          g.fillStyle = '#ffe45e';
-          g.fill();
-          g.strokeStyle = INK;
-          g.lineWidth = 2.6;
-          g.lineJoin = 'round';
-          g.stroke();
-          g.font = '26px "Permanent Marker", cursive';
-          g.textAlign = 'center';
-          g.textBaseline = 'middle';
-          g.fillStyle = '#e23b3b';
-          g.fillText('TAG!', 0, 1);
-          g.restore();
+          g.drawImage(sc.bursts[Math.floor(p.age * 12) % 2], p.x - (BURST_W / 2) * s, p.y - (BURST_H / 2) * s, BURST_W * s, BURST_H * s);
         },
       });
       for (let i = 0; i < 10; i++) {

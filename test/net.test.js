@@ -5,23 +5,26 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { io } from 'socket.io-client';
 import { IN_LEFT, IN_RIGHT, IN_JUMP, TICK_RATE } from '../shared/config.js';
+import { STATE_LEN, stepPlayer, unpackState, packState } from '../shared/physics.js';
+import { arenaById } from '../shared/arenas.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 3900 + Math.floor(Math.random() * 90);
 const URL = `http://localhost:${PORT}`;
 const SHORT = 6; // seconds; only the test server accepts a round this short
+const BREAK = 700; // ms between tournament rounds on the test server
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const server = spawn(process.execPath, ['server.js'], {
   cwd: root,
-  env: { ...process.env, PORT: String(PORT), TAG_TEST_DURATION: String(SHORT) },
+  env: { ...process.env, PORT: String(PORT), TAG_TEST_DURATION: String(SHORT), TAG_TEST_BREAK: String(BREAK) },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 await new Promise((resolve) => server.stdout.on('data', (d) => String(d).includes('running') && resolve()));
 
 function client(name) {
   const socket = io(URL, { transports: ['websocket'], forceNew: true });
-  const c = { socket, name, room: null, round: null, snap: null, end: null, go: null, tags: [], picks: [], seq: 0, bits: 0, timer: null };
+  const c = { socket, name, room: null, round: null, snap: null, end: null, ends: [], go: null, tags: [], picks: [], seq: 0, bits: 0, timer: null };
   socket.on('room', (r) => (c.room = r));
   socket.on('round', (r) => {
     c.round = r;
@@ -34,7 +37,10 @@ function client(name) {
   socket.on('go', (it) => (c.go = it));
   socket.on('tag', (from, to) => c.tags.push([from, to]));
   socket.on('pick', (slot, kind) => c.picks.push([slot, kind]));
-  socket.on('end', (e) => (c.end = e));
+  socket.on('end', (e) => {
+    c.end = e;
+    c.ends.push(e);
+  });
   socket.on('q', (ack) => ack());
   c.call = (ev, msg) => new Promise((res) => socket.emit(ev, msg, res));
   c.me = () => c.room.players.find((p) => p.id === socket.id);
@@ -87,34 +93,42 @@ function startChasing(players) {
 }
 
 try {
-  await test('create a room: 4-letter code, creator is host, sensible defaults', async () => {
+  await test('a name is required; a room gets a 4-digit code, its creator is host, sensible defaults', async () => {
+    for (const name of [undefined, '', '   ', '<>']) {
+      const bad = await a.call('create', { name });
+      assert.ok(bad.error && bad.needName, 'no name, no room');
+    }
     const res = await a.call('create', { name: '  Ana<script>  ' });
     assert.ok(res.ok);
     code = res.room.code;
-    assert.match(code, /^[A-Z]{4}$/);
+    assert.match(code, /^\d{4}$/);
     assert.equal(res.room.hostId, a.socket.id);
     assert.equal(res.room.players[0].name, 'Anascript');
-    assert.deepEqual(res.room.settings, { mode: 'potato', arena: 'random', theme: 'ink', duration: 90, powerups: true });
+    assert.deepEqual(res.room.settings, { game: 'quick', rounds: 5, mode: 'potato', arena: 'random', theme: 'ink', duration: 60, powerups: true });
     a.room = res.room;
   });
 
-  await test('joining: bad code is rejected, good code works (case-insensitive)', async () => {
-    assert.ok((await b.call('join', { code: 'QQQQ', name: 'Ben' })).error);
-    const res = await b.call('join', { code: code.toLowerCase(), name: 'Ben' });
+  await test('joining: a bad code or a missing name is rejected; a taken name gets a number', async () => {
+    const wrong = code === '0000' ? '0001' : '0000';
+    assert.ok((await b.call('join', { code: wrong, name: 'Ben' })).error);
+    assert.ok((await b.call('join', { code: '12', name: 'Ben' })).error);
+    assert.ok((await b.call('join', { code, name: ' ' })).needName);
+    const res = await b.call('join', { code: ` ${code.slice(0, 2)} ${code.slice(2)} `, name: 'anascript' });
     assert.ok(res.ok);
     b.room = res.room;
     await until(() => a.room.players.length === 2, 'host sees the joiner');
     assert.equal(b.me().slot, 1);
+    assert.equal(b.me().name, 'anascript 2');
   });
 
   await test('only the host can change settings or start; bad values are ignored', async () => {
     b.socket.emit('start');
-    b.socket.emit('settings', { arena: 'keep' });
-    a.socket.emit('settings', { arena: 'dojo', theme: 'neon', mode: 'time', duration: 60, powerups: false });
+    b.socket.emit('settings', { arena: 'hills' });
+    a.socket.emit('settings', { arena: 'dojo', theme: 'space', mode: 'time', duration: 90, powerups: false, rounds: 3 });
     await until(() => b.room.settings.arena === 'dojo' && b.room.settings.mode === 'time', 'settings');
-    a.socket.emit('settings', { arena: 'nope', theme: 'nope', mode: 'nope', duration: 5, powerups: 'yes' });
+    a.socket.emit('settings', { arena: 'nope', theme: 'nope', mode: 'nope', duration: 5, powerups: 'yes', game: 'nope', rounds: 4 });
     await sleep(150);
-    assert.deepEqual(b.room.settings, { mode: 'time', arena: 'dojo', theme: 'neon', duration: 60, powerups: false });
+    assert.deepEqual(b.room.settings, { game: 'quick', rounds: 3, mode: 'time', arena: 'dojo', theme: 'space', duration: 90, powerups: false });
     assert.equal(a.room.phase, 'lobby');
   });
 
@@ -127,7 +141,9 @@ try {
     assert.equal(a.round.mode, 'potato');
     assert.equal(a.round.players.length, 2);
     await until(() => a.snap && a.snap[1] === 0, 'countdown snapshot');
-    assert.ok(Array.isArray(a.snap[6]) && a.snap[6].length === 20, 'each player gets their own full state');
+    assert.ok(Array.isArray(a.snap[6]) && a.snap[6].length === STATE_LEN + 1, 'each player gets their own full state');
+    assert.equal(a.round.twist, 'none');
+    assert.equal(a.round.cup, null);
     await until(() => a.go !== null && b.go !== null, 'go', 6000);
     assert.ok(a.go === 0 || a.go === 1);
     assert.equal(a.go, b.go);
@@ -155,6 +171,46 @@ try {
     a.bits = 0;
   });
 
+  await test('exactly one physics step per input, however unevenly inputs arrive (so prediction is never corrected)', async () => {
+    a.stop(); // take over a's inputs by hand
+    await until(() => a.snap[6][0] === a.seq, 'everything sent so far is applied');
+    await sleep(60);
+    const arena = arenaById(a.round.arena);
+    const slot = a.me().slot;
+    const it = a.snap[2];
+    const local = unpackState(a.snap[6].slice(1)); // predict from here, like a browser does
+    const expected = new Map([[a.seq, packState(local)]]);
+    const send = (list) => {
+      a.socket.emit('in', a.seq + 1, list);
+      for (const bits of list) {
+        stepPlayer(local, bits, arena, it === slot);
+        expected.set(++a.seq, packState(local));
+      }
+    };
+    let checked = 0;
+    const check = (m) => {
+      if (m[2] !== it) return; // a tag changes running speed: not what this test is about
+      const want = expected.get(m[6][0]);
+      if (!want) return;
+      assert.deepEqual(m[6].slice(1), want, `server and prediction disagree after input ${m[6][0]}`);
+      checked++;
+    };
+    a.socket.on('s', check);
+    // bursts and gaps, as on a jittery connection (gaps stay under the 200 ms "gone quiet" limit)
+    const J = IN_JUMP;
+    const L = IN_LEFT;
+    const R = IN_RIGHT;
+    for (const [gap, list] of [[0, [R, R, R]], [90, [R | J, R | J, R, R, R]], [20, [0]], [150, [L, L, L, L | J, L, L]], [40, [L, 0]], [110, [R, R, J, J, 0, 0]], [16, [0]], [16, [R]], [130, [L, L, L, L, L, L]]]) {
+      await sleep(gap);
+      send(list);
+    }
+    await until(() => a.snap[6][0] === a.seq, 'all bursts applied');
+    await sleep(80);
+    a.socket.off('s', check);
+    assert.ok(checked >= 5, `compared ${checked} snapshots`);
+    a.play();
+  });
+
   await test('hot potato: whoever is it when the clock runs out loses, the other wins', async () => {
     startChasing([a, b]);
     await until(() => a.end && b.end && c.end, 'round end', (SHORT + 4) * 1000);
@@ -174,8 +230,8 @@ try {
   await test('least-time mode with the former spectator: tags happen, lowest time wins', async () => {
     a.socket.emit('lobby');
     await until(() => a.room.phase === 'lobby', 'back to lobby');
-    a.socket.emit('settings', { mode: 'time', arena: 'keep' });
-    await until(() => a.room.settings.mode === 'time' && a.room.settings.arena === 'keep', 'time mode');
+    a.socket.emit('settings', { mode: 'time', arena: 'hills' });
+    await until(() => a.room.settings.mode === 'time' && a.room.settings.arena === 'hills', 'time mode');
     for (const p of [a, b, c]) p.tags.length = 0;
     a.socket.emit('start');
     await until(() => a.round && a.round.players.length === 3 && a.go === null, 'new round with 3');
@@ -194,10 +250,72 @@ try {
     assert.equal(a.end.rows.reduce((t, r) => t + r.tags, 0), a.tags.length, 'every tag is credited to someone');
   });
 
+  await test('tournament: rounds follow on their own, points add up, the leader starts as it, a champion is crowned', async () => {
+    a.socket.emit('lobby');
+    await until(() => a.room.phase === 'lobby', 'back to lobby');
+    a.socket.emit('settings', { game: 'cup', rounds: 3, arena: 'random' });
+    await until(() => a.room.settings.game === 'cup' && a.room.settings.arena === 'random', 'cup settings');
+    for (const p of [a, b, c]) p.ends.length = 0;
+    const winsBefore = a.room.players.map((p) => p.wins);
+    a.socket.emit('start');
+    startChasing([a, b, c]);
+    const arenas = [];
+    const totals = { 0: 0, 1: 0, 2: 0 };
+    for (let round = 1; round <= 3; round++) {
+      await until(() => a.round && a.round.cup && a.round.cup.round === round && a.go !== null, `round ${round} go`, 9000);
+      arenas.push(a.round.arena);
+      assert.equal(a.round.cup.rounds, 3);
+      assert.equal(a.round.cup.double, round === 3, 'only the last round counts double');
+      assert.equal(a.round.twist !== 'none', round === 2, 'round 2 has a twist');
+      if (round === 1) assert.equal(a.round.cup.leader, -1);
+      else {
+        const top = Math.max(...Object.values(totals));
+        if (top > 0) {
+          assert.equal(totals[a.round.cup.leader], top, 'the leader is named');
+          assert.equal(a.go, a.round.cup.leader, 'and starts as it');
+        }
+      }
+      if (round === 2) {
+        // nothing can be changed or restarted in the middle of a tournament
+        a.socket.emit('settings', { game: 'quick', arena: 'dojo' });
+        a.socket.emit('start');
+        await sleep(100);
+        assert.equal(a.room.settings.game, 'cup');
+        assert.equal(a.room.cup.round, 2);
+      }
+      await until(() => a.ends.length === round && b.ends.length === round, `round ${round} end`, (SHORT + 4) * 1000);
+      const e = a.end;
+      assert.equal(e.mode, 'cup');
+      assert.equal(e.cup.round, round);
+      assert.equal(e.cup.final, round === 3);
+      const safe = e.rows.filter((r) => r.slot !== e.loser).length;
+      assert.equal(safe, 2, 'exactly one player is it at the buzzer');
+      for (const r of e.rows) {
+        totals[r.slot] += r.pts;
+        if (round === 3) assert.equal(r.pts % 2, 0, 'double points');
+        if (r.slot === e.loser) assert.ok(r.pts <= 2 * (round === 3 ? 2 : 1), 'no bonus for whoever is it at the end');
+      }
+      for (const row of e.cup.table) assert.equal(row.pts, totals[row.slot], 'the table is the running total');
+      assert.deepEqual(e.cup.table.map((r) => r.pts), e.cup.table.map((r) => r.pts).sort((x, y) => y - x), 'most points first');
+    }
+    clearInterval(chase);
+    assert.equal(new Set(arenas).size, 3, `a different arena every round: ${arenas}`);
+    const champ = a.end.cup.table[0];
+    assert.ok(a.end.winners.includes(champ.slot));
+    await until(() => a.room.phase === 'results' && a.room.cup === null, 'tournament over');
+    const after = a.room.players.find((p) => p.slot === champ.slot).wins;
+    assert.equal(after, winsBefore[a.room.players.findIndex((p) => p.slot === champ.slot)] + 1, 'the cup counts as a win');
+    await sleep(BREAK + 400);
+    assert.equal(a.room.phase, 'results', 'no fourth round');
+  });
+
   await test('a player leaving a 2-player match ends it; whoever stayed wins', async () => {
     c.stop();
     c.socket.close();
     await until(() => a.room.players.length === 2, 'c gone');
+    a.socket.emit('lobby');
+    a.socket.emit('settings', { game: 'quick' });
+    await until(() => a.room.phase === 'lobby' && a.room.settings.game === 'quick', 'quick match again');
     a.socket.emit('start');
     await until(() => a.round && a.round.players.length === 2 && a.go === null, 'round');
     await until(() => a.go !== null, 'go', 6000);

@@ -1,52 +1,45 @@
-// A match that runs entirely in the browser: practice vs bots, and the little
-// bot matches that play behind the menus. Same rules code as the server.
+// A match that runs entirely in the browser: practice against bots.
+// Same rules code as the server, so it plays exactly like an online match.
 
 import { TICK_MS, TICK_RATE, COUNTDOWN_MS } from '/shared/config.js';
 import { Sim, standings } from '/shared/sim.js';
 import { makeBot, botThink } from '/shared/bots.js';
 
-const BOT_NAMES = ['Zap', 'Mox', 'Juno', 'Blip', 'Rook', 'Fizz', 'Dash', 'Pip'];
+const BOT_NAMES = ['Zap', 'Mox', 'Juno', 'Blip', 'Rook', 'Fizz', 'Pip', 'Nori'];
 
 export class LocalGame {
-  // opts: { arena, themeId, mode, duration, human (name or null), bots, backdrop, input, onEvent }
+  // opts: { arena, mode, duration, powerups, name, bots, input, onEvent }
   constructor(opts) {
     this.arena = opts.arena;
-    this.themeId = opts.themeId;
     this.mode = opts.mode || 'potato';
-    this.duration = opts.duration || 90;
-    this.backdrop = !!opts.backdrop; // endless, no HUD, no countdown
+    this.duration = opts.duration || 60;
     this.input = opts.input;
     this.onEvent = opts.onEvent || (() => {});
     this.sim = new Sim(this.arena);
-    this.names = [];
+    this.sim.powerups = opts.powerups !== false;
+    this.names = [opts.name];
     this.bots = [null, null, null, null];
-    this.human = -1;
+    this.human = 0;
 
-    const order = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
-    let slot = 0;
-    if (opts.human != null) {
-      this.human = 0;
-      this.names[0] = opts.human;
-      this.sim.add(0, order[0]);
-      slot = 1;
-    }
-    const pool = BOT_NAMES.slice().sort(() => Math.random() - 0.5);
-    for (let i = 0; i < opts.bots && slot < 4; i++, slot++) {
-      this.names[slot] = pool[i];
-      this.sim.add(slot, order[slot]);
+    const spawns = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+    this.sim.add(0, spawns[0]);
+    const pool = BOT_NAMES.filter((n) => n.toLowerCase() !== String(opts.name).toLowerCase()).sort(() => Math.random() - 0.5);
+    const count = Math.max(1, Math.min(3, opts.bots || 3));
+    for (let slot = 1; slot <= count; slot++) {
+      this.names[slot] = pool[slot - 1];
+      this.sim.add(slot, spawns[slot]);
       this.bots[slot] = makeBot(Math.floor(Math.random() * 1e6) + slot);
     }
 
-    this.phase = this.backdrop ? 'playing' : 'countdown';
+    this.phase = 'countdown';
     this.countdownMs = COUNTDOWN_MS;
     this.goTime = null;
-    this.endTick = this.backdrop ? Infinity : 0;
+    this.endTick = 0;
     this.acc = 0;
     this.lastNow = null;
     this.lastCount = 4;
     this.lastSecond = -1;
     this.prev = [null, null, null, null];
-    if (this.backdrop) this.sim.start();
   }
 
   update(now) {
@@ -79,10 +72,8 @@ export class LocalGame {
         for (const p of sim.players) if (p) this.prev[p.slot] = { x: p.s.x, y: p.s.y, dead: p.s.dead };
         const inputs = [0, 0, 0, 0];
         if (this.phase === 'playing') {
-          for (let s = 0; s < 4; s++) {
-            if (s === this.human) inputs[s] = this.input ? this.input.bits() : 0;
-            else if (this.bots[s]) inputs[s] = botThink(sim, s, this.bots[s]);
-          }
+          inputs[0] = this.input ? this.input.bits() : 0;
+          for (let s = 1; s < 4; s++) if (this.bots[s]) inputs[s] = botThink(sim, s, this.bots[s]);
         }
         sim.step(inputs);
         for (const e of sim.events) {
@@ -99,21 +90,23 @@ export class LocalGame {
             mode: this.mode,
             winners,
             loser,
-            rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags })),
+            cup: null,
+            rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: 0 })),
           });
           break;
         }
       }
-      if (this.acc >= TICK_MS) this.acc = 0;
+      if (this.acc >= TICK_MS) this.acc = 0; // tab was in the background: skip the backlog
     }
 
+    // draw between the last two steps, so motion is smooth at any refresh rate
     const a = this.phase === 'over' ? 1 : this.acc / TICK_MS;
     const players = [];
     for (const p of sim.players) {
       if (!p) continue;
       const s = p.s;
       const pr = this.prev[p.slot];
-      const smooth = pr && pr.dead === 0 && s.dead === 0 && Math.abs(pr.y - s.y) + Math.abs(pr.x - s.x) < 80;
+      const smooth = pr && pr.dead === 0 && s.dead === 0 && Math.abs(pr.y - s.y) + Math.abs(pr.x - s.x) < 90;
       players.push({
         slot: p.slot,
         name: this.names[p.slot],
@@ -126,42 +119,41 @@ export class LocalGame {
         immune: p.immune,
         stun: s.stun,
         frz: s.frz,
-        dash: s.dashT > 0,
+        orb: s.orb,
         spd: s.spd,
         jmp: s.jmp,
         shd: s.shd,
         dead: s.dead,
         itTicks: p.itTicks,
-        local: p.slot === this.human,
+        local: p.slot === 0,
       });
     }
-    const goAge = this.goTime != null ? (now - this.goTime) / 1000 : null;
     const timeLeft = this.phase === 'countdown' ? this.duration : Math.max(0, (this.endTick - sim.tick) / TICK_RATE);
-    if (this.phase === 'playing' && !this.backdrop) {
+    if (this.phase === 'playing') {
       const sec = Math.ceil(timeLeft);
       if (sec !== this.lastSecond) {
         if (sec <= 5 && sec >= 1 && this.lastSecond !== -1) this.onEvent('tick', sec);
         this.lastSecond = sec;
       }
     }
-    const me = this.human >= 0 ? sim.players[this.human].s : null;
+    const me = sim.players[0].s;
     return {
       phase: this.phase,
       mode: this.mode,
+      cup: null,
+      twist: sim.twist,
+      mySlot: 0,
       countdownMs: this.phase === 'countdown' ? this.countdownMs : null,
-      goAge,
+      goAge: this.goTime != null ? (now - this.goTime) / 1000 : null,
       timeLeft,
       duration: this.duration,
-      it: sim.it,
+      it: this.phase === 'countdown' ? -1 : sim.it,
       players,
       pickups: sim.pickups,
-      me: me && this.phase !== 'countdown' ? { dashCd: me.dashCd, spd: me.spd, jmp: me.jmp, shd: me.shd } : null,
-      hud: !this.backdrop,
-      names: !this.backdrop,
+      me: this.phase === 'playing' ? { spd: me.spd, jmp: me.jmp, shd: me.shd } : null,
       code: null,
       ping: null,
-      banner: null,
-      pointYou: this.human >= 0 && (this.phase === 'countdown' || (goAge != null && goAge < 2.5)),
+      spectating: false,
     };
   }
 }

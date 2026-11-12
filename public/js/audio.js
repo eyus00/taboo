@@ -7,6 +7,8 @@ const VOICES = {
   sketch: { wave: 'triangle', pitch: 1.15, noise: 0.35 },
   arcade: { wave: 'square', pitch: 1, noise: 0.4 },
   ink: { wave: 'sine', pitch: 1.4, noise: 0.25 },
+  space: { wave: 'sine', pitch: 0.85, noise: 0.3 },
+  alien: { wave: 'triangle', pitch: 0.7, noise: 0.45 },
 };
 
 export class Sfx {
@@ -16,7 +18,7 @@ export class Sfx {
     try {
       this.muted = localStorage.getItem('tag.muted') === '1';
     } catch {}
-    this.voice = VOICES.neon;
+    this.voice = VOICES.ink;
     // Browsers only allow sound after the first click / key press.
     const unlock = () => {
       if (!this.ctx) {
@@ -35,7 +37,7 @@ export class Sfx {
   }
 
   setTheme(id) {
-    this.voice = VOICES[id] || VOICES.neon;
+    this.voice = VOICES[id] || VOICES.ink;
   }
 
   toggle() {
@@ -91,10 +93,6 @@ export class Sfx {
         break;
       case 'land':
         this.noise(0.07, 0.22 * vol, 500);
-        break;
-      case 'dash':
-        this.noise(0.14, 0.32 * vol, 3200);
-        this.tone(700, 260, 0.12, 0.06 * vol);
         break;
       case 'bounce':
         this.tone(180, 760, 0.22, 0.2 * vol, 'sine');

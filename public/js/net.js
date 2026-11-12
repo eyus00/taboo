@@ -9,8 +9,8 @@
 //   * everyone else is drawn slightly in the past, gliding between the last
 //     few snapshots, so 30 updates a second looks smooth at 60+ fps.
 
-import { TICK_MS, TICK_RATE } from '/shared/config.js';
-import { stepPlayer, unpackState, PF_GROUND, PF_FACE, PF_STUN, PF_FROZEN, PF_DASH, PF_SPEED, PF_JUMP, PF_SHIELD, PF_DEAD } from '/shared/physics.js';
+import { TICK_MS, TICK_RATE, twistById } from '/shared/config.js';
+import { stepPlayer, unpackState, PF_GROUND, PF_FACE, PF_STUN, PF_FROZEN, PF_ORB, PF_SPEED, PF_JUMP, PF_SHIELD, PF_DEAD } from '/shared/physics.js';
 
 const INTERP_TICKS = 6; // draw other players ~100 ms behind the newest snapshot
 const MAX_EXTRAPOLATE = 4;
@@ -51,6 +51,8 @@ export class NetGame {
     this.seq = 0;
     this.acc = 0;
     this.lastNow = null;
+    this.fixes = 0;
+    this.fixMax = 0;
   }
 
   // 'round' from the server: a new round is starting (or we joined mid-round).
@@ -58,6 +60,7 @@ export class NetGame {
     this.reset();
     this.round = msg;
     this.arena = arena;
+    this.twist = twistById(msg.twist);
     this.mySlot = mySlot;
     for (const p of msg.players) this.names[p.slot] = p.name;
     this.phase = msg.playing ? 'playing' : 'countdown';
@@ -106,7 +109,7 @@ export class NetGame {
         face: f & PF_FACE ? 1 : -1,
         stun: f & PF_STUN ? 1 : 0,
         frz: f & PF_FROZEN ? 1 : 0,
-        dash: (f & PF_DASH) !== 0,
+        orb: f & PF_ORB ? 1 : 0,
         spd: f & PF_SPEED ? 1 : 0,
         jmp: f & PF_JUMP ? 1 : 0,
         shd: f & PF_SHIELD ? 1 : 0,
@@ -150,12 +153,14 @@ export class NetGame {
     while (this.pending.length && this.pending[0].seq <= ack) this.pending.shift();
     if (ack > this.seq) this.seq = ack; // we stalled (hidden tab) and the server moved on
     const isIt = this.it === this.mySlot;
-    for (const inp of this.pending) stepPlayer(s, inp.bits, this.arena, isIt);
+    for (const inp of this.pending) stepPlayer(s, inp.bits, this.arena, isIt, this.twist);
     const ex = this.pred.x - s.x;
     const ey = this.pred.y - s.y;
     if (ex !== 0 || ey !== 0) {
+      this.fixes++; // how often the server disagreed with our prediction (for diagnostics)
+      this.fixMax = Math.max(this.fixMax, Math.abs(ex) + Math.abs(ey));
       if (s.dead > 0 || this.pred.dead > 0 || Math.abs(ex) + Math.abs(ey) > 110) {
-        // respawn, portal or a big disagreement: just snap
+        // respawn or a big disagreement: just snap
         this.offX = this.offY = 0;
         this.prevX = s.x;
         this.prevY = s.y;
@@ -194,7 +199,7 @@ export class NetGame {
         this.pending.push({ seq: ++this.seq, bits });
         this.prevX = this.pred.x;
         this.prevY = this.pred.y;
-        stepPlayer(this.pred, bits, this.arena, isIt);
+        stepPlayer(this.pred, bits, this.arena, isIt, this.twist);
         out.push(bits);
       }
       if (this.acc >= TICK_MS) this.acc = 0; // tab was in the background: skip the backlog
@@ -225,8 +230,8 @@ export class NetGame {
         if (slot === this.mySlot && this.predicting) {
           const p = this.pred;
           const a = Math.min(1, this.acc / TICK_MS);
-          // do not smear a portal hop or a respawn across the screen
-          const jumpy = Math.abs(p.y - this.prevY) + Math.abs(p.x - this.prevX) > 70 || p.dead > 0;
+          // do not smear a respawn across the screen
+          const jumpy = Math.abs(p.y - this.prevY) + Math.abs(p.x - this.prevX) > 90 || p.dead > 0;
           players.push({
             ...base,
             x: (jumpy ? p.x : this.prevX + (p.x - this.prevX) * a) + this.offX,
@@ -237,13 +242,13 @@ export class NetGame {
             face: p.face,
             stun: p.stun,
             frz: p.frz,
-            dash: p.dashT > 0,
+            orb: p.orb,
             spd: p.spd,
             jmp: p.jmp,
             shd: p.shd,
             dead: p.dead,
           });
-          me = { dashCd: p.dashCd, spd: p.spd, jmp: p.jmp, shd: p.shd };
+          me = { spd: p.spd, jmp: p.jmp, shd: p.shd };
         } else {
           players.push({ ...base, ...sample(this.hist[slot], rt, this.phase === 'over') });
         }
@@ -264,6 +269,9 @@ export class NetGame {
     return {
       phase: this.phase === 'idle' ? 'countdown' : this.phase,
       mode: this.round.mode,
+      cup: this.round.cup,
+      twist: this.twist,
+      mySlot: this.mySlot,
       countdownMs: this.phase === 'countdown' ? Math.max(0, this.countdownEnd - now) : null,
       goAge,
       timeLeft,
@@ -272,16 +280,14 @@ export class NetGame {
       players,
       pickups: this.pickups,
       me: this.phase === 'playing' ? me : null,
-      hud: true,
       code: this.code,
       ping: this.ping,
-      banner: this.mySlot < 0 && this.phase !== 'over' ? "Spectating - you're in the next round" : null,
-      pointYou: this.mySlot >= 0 && (this.phase === 'countdown' || (goAge != null && goAge < 2.5)),
+      spectating: this.mySlot < 0 && this.phase !== 'over',
     };
   }
 }
 
-const pose = (p) => ({ vx: p.vx, vy: p.vy, ground: p.ground, face: p.face, stun: p.stun, frz: p.frz, dash: p.dash, spd: p.spd, jmp: p.jmp, shd: p.shd });
+const pose = (p) => ({ vx: p.vx, vy: p.vy, ground: p.ground, face: p.face, stun: p.stun, frz: p.frz, orb: p.orb, spd: p.spd, jmp: p.jmp, shd: p.shd });
 
 // Position of a remote player at render time `rt` (in server ticks).
 function sample(h, rt, freeze) {
@@ -297,7 +303,7 @@ function sample(h, rt, freeze) {
   const a = h[i];
   const b = h[i + 1];
   if (rt <= a.t) return { ...pose(a), x: a.x, y: a.y, dead: a.dead };
-  // portals and respawns are jumps, not glides
+  // respawns are jumps, not glides
   const teleport = a.dead > 0 || b.dead > 0 || Math.abs(b.x - a.x) + Math.abs(b.y - a.y) > 130;
   const f = teleport ? 1 : (rt - a.t) / (b.t - a.t);
   return {

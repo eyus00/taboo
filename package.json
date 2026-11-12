@@ -1,7 +1,7 @@
 {
   "name": "youre-it",
-  "version": "1.0.0",
-  "description": "You're It! - real-time multiplayer tag for 2-4 players, with five art styles",
+  "version": "3.0.0",
+  "description": "You're It! - real-time multiplayer tag for 2-4 players, with tournaments and seven art styles",
   "type": "module",
   "main": "server.js",
   "scripts": {

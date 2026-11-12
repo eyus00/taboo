@@ -20,22 +20,29 @@ import {
   MAX_PLAYERS,
   MIN_PLAYERS,
   NAME_MAX,
+  CODE_LEN,
   DURATIONS,
   DEFAULT_DURATION,
   THEME_IDS,
   DEFAULT_THEME,
   MODE_IDS,
+  CUP_ROUNDS,
+  DEFAULT_CUP_ROUNDS,
+  CUP_BREAK_MS,
+  TWISTS,
+  twistById,
   IN_MASK,
 } from './shared/config.js';
 import { ARENA_IDS, arenaById } from './shared/arenas.js';
-import { Sim, standings } from './shared/sim.js';
+import { Sim, standings, cupPoints } from './shared/sim.js';
 import { packState, publicFlags } from './shared/physics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 
-// The automated tests play very short rounds; nothing else can ask for one.
+// The automated tests play very short rounds with short breaks; nothing else can ask for them.
 const TEST_DURATION = Number(process.env.TAG_TEST_DURATION) || 0;
+const BREAK_MS = Number(process.env.TAG_TEST_BREAK) || CUP_BREAK_MS;
 
 // Other players are drawn this many ticks in the past on every screen
 // (see INTERP_TICKS in public/js/net.js). Used for lag-compensated tagging.
@@ -70,25 +77,33 @@ const io = new Server(http, {
 /** @type {Map<string, any>} */
 const rooms = new Map();
 
-// Consonants only, so codes never spell anything and are easy to read out loud.
-const CODE_LETTERS = 'BCDFGHJKLMNPQRSTVWXZ';
-
+// Room codes are four digits: quick to say, quick to type on a number pad.
 function makeCode() {
-  for (let tries = 0; tries < 200; tries++) {
-    let code = '';
-    for (let i = 0; i < 4; i++) code += CODE_LETTERS[Math.floor(Math.random() * CODE_LETTERS.length)];
+  for (let tries = 0; tries < 400; tries++) {
+    const code = String(Math.floor(Math.random() * 10 ** CODE_LEN)).padStart(CODE_LEN, '0');
     if (!rooms.has(code)) return code;
   }
   return null;
 }
 
+// A usable display name, or '' if there is nothing left after tidying.
 function cleanName(raw) {
-  const name = String(raw ?? '')
+  return String(raw ?? '')
     .replace(/[\u0000-\u001f\u007f<>]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, NAME_MAX);
-  return name || 'Player';
+}
+
+// Two people with the same name in one room would be impossible to tell apart.
+function uniqueName(room, name) {
+  const taken = new Set([...room.players.values()].map((p) => p.name.toLowerCase()));
+  if (!taken.has(name.toLowerCase())) return name;
+  for (let n = 2; n < 9; n++) {
+    const alt = `${name.slice(0, NAME_MAX - 2)} ${n}`;
+    if (!taken.has(alt.toLowerCase())) return alt;
+  }
+  return name;
 }
 
 function pick(list, avoid) {
@@ -111,7 +126,8 @@ function roomState(room) {
     hostId: room.hostId,
     phase: room.phase, // lobby | countdown | playing | results
     settings: room.settings,
-    players: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, slot: p.slot, playing: p.playing, wins: p.wins })),
+    cup: room.cup ? { round: room.cup.round, rounds: room.cup.rounds } : null,
+    players: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, slot: p.slot, playing: p.playing, wins: p.wins, pts: p.pts })),
   };
 }
 
@@ -126,6 +142,8 @@ function roundInfo(room) {
     theme: g.themeId,
     mode: g.mode,
     duration: g.duration,
+    twist: g.twist,
+    cup: g.cup, // null, or { round, rounds, double, leader }
     playing: g.state === 'playing',
     countdown: Math.max(0, g.goAt - Date.now()),
     players: [...room.players.values()].filter((p) => p.playing).map((p) => ({ slot: p.slot, name: p.name })),
@@ -136,7 +154,7 @@ function addPlayer(room, socket, name) {
   const used = new Set([...room.players.values()].map((p) => p.slot));
   let slot = 0;
   while (used.has(slot)) slot++;
-  const player = { id: socket.id, name: cleanName(name), slot, playing: false, wins: 0, rtt: 0 };
+  const player = { id: socket.id, name: uniqueName(room, name), slot, playing: false, wins: 0, pts: 0, itMs: 0, rtt: 0 };
   room.players.set(socket.id, player);
   socket.join(room.code);
   socket.data.code = room.code;
@@ -153,6 +171,7 @@ function leaveRoom(socket) {
   socket.leave(room.code);
 
   if (room.players.size === 0) {
+    clearTimeout(room.nextTimer);
     rooms.delete(room.code); // last one out: the room is gone
     updateLoop();
     return;
@@ -168,6 +187,8 @@ function leaveRoom(socket) {
       finishRound(room, 'forfeit');
       return;
     }
+  } else if (!g && room.cup && room.players.size < MIN_PLAYERS) {
+    endCup(room); // between rounds and nobody left to play against
   }
   emitRoom(room);
 }
@@ -175,22 +196,67 @@ function leaveRoom(socket) {
 // ---------------------------------------------------------------------------
 // Rounds
 // ---------------------------------------------------------------------------
+function startCup(room) {
+  room.cup = { round: 0, rounds: room.settings.rounds, arenas: [], lastTwist: '' };
+  for (const p of room.players.values()) {
+    p.pts = 0;
+    p.itMs = 0;
+  }
+}
+
+function endCup(room) {
+  clearTimeout(room.nextTimer);
+  room.nextTimer = null;
+  room.cup = null;
+  room.phase = 'lobby';
+}
+
 function startRound(room) {
+  clearTimeout(room.nextTimer);
+  room.nextTimer = null;
   const s = room.settings;
-  const arenaId = s.arena === 'random' ? pick(ARENA_IDS, room.lastArena) : s.arena;
+  const cup = room.cup;
+  let arenaId = s.arena;
+  if (arenaId === 'random') {
+    if (cup) {
+      // a tournament visits every arena before repeating one
+      if (!cup.arenas.length) cup.arenas = shuffled(ARENA_IDS).filter((id, i, all) => all.length < 2 || i > 0 || id !== room.lastArena);
+      arenaId = cup.arenas.shift();
+    } else arenaId = pick(ARENA_IDS, room.lastArena);
+  }
   const themeId = s.theme === 'random' ? pick(THEME_IDS, room.lastTheme) : s.theme;
   room.lastArena = arenaId;
   room.lastTheme = themeId;
 
   const sim = new Sim(arenaById(arenaId));
   sim.powerups = s.powerups;
+  let twist = 'none';
+  let info = null;
+  let startIt = -1;
+  if (cup) {
+    cup.round++;
+    const last = cup.round === cup.rounds;
+    if (cup.round % 2 === 0 && !last) {
+      twist = pick(TWISTS.slice(1).map((t) => t.id), cup.lastTwist);
+      cup.lastTwist = twist;
+    }
+    if (cup.round > 1) {
+      // the leader starts as it (a tie for the lead is settled by a coin toss)
+      const all = [...room.players.values()];
+      const top = Math.max(...all.map((p) => p.pts));
+      if (top > 0) startIt = pick(all.filter((p) => p.pts === top).map((p) => p.slot));
+    }
+    info = { round: cup.round, rounds: cup.rounds, double: last, leader: startIt };
+  }
+  sim.twist = twistById(twist);
+
   const spawns = shuffled([0, 1, 2, 3]);
   const net = [null, null, null, null];
   let i = 0;
   for (const p of room.players.values()) {
     p.playing = true;
     sim.add(p.slot, spawns[i++]);
-    net[p.slot] = { q: [], recv: 0, lastSeq: 0, lastBits: 0, idle: 0, win: 0, spare: Infinity, late: 0, trimmed: 0, skipped: 0, id: p.id };
+    net[p.slot] = { q: [], recv: 0, lastSeq: 0, budget: 0, idle: 0, win: 0, spare: Infinity, late: 0, trimmed: 0, skipped: 0, id: p.id };
   }
   room.game = {
     sim,
@@ -199,6 +265,9 @@ function startRound(room) {
     themeId,
     mode: s.mode,
     duration: s.duration,
+    twist,
+    cup: info,
+    startIt,
     state: 'countdown',
     goAt: Date.now() + COUNTDOWN_MS + 500, // a beat for everyone to load the arena
     endTick: 0,
@@ -214,32 +283,69 @@ function finishRound(room, reason) {
   const g = room.game;
   if (!g) return;
   if (process.env.DEBUG_NET) {
-    // per-player input buffer stats: late = had to repeat an input, trimmed = extra step, skipped = dropped after a stall
+    // per-player input stats: late = ticks spent waiting for an input, trimmed = extra steps to shed a pile-up, skipped = dropped after a stall
     const played = g.sim.tick - (g.endTick - g.duration * TICK_RATE);
     console.log(`[net ${room.code}] ${played} ticks |`, g.net.map((n, i) => (n ? `p${i} received=${n.recv} late=${n.late} trimmed=${n.trimmed} skipped=${n.skipped} queued=${n.q.length}` : '')).filter(Boolean).join(' | '));
   }
   const names = [];
   for (const p of room.players.values()) names[p.slot] = p.name;
-  let { rows, winners, loser } = standings(g.sim, names, g.mode);
-  if (reason === 'forfeit') {
+  const cup = room.cup;
+  const forfeit = reason === 'forfeit';
+  let { rows, winners, loser } = standings(g.sim, names, cup ? 'time' : g.mode);
+  if (cup) loser = g.sim.it;
+  if (forfeit) {
     // everyone else left: whoever stayed wins, whatever the clock says
     winners = rows.map((r) => r.slot);
     loser = -1;
   }
+  const bySlot = new Map([...room.players.values()].map((p) => [p.slot, p]));
+  const gained = cup && !forfeit ? cupPoints(g.sim, g.cup.double) : {};
   for (const p of room.players.values()) {
-    if (p.playing && winners.includes(p.slot)) p.wins++;
+    if (!p.playing) continue;
+    if (cup) {
+      p.pts += gained[p.slot] || 0;
+      p.itMs += Math.round((g.sim.players[p.slot].itTicks * 1000) / TICK_RATE);
+    } else if (winners.includes(p.slot)) p.wins++;
     p.playing = false;
   }
-  room.results = {
+
+  const out = {
     reason, // 'time' | 'forfeit'
-    mode: g.mode,
+    mode: cup ? 'cup' : g.mode,
     winners, // slots
-    loser, // slot of whoever was "it" at the end (hot potato), or -1
-    rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags })),
+    loser, // slot of whoever was "it" at the end, or -1
+    rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: gained[r.slot] || 0 })),
+    cup: null,
   };
+  if (cup) {
+    const final = cup.round >= cup.rounds || forfeit || room.players.size < MIN_PLAYERS;
+    // the table: most points first, less time as it breaks ties
+    const table = [...room.players.values()]
+      .sort((a, b) => b.pts - a.pts || a.itMs - b.itMs || a.slot - b.slot)
+      .map((p) => ({ slot: p.slot, name: p.name, pts: p.pts, ms: p.itMs, gained: gained[p.slot] || 0 }));
+    out.cup = { round: cup.round, rounds: cup.rounds, double: g.cup.double, final, next: final ? 0 : BREAK_MS, table };
+    if (final) {
+      const best = table[0];
+      const champs = table.filter((r) => r.pts === best.pts && r.ms === best.ms).map((r) => r.slot);
+      out.winners = champs;
+      for (const slot of champs) bySlot.get(slot).wins++;
+      room.cup = null;
+    } else {
+      room.nextAt = Date.now() + BREAK_MS;
+      room.nextTimer = setTimeout(() => {
+        room.nextTimer = null;
+        if (rooms.get(room.code) !== room || room.game || !room.cup) return;
+        if (room.players.size < MIN_PLAYERS) {
+          endCup(room);
+          emitRoom(room);
+        } else startRound(room);
+      }, BREAK_MS);
+    }
+  }
+  room.results = out;
   room.game = null;
   room.phase = 'results';
-  io.to(room.code).emit('end', room.results);
+  io.to(room.code).emit('end', out);
   emitRoom(room);
   updateLoop();
 }
@@ -256,49 +362,58 @@ function flushEvents(room) {
 
 // Which input(s) to apply for a player this tick.
 //
-// Normally: exactly one, the next in their queue. Packets never arrive
-// perfectly evenly though, so this doubles as a small adaptive jitter buffer:
-//   * queue empty (a late packet): repeat their last input so they keep
-//     moving. The late input then waits its turn, which leaves one input of
-//     cushion against the next hiccup - the buffer grows only when needed.
-//   * cushion never touched for a whole second: run one extra step to trim
-//     it, so lag does not build up after a single bad moment.
+// The browser predicts its own player by running the physics once per input,
+// so the server must do exactly the same: one step per input, never an
+// invented one. Then both always agree and the player never gets nudged.
+// Packets do not arrive evenly though, so:
+//   * nothing has arrived (a late packet): wait - this player simply does not
+//     move this tick. Nobody guesses what they pressed.
+//   * the late inputs turn up together: catch up, at most 3 steps in a tick,
+//     and never more steps in total than ticks have passed (the "budget"), so
+//     sending inputs faster than real time gains nothing.
+//   * silent for 200 ms: stop waiting and carry on with no keys held.
+//   * inputs keep piling up for a whole second (clocks drifting apart): run
+//     one extra step to trim the pile, so lag never builds up.
 //   * a real stall (a quarter second of inputs at once): skip to the newest.
-// No input is ever thrown away in normal play, so a quick tap always counts.
+const NO_INPUT = [];
+
+function nextInput(n) {
+  const d = n.q.shift();
+  n.lastSeq = d.seq;
+  return d.bits;
+}
+
 function takeInputs(n) {
+  if (n.budget < 12) n.budget++;
   if (n.q.length > 15) {
     while (n.q.length > 4) {
-      const d = n.q.shift();
-      n.lastSeq = d.seq;
-      n.lastBits = d.bits;
+      nextInput(n);
       n.skipped++;
     }
   }
   if (n.q.length === 0) {
-    n.idle++;
     n.win = 0;
     n.spare = Infinity;
     n.late++;
-    return [n.idle > 12 ? 0 : n.lastBits]; // gone quiet for 200 ms: let go of the keys
+    return ++n.idle > 12 ? [0] : NO_INPUT;
   }
   n.idle = 0;
-  const a = n.q.shift();
-  n.lastSeq = a.seq;
-  n.lastBits = a.bits;
+  const out = [];
+  while (n.q.length && n.budget > 0 && out.length < 3) {
+    out.push(nextInput(n));
+    n.budget--;
+  }
   if (n.q.length < n.spare) n.spare = n.q.length;
   if (++n.win >= TICK_RATE) {
     const unused = n.spare;
     n.win = 0;
     n.spare = Infinity;
-    if (unused >= 2 && n.q.length) {
-      const b = n.q.shift();
-      n.lastSeq = b.seq;
-      n.lastBits = b.bits;
+    if (unused >= 2 && n.q.length && out.length < 3) {
+      out.push(nextInput(n));
       n.trimmed++;
-      return [a.bits, b.bits];
     }
   }
-  return [a.bits];
+  return out;
 }
 
 function tickRoom(room) {
@@ -313,7 +428,7 @@ function tickRoom(room) {
     if (Date.now() >= g.goAt) {
       g.state = 'playing';
       room.phase = 'playing';
-      sim.start();
+      sim.start(g.startIt);
       g.endTick = sim.tick + g.duration * TICK_RATE;
       io.to(room.code).emit('go', sim.it);
       emitRoom(room);
@@ -429,6 +544,8 @@ io.on('connection', (socket) => {
 
   socket.on('create', (msg, ack) => {
     if (typeof ack !== 'function') return;
+    const name = cleanName(msg?.name);
+    if (!name) return ack({ error: 'Enter your name first.', needName: true });
     leaveRoom(socket);
     const code = makeCode();
     if (!code) return ack({ error: 'Server is full, try again in a minute.' });
@@ -437,35 +554,41 @@ io.on('connection', (socket) => {
       hostId: socket.id,
       players: new Map(),
       phase: 'lobby',
-      settings: { mode: MODE_IDS[0], arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true },
+      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true },
       game: null,
+      cup: null,
+      nextTimer: null,
       results: null,
       lastArena: null,
       lastTheme: null,
     };
     rooms.set(code, room);
-    addPlayer(room, socket, msg?.name);
+    addPlayer(room, socket, name);
     ack({ ok: true, id: socket.id, room: roomState(room) });
   });
 
   socket.on('join', (msg, ack) => {
     if (typeof ack !== 'function') return;
+    const name = cleanName(msg?.name);
+    if (!name) return ack({ error: 'Enter your name first.', needName: true });
     const code = String(msg?.code ?? '')
-      .toUpperCase()
-      .replace(/[^A-Z]/g, '')
-      .slice(0, 4);
+      .replace(/\D/g, '')
+      .slice(0, CODE_LEN);
     const room = rooms.get(code);
-    if (!room) return ack({ error: `No room with code ${code || '????'}. Check the code and try again.` });
+    if (!room) return ack({ error: code.length === CODE_LEN ? `No room ${code}. Check the code and try again.` : 'Room codes are 4 digits.' });
     if (room.players.has(socket.id)) return ack({ ok: true, id: socket.id, room: roomState(room) });
     if (room.players.size >= MAX_PLAYERS) return ack({ error: 'That room is full (4 players max).' });
     leaveRoom(socket);
-    const player = addPlayer(room, socket, msg?.name);
+    const player = addPlayer(room, socket, name);
     ack({ ok: true, id: socket.id, room: roomState(room) });
     socket.to(room.code).emit('toast', `${player.name} joined`);
     emitRoom(room);
     // Arrived mid-match: watch this round, play the next one.
     if (room.game) socket.emit('round', roundInfo(room));
-    else if (room.phase === 'results' && room.results) socket.emit('end', room.results);
+    else if (room.phase === 'results' && room.results) {
+      const r = room.results;
+      socket.emit('end', r.cup && !r.cup.final ? { ...r, cup: { ...r.cup, next: Math.max(0, room.nextAt - Date.now()) } } : r);
+    }
   });
 
   socket.on('leave', () => leaveRoom(socket));
@@ -476,8 +599,10 @@ io.on('connection', (socket) => {
 
   socket.on('settings', (msg) => {
     const room = rooms.get(socket.data.code);
-    if (!room || room.hostId !== socket.id || room.game) return;
+    if (!room || room.hostId !== socket.id || room.game || room.cup) return;
     const s = room.settings;
+    if (msg?.game === 'quick' || msg?.game === 'cup') s.game = msg.game;
+    if (CUP_ROUNDS.includes(msg?.rounds)) s.rounds = msg.rounds;
     if (MODE_IDS.includes(msg?.mode)) s.mode = msg.mode;
     if (msg?.arena === 'random' || ARENA_IDS.includes(msg?.arena)) s.arena = msg.arena;
     if (msg?.theme === 'random' || THEME_IDS.includes(msg?.theme)) s.theme = msg.theme;
@@ -488,16 +613,17 @@ io.on('connection', (socket) => {
 
   socket.on('start', () => {
     const room = rooms.get(socket.data.code);
-    if (!room || room.hostId !== socket.id || room.game) return;
+    if (!room || room.hostId !== socket.id || room.game || room.cup) return;
     if (room.players.size < MIN_PLAYERS) return socket.emit('toast', 'Need at least 2 players to start.');
+    if (room.settings.game === 'cup') startCup(room);
     startRound(room);
   });
 
-  // Host: back to the lobby from the results screen (to change settings).
+  // Host: back to the lobby from the results screen (to change settings, or to end a tournament early).
   socket.on('lobby', () => {
     const room = rooms.get(socket.data.code);
     if (!room || room.hostId !== socket.id || room.game) return;
-    room.phase = 'lobby';
+    endCup(room); // also stops a tournament that is between rounds
     emitRoom(room);
   });
 

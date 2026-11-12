@@ -14,25 +14,29 @@ import {
   DT,
   MOVE_SPEED,
   IT_SPEED_MUL,
+  GROUND_ACCEL,
+  GROUND_TURN,
+  GROUND_STOP,
   AIR_ACCEL,
-  GROUND_FRICTION,
-  AIR_FRICTION,
+  AIR_TURN,
+  AIR_KEEP,
+  GRAVITY,
+  AIR_DRAG,
   JUMP_V,
   AIR_JUMP_V,
   AIR_JUMPS,
   JUMP_CUT_V,
-  G_UP,
-  G_DOWN,
-  G_FAST,
-  MAX_FALL,
-  MAX_FAST_FALL,
+  FAST_FALL_G,
   COYOTE_TICKS,
   JUMP_BUFFER_TICKS,
-  DASH_SPEED,
-  DASH_TICKS,
-  DASH_COOLDOWN,
   DROP_TICKS,
   TRAMP_V,
+  LIFT_V,
+  LIFT_RATE,
+  LIFT_GRIP,
+  ORB_SPEED,
+  ORB_MIN_TICKS,
+  ORB_MAX_TICKS,
   EPS,
   RESPAWN_TICKS,
   SPEED_BUFF_MUL,
@@ -41,10 +45,14 @@ import {
   IN_RIGHT,
   IN_JUMP,
   IN_DOWN,
-  IN_DASH,
 } from './config.js';
+import { rampY } from './arenas.js';
 
 const q = (v) => Math.round(v * 100) / 100;
+const NO_TWIST = { grav: 1, speed: 1 };
+const STICK = 16; // how far a slope may be from your feet and still catch you while walking
+const STEP = 8; // how high the low end of a slope may be when you walk onto it from flat ground
+export const RAMP_LIP = 14; // a slope carries on flat for this far past each end, so its ends join up cleanly
 
 export function makeState(x, y) {
   return {
@@ -53,17 +61,19 @@ export function makeState(x, y) {
     vx: 0,
     vy: 0,
     ground: false,
-    gk: 0, // what we are standing on: 1 solid block, 2 thin ledge
+    gk: 0, // what we are standing on: 1 solid block, 2 thin ledge or slope
     face: 1, // -1 left, 1 right
     nc: false, // "no cut": a trampoline launch that releasing jump must not shorten
-    dashDir: 1,
     coyote: 0, // ticks left in which a jump is still allowed after leaving ground
     jbuf: 0, // ticks a jump press is remembered
     air: AIR_JUMPS, // mid-air jumps left
-    dashT: 0, // ticks of dash remaining
-    dashCd: 0, // ticks until dash is ready again
     drop: 0, // ticks of falling through thin ledges
     tp: 0, // > 0 while standing in a portal we just came out of
+    orb: 0, // ticks left of flying between portals as an orb
+    ot: 0, // total ticks of that flight
+    pi: 0, // the portal we entered
+    ox: 0, // where our centre was when we entered it
+    oy: 0,
     stun: 0, // ticks of ignored input (just got tagged)
     frz: 0, // ticks frozen by a Frost power-up
     dead: 0, // ticks until respawn (fell into a pit)
@@ -83,14 +93,15 @@ export function packState(s) {
     s.y,
     s.vx,
     s.vy,
-    (s.ground ? 1 : 0) | (s.face > 0 ? 2 : 0) | (s.nc ? 4 : 0) | (s.dashDir > 0 ? 8 : 0) | (s.gk << 4),
+    (s.ground ? 1 : 0) | (s.face > 0 ? 2 : 0) | (s.nc ? 4 : 0) | (s.gk << 4),
     s.coyote,
     s.jbuf,
     s.air,
-    s.dashT,
-    s.dashCd,
     s.drop,
     s.tp,
+    s.orb,
+    s.ot,
+    s.pi,
     s.stun,
     s.frz,
     s.dead,
@@ -98,8 +109,11 @@ export function packState(s) {
     s.spd,
     s.jmp,
     s.shd,
+    s.ox,
+    s.oy,
   ];
 }
+export const STATE_LEN = 22;
 
 export function unpackState(a) {
   const s = makeState(a[0], a[1]);
@@ -109,22 +123,24 @@ export function unpackState(a) {
   s.ground = (f & 1) === 1;
   s.face = f & 2 ? 1 : -1;
   s.nc = (f & 4) === 4;
-  s.dashDir = f & 8 ? 1 : -1;
   s.gk = (f >> 4) & 3;
   s.coyote = a[5];
   s.jbuf = a[6];
   s.air = a[7];
-  s.dashT = a[8];
-  s.dashCd = a[9];
-  s.drop = a[10];
-  s.tp = a[11];
-  s.stun = a[12];
-  s.frz = a[13];
-  s.dead = a[14];
-  s.pb = a[15];
-  s.spd = a[16];
-  s.jmp = a[17];
-  s.shd = a[18];
+  s.drop = a[8];
+  s.tp = a[9];
+  s.orb = a[10];
+  s.ot = a[11];
+  s.pi = a[12];
+  s.stun = a[13];
+  s.frz = a[14];
+  s.dead = a[15];
+  s.pb = a[16];
+  s.spd = a[17];
+  s.jmp = a[18];
+  s.shd = a[19];
+  s.ox = a[20];
+  s.oy = a[21];
   return s;
 }
 
@@ -133,7 +149,7 @@ export const PF_GROUND = 1;
 export const PF_FACE = 2;
 export const PF_STUN = 4;
 export const PF_FROZEN = 8;
-export const PF_DASH = 16;
+export const PF_ORB = 16;
 export const PF_SPEED = 32;
 export const PF_JUMP = 64;
 export const PF_SHIELD = 128;
@@ -145,12 +161,17 @@ export function publicFlags(s) {
     (s.face > 0 ? PF_FACE : 0) |
     (s.stun > 0 ? PF_STUN : 0) |
     (s.frz > 0 ? PF_FROZEN : 0) |
-    (s.dashT > 0 ? PF_DASH : 0) |
+    (s.orb > 0 ? PF_ORB : 0) |
     (s.spd > 0 ? PF_SPEED : 0) |
     (s.jmp > 0 ? PF_JUMP : 0) |
     (s.shd > 0 ? PF_SHIELD : 0) |
     (s.dead > 0 ? PF_DEAD : 0)
   );
+}
+
+// Move a value towards a target by at most `step`.
+function approach(v, target, step) {
+  return v < target ? Math.min(target, v + step) : Math.max(target, v - step);
 }
 
 function moveX(p, dx, arena) {
@@ -240,11 +261,46 @@ function moveY(p, dy, arena) {
   p.y = ny;
 }
 
+// Slopes. They work like thin ledges that are tilted: you land on them from
+// above, walk along them without bouncing, and jump up through them from below.
+// The player's centre line is what rides the slope.
+function onRamps(p, arena, prevCx, prevFeet, wasGround, vy0, down) {
+  const ramps = arena.ramps;
+  if (!ramps.length || p.drop > 0) return;
+  const cx = p.x + PW / 2;
+  const feet = p.y + PH;
+  let best = Infinity;
+  for (let i = 0; i < ramps.length; i++) {
+    const r = ramps[i];
+    if (cx < r.x0 - RAMP_LIP || cx > r.x1 + RAMP_LIP) continue;
+    const sy = rampY(r, cx);
+    let ok;
+    if (p.ground) {
+      // standing on something flat: walk into the low end of a slope to go up it.
+      // Walking the other way, or holding down, passes underneath instead.
+      const uphill = r.y1 < r.y0 ? 1 : -1;
+      ok = !down && p.vx * uphill > 0 && sy <= feet + EPS && feet - sy <= STEP;
+    } else if (wasGround && vy0 >= 0 && Math.abs(prevFeet - sy) <= STICK) {
+      ok = true; // walking along it, uphill or downhill
+    } else {
+      ok = p.vy >= 0 && prevFeet <= rampY(r, prevCx) + 2 && feet >= sy - EPS; // landing on it
+    }
+    if (ok && sy < best) best = sy;
+  }
+  if (best !== Infinity) {
+    p.y = best - PH;
+    p.vy = 0;
+    p.ground = true;
+    p.gk = 2;
+  }
+}
+
 // Advance one player by one tick.
-//   bits  - IN_LEFT | IN_RIGHT | IN_JUMP | IN_DOWN | IN_DASH
-//   arena - a parsed arena (platforms, trampolines, portals)
+//   bits  - IN_LEFT | IN_RIGHT | IN_JUMP | IN_DOWN
+//   arena - a parsed arena
 //   isIt  - whoever is "it" runs a little faster
-export function stepPlayer(p, bits, arena, isIt = false) {
+//   twist - optional round modifier { grav, speed }
+export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
   if (p.dead > 0) {
     p.dead--;
     p.pb = bits;
@@ -258,7 +314,6 @@ export function stepPlayer(p, bits, arena, isIt = false) {
       p.vy = 0;
       p.ground = false;
       p.coyote = 0;
-      p.dashT = 0;
     }
     return;
   }
@@ -266,15 +321,36 @@ export function stepPlayer(p, bits, arena, isIt = false) {
   if (p.spd > 0) p.spd--;
   if (p.jmp > 0) p.jmp--;
   if (p.shd > 0) p.shd--;
-  if (p.dashCd > 0) p.dashCd--;
   if (p.drop > 0) p.drop--;
+
+  // Flying between portals: no control, straight to the partner.
+  if (p.orb > 0) {
+    p.orb--;
+    p.pb = bits;
+    const a = arena.portals[p.pi];
+    const d = arena.portals[a.to];
+    if (p.orb === 0) {
+      p.x = d.cx - PW / 2;
+      p.y = d.y + d.h - PH - 1;
+      p.tp = 1; // the exit will not take us again until we step out of it
+      p.air = AIR_JUMPS;
+      p.ground = false;
+    } else {
+      const f = 1 - p.orb / p.ot;
+      const e = f * f * (3 - 2 * f); // ease in and out
+      p.x = q(p.ox + (d.cx - p.ox) * e - PW / 2);
+      p.y = q(p.oy + (d.cy - p.oy) * e - PH / 2);
+    }
+    p.vx = 0;
+    p.vy = 0;
+    return;
+  }
 
   let b = bits;
   if (p.stun > 0 || p.frz > 0) {
     if (p.stun > 0) p.stun--;
     if (p.frz > 0) p.frz--;
     b = 0;
-    p.dashT = 0;
   }
   const pressed = b & ~p.pb; // buttons that went down this very tick
   p.pb = bits;
@@ -284,76 +360,79 @@ export function stepPlayer(p, bits, arena, isIt = false) {
   if (b & IN_RIGHT) dir += 1;
   if (dir !== 0) p.face = dir;
 
-  const speed = MOVE_SPEED * (isIt ? IT_SPEED_MUL : 1) * (p.spd > 0 ? SPEED_BUFF_MUL : 1);
+  const speed = MOVE_SPEED * twist.speed * (isIt ? IT_SPEED_MUL : 1) * (p.spd > 0 ? SPEED_BUFF_MUL : 1);
   const jumpMul = p.jmp > 0 ? JUMP_BUFF_MUL : 1;
 
-  if (pressed & IN_DASH && p.dashCd === 0 && p.dashT === 0) {
-    p.dashT = DASH_TICKS;
-    p.dashCd = DASH_COOLDOWN + DASH_TICKS;
-    p.dashDir = dir !== 0 ? dir : p.face;
-    p.face = p.dashDir;
+  // inside an updraft?
+  let lifted = false;
+  const lifts = arena.lifts;
+  for (let i = 0; i < lifts.length; i++) {
+    const z = lifts[i];
+    if (p.x + PW > z.x && p.x < z.x + z.w && p.y + PH > z.y && p.y < z.y + z.h) {
+      lifted = true;
+      break;
+    }
   }
 
+  // --- running: speed builds up, and turning round costs a short skid ---------
+  const target = dir * speed;
+  if (p.ground) {
+    if (dir === 0) p.vx = approach(p.vx, 0, GROUND_STOP * DT);
+    else if (p.vx * dir < 0) p.vx = approach(p.vx, 0, GROUND_TURN * DT);
+    else p.vx = approach(p.vx, target, (Math.abs(p.vx) > speed ? GROUND_STOP : GROUND_ACCEL) * DT);
+  } else if (dir === 0) {
+    p.vx *= lifted ? LIFT_GRIP : AIR_KEEP; // an updraft holds on to you when you let go
+    if (Math.abs(p.vx) < 4) p.vx = 0;
+  } else {
+    p.vx = approach(p.vx, target, (p.vx * dir < 0 ? AIR_TURN : AIR_ACCEL) * DT);
+  }
+
+  // --- jumping -----------------------------------------------------------------
   if (pressed & IN_JUMP) p.jbuf = JUMP_BUFFER_TICKS;
   else if (p.jbuf > 0) p.jbuf--;
+  if (p.jbuf > 0) {
+    if (p.ground || p.coyote > 0) {
+      p.vy = -JUMP_V * jumpMul;
+      p.ground = false;
+      p.coyote = 0;
+      p.jbuf = 0;
+      p.nc = false;
+    } else if (pressed & IN_JUMP && p.air > 0 && p.vy > -AIR_JUMP_V * jumpMul) {
+      // double jump (ignored while already flying up faster, e.g. off a trampoline;
+      // and one used during a trampoline launch can never make the launch shorter)
+      p.vy = -AIR_JUMP_V * jumpMul;
+      p.air--;
+      p.jbuf = 0;
+    }
+  }
+  // let go early for a short hop
+  if (!(b & IN_JUMP) && !p.nc && p.vy < -JUMP_CUT_V) p.vy = -JUMP_CUT_V;
 
-  if (p.dashT > 0) {
-    // dash: a short flat burst that ignores gravity
-    p.dashT--;
-    p.vx = p.dashDir * DASH_SPEED;
-    p.vy = 0;
-    if (p.dashT === 0) p.vx = p.dashDir * speed;
+  // --- gravity, air resistance, updrafts -----------------------------------------
+  if (lifted) {
+    p.vy += (-LIFT_V - p.vy) * LIFT_RATE; // settle to a steady climb
+    p.air = AIR_JUMPS;
+    p.nc = true;
   } else {
-    if (p.ground) {
-      if (dir !== 0) {
-        p.vx = dir * speed; // no ramp-up: full speed the moment you press
-      } else {
-        p.vx *= GROUND_FRICTION;
-        if (Math.abs(p.vx) < 6) p.vx = 0;
-      }
-    } else if (dir !== 0) {
-      const target = dir * speed;
-      if (p.vx < target) p.vx = Math.min(target, p.vx + AIR_ACCEL * DT);
-      else if (p.vx > target) p.vx = Math.max(target, p.vx - AIR_ACCEL * DT);
-    } else {
-      p.vx *= AIR_FRICTION;
-      if (Math.abs(p.vx) < 6) p.vx = 0;
-    }
-
-    if (p.jbuf > 0) {
-      if (p.ground || p.coyote > 0) {
-        p.vy = -JUMP_V * jumpMul;
-        p.ground = false;
-        p.coyote = 0;
-        p.jbuf = 0;
-        p.nc = false;
-      } else if (pressed & IN_JUMP && p.air > 0 && p.vy > -AIR_JUMP_V * jumpMul) {
-        // double jump (ignored while already flying up faster, e.g. off a trampoline;
-        // and one used during a trampoline launch can never make the launch shorter)
-        p.vy = -AIR_JUMP_V * jumpMul;
-        p.air--;
-        p.jbuf = 0;
-      }
-    }
-    // let go early for a short hop
-    if (!(b & IN_JUMP) && !p.nc && p.vy < -JUMP_CUT_V) p.vy = -JUMP_CUT_V;
-
     const fast = (b & IN_DOWN) !== 0 && !p.ground;
-    p.vy += ((p.vy < 0 ? G_UP : G_DOWN) + (fast ? G_FAST : 0)) * DT;
-    const cap = fast ? MAX_FAST_FALL : MAX_FALL;
-    if (p.vy > cap) p.vy = cap;
+    p.vy += (GRAVITY * twist.grav + (fast ? FAST_FALL_G : 0) - AIR_DRAG * p.vy) * DT;
   }
 
-  // hold down on a thin ledge to drop through it
+  // hold down on a thin ledge or slope to drop through it
   if (b & IN_DOWN && p.ground && p.gk === 2) {
     p.drop = DROP_TICKS;
     p.coyote = 0;
   }
 
+  const wasGround = p.ground;
+  const vy0 = p.vy;
+  const prevCx = p.x + PW / 2;
+  const prevFeet = p.y + PH;
   moveX(p, p.vx * DT, arena);
   p.ground = false;
   p.gk = 0;
   moveY(p, p.vy * DT, arena);
+  onRamps(p, arena, prevCx, prevFeet, wasGround, vy0, (b & IN_DOWN) !== 0);
 
   // trampolines: touch one while not rising and up you go
   if (p.vy >= 0) {
@@ -368,7 +447,6 @@ export function stepPlayer(p, bits, arena, isIt = false) {
       p.coyote = 0;
       p.air = AIR_JUMPS;
       p.nc = true;
-      p.dashT = 0;
       break;
     }
   }
@@ -379,11 +457,10 @@ export function stepPlayer(p, bits, arena, isIt = false) {
     p.nc = false;
   } else {
     if (p.coyote > 0) p.coyote--;
-    if (p.vy >= 0) p.nc = false;
+    if (p.vy >= 0 && !lifted) p.nc = false;
   }
 
-  // portals: step in, come out of the partner. You have to step out before
-  // a portal will take you again.
+  // portals: step in and fly to the partner as an orb
   let inPortal = false;
   const po = arena.portals;
   for (let i = 0; i < po.length; i++) {
@@ -392,9 +469,14 @@ export function stepPlayer(p, bits, arena, isIt = false) {
     inPortal = true;
     if (p.tp === 0) {
       const d = po[a.to];
-      p.x = d.cx - PW / 2;
-      p.y = d.y + d.h - PH - 1;
-      p.dashT = 0;
+      const dist = Math.hypot(d.cx - a.cx, d.cy - a.cy);
+      p.ot = Math.max(ORB_MIN_TICKS, Math.min(ORB_MAX_TICKS, Math.round(dist / ORB_SPEED)));
+      p.orb = p.ot;
+      p.pi = i;
+      p.ox = q(p.x + PW / 2);
+      p.oy = q(p.y + PH / 2);
+      p.vx = 0;
+      p.vy = 0;
     }
     break;
   }
@@ -404,7 +486,6 @@ export function stepPlayer(p, bits, arena, isIt = false) {
     p.dead = RESPAWN_TICKS;
     p.vx = 0;
     p.vy = 0;
-    p.dashT = 0;
   }
 
   p.x = q(p.x);

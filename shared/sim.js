@@ -18,6 +18,7 @@ import {
   SHIELD_TICKS,
   FREEZE_IT_TICKS,
   FREEZE_RUNNERS_TICKS,
+  SAFE_BONUS,
 } from './config.js';
 import { makeState, stepPlayer } from './physics.js';
 
@@ -34,6 +35,7 @@ export class Sim {
     this.pickups = []; // { point, type } lying on the map
     this.nextPickup = Infinity; // set by start()
     this.powerups = true;
+    this.twist = { grav: 1, speed: 1, items: 1 }; // round modifier (see TWISTS in config.js)
     // Lag compensation: how many ticks in the past each player sees the others.
     // 0 everywhere for local play; the server fills it in from measured latency.
     this.rewind = [0, 0, 0, 0];
@@ -70,15 +72,16 @@ export class Sim {
     return this.it;
   }
 
-  // GO: choose who is "it" and start the power-up clock.
-  start() {
-    this.pickIt();
-    this.nextPickup = this.tick + PICKUP_FIRST_TICKS;
+  // GO: choose who is "it" (or use the one given) and start the power-up clock.
+  start(itSlot = -1) {
+    if (itSlot >= 0 && this.players[itSlot]) this.it = itSlot;
+    else this.pickIt();
+    this.nextPickup = this.tick + Math.round(PICKUP_FIRST_TICKS / this.twist.items);
   }
 
   stepOne(slot, bits) {
     const pl = this.players[slot];
-    if (pl) stepPlayer(pl.s, bits, this.arena, slot === this.it);
+    if (pl) stepPlayer(pl.s, bits, this.arena, slot === this.it, this.twist);
   }
 
   // Call once per tick after every player has been stepped.
@@ -99,7 +102,7 @@ export class Sim {
 
   checkTag() {
     const it = this.players[this.it];
-    if (!it || it.s.dead > 0 || it.s.stun > 0 || it.s.frz > 0) return;
+    if (!it || it.s.dead > 0 || it.s.stun > 0 || it.s.frz > 0 || it.s.orb > 0) return;
     // "It" sees everyone else slightly in the past (network delay + smoothing),
     // so also accept a touch against where the target was on the tagger's screen.
     const back = Math.min(HIST - 2, this.rewind[it.slot] | 0);
@@ -107,7 +110,7 @@ export class Sim {
     let best = null;
     let bestD = Infinity;
     for (const o of this.players) {
-      if (!o || o === it || o.s.dead > 0 || o.immune > 0) continue;
+      if (!o || o === it || o.s.dead > 0 || o.immune > 0 || o.s.orb > 0) continue; // nobody is tagged mid-portal
       let hit = touching(it.s.x, it.s.y, o.s.x, o.s.y);
       if (!hit && i >= 0) hit = touching(it.s.x, it.s.y, this.hx[o.slot][i], this.hy[o.slot][i]);
       if (!hit) continue;
@@ -127,14 +130,12 @@ export class Sim {
       it.s.stun = BLOCK_STUN_TICKS;
       it.s.vx = it.s.x < best.s.x ? -420 : 420;
       it.s.vy = -380;
-      it.s.dashT = 0;
       this.events.push({ type: 'block', from: it.slot, to: best.slot });
       return;
     }
     it.immune = IMMUNE_TICKS; // no tag-backs
     it.tags++;
     best.s.stun = STUN_TICKS; // brief freeze so the old "it" can get away
-    best.s.dashT = 0;
     this.it = best.slot;
     this.events.push({ type: 'tag', from: it.slot, to: best.slot });
   }
@@ -146,7 +147,7 @@ export class Sim {
       const pk = this.pickups[k];
       const pt = pts[pk.point];
       for (const o of this.players) {
-        if (!o || o.s.dead > 0) continue;
+        if (!o || o.s.dead > 0 || o.s.orb > 0) continue;
         const cx = Math.max(o.s.x, Math.min(pt.x, o.s.x + PW));
         const cy = Math.max(o.s.y, Math.min(pt.y, o.s.y + PH));
         if ((cx - pt.x) ** 2 + (cy - pt.y) ** 2 > PICKUP_R * PICKUP_R) continue;
@@ -158,8 +159,8 @@ export class Sim {
     }
     // spawn
     if (!this.powerups || this.tick < this.nextPickup || !pts.length) return;
-    this.nextPickup = this.tick + PICKUP_EVERY_TICKS;
-    if (this.pickups.length >= PICKUP_MAX) return;
+    this.nextPickup = this.tick + Math.round(PICKUP_EVERY_TICKS / this.twist.items);
+    if (this.pickups.length >= PICKUP_MAX + (this.twist.items > 1 ? 2 : 0)) return;
     const free = [];
     for (let p = 0; p < pts.length; p++) {
       if (this.pickups.some((k) => k.point === p)) continue;
@@ -222,4 +223,19 @@ export function standings(sim, names = [], mode = 'potato') {
   rows.sort((a, b) => a.ticks - b.ticks || a.slot - b.slot);
   const best = rows.length ? rows[0].ticks : 0;
   return { rows, winners: rows.filter((r) => r.ticks === best).map((r) => r.slot), loser: -1 };
+}
+
+// Tournament points for one round (rules in config.js): place points for least
+// time as it, plus a bonus for everyone who is not it at the buzzer.
+export function cupPoints(sim, double = false) {
+  const rows = sim
+    .active()
+    .map((p) => ({ slot: p.slot, ticks: p.itTicks }))
+    .sort((a, b) => a.ticks - b.ticks);
+  const out = {};
+  for (const r of rows) {
+    const place = rows.findIndex((o) => o.ticks === r.ticks); // equal times share the better place
+    out[r.slot] = (rows.length - 1 - place + (r.slot === sim.it ? 0 : SAFE_BONUS)) * (double ? 2 : 1);
+  }
+  return out;
 }

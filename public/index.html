@@ -4,244 +4,210 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <title>You're It! - multiplayer tag</title>
-    <meta name="description" content="Real-time multiplayer tag for 2-4 players. Share a 4-letter room code and don't be it when the clock runs out." />
-    <meta name="theme-color" content="#ddd2b8" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='3' fill='%23c4342b'/%3E%3Cpath d='M9 22l7-13 7 13z' fill='%23f4ecd9'/%3E%3C/svg%3E"
-    />
+    <meta name="description" content="A fast game of tag for 2-4 friends, right in the browser. Make a room, share the 4-digit code, run." />
+    <meta name="theme-color" content="#efe6d2" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23c8372d'/%3E%3Ctext x='16' y='22' font-size='15' font-weight='700' font-family='Georgia,serif' text-anchor='middle' fill='%23fff6e8'%3EIT%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/css/fonts.css" />
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
-    <canvas id="stage"></canvas>
-
-    <!-- ink-edge filters and icons, reused all over the menus -->
-    <svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
+    <!-- icons, drawn once and reused -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <defs>
-        <filter id="rough" x="-5%" y="-20%" width="110%" height="140%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.035 0.09" numOctaves="2" seed="4" result="n" />
-          <feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-        <filter id="rough-sm" x="-5%" y="-10%" width="110%" height="120%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="9" result="n" />
-          <feDisplacementMap in="SourceGraphic" in2="n" scale="3" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-
-        <symbol id="i-swords" viewBox="0 0 48 48">
-          <g fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 39 36 8c2-2 4 0 3 2L15 43" />
-            <path d="M39 39 12 8c-2-2-4 0-3 2l24 33" />
-            <path d="M5 33l10 8M43 33l-10 8" />
-          </g>
-        </symbol>
-        <symbol id="i-gate" viewBox="0 0 48 48">
-          <g fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 13c12 3 26 3 38 0" />
-            <path d="M9 21h30M14 14v28M34 14v28M24 14v7" />
-          </g>
-        </symbol>
-        <symbol id="i-dummy" viewBox="0 0 48 48">
-          <g fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="24" cy="11" r="6" />
-            <path d="M24 17v24M9 23h30M17 41h14M14 23l-3 9M34 23l3 9" />
-          </g>
-        </symbol>
-        <symbol id="i-chev" viewBox="0 0 24 24"><path d="M8 4l8 8-8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" /></symbol>
-        <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8M7 12h13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></symbol>
-        <symbol id="i-copy" viewBox="0 0 24 24">
-          <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10 14a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-1.5 1.5" />
-            <path d="M14 10a4 4 0 0 0-6 0l-4 4a4 4 0 0 0 6 6l1.5-1.5" />
-          </g>
-        </symbol>
-        <symbol id="i-sound" viewBox="0 0 24 24">
-          <g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 9v6h4l5 4V5L8 9z" />
-            <path class="waves" d="M16.5 9a4 4 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11" />
-            <path class="cross" d="M17 9l5 6M22 9l-5 6" />
-          </g>
-        </symbol>
-        <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></symbol>
-        <symbol id="i-exit" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /></symbol>
-        <symbol id="i-potato" viewBox="0 0 48 48">
-          <g fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="22" cy="29" r="13" />
-            <path d="M31 19l5-5M36 14c2-4 5-4 6-7M17 25c1-3 3-5 6-6" />
-          </g>
-        </symbol>
-        <symbol id="i-hourglass" viewBox="0 0 48 48">
-          <g fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 6h24M12 42h24M14 6c0 10 10 12 10 18S14 32 14 42M34 6c0 10-10 12-10 18s10 8 10 18" />
-            <path d="M20 37h8" />
-          </g>
-        </symbol>
+        <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-up" viewBox="0 0 24 24"><path d="M5 14l7-7 7 7M5 20l7-7 7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-down" viewBox="0 0 24 24"><path d="M5 9l7 7 7-7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /></symbol>
+        <symbol id="i-back" viewBox="0 0 24 24"><path d="M11 5l-7 7 7 7M4 12h16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-erase" viewBox="0 0 24 24"><path d="M9 5h11v14H9l-6-7zM12 9l5 6M17 9l-5 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /></symbol>
+        <symbol id="i-speed" viewBox="0 0 24 24"><path d="M14 2L5 13.5h6L8.5 22 19 9.8h-6z" fill="currentColor" /></symbol>
+        <symbol id="i-jump" viewBox="0 0 24 24"><path d="M5 11l7-7 7 7M5 20l7-7 7 7" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 2l8 3.6v6.6c0 5-3.4 8.4-8 9.8-4.6-1.4-8-4.8-8-9.8V5.600z" fill="currentColor" /></symbol>
+        <symbol id="i-freeze" viewBox="0 0 24 24"><path d="M12 2v20M3.300 7l17.400 10M20.700 7L3.300 17" fill="none" stroke="currentColor" stroke-width="2.800" stroke-linecap="round" /></symbol>
       </defs>
     </svg>
 
-    <!-- HOME -->
-    <main id="home" class="screen">
-      <div class="scroll home-scroll">
-        <div class="rod"></div>
-        <div class="paper home-paper">
-          <section class="hero">
-            <div class="sun" aria-hidden="true"></div>
-            <h1 class="logo"><span class="l1">You're</span><span class="l2">It!</span></h1>
-            <p class="tagline">Tag for two to four players. One of you is it. Don't let it be you when the clock runs out.</p>
-            <div class="hero-foot">
-              <canvas id="hero-avatar" width="150" height="150" aria-hidden="true"></canvas>
-              <p class="lore"><span class="seal" aria-hidden="true">鬼</span><span>In Japan the game is <i>onigokko</i>, and whoever is it is the <i>oni</i>.</span></p>
-            </div>
-          </section>
-
-          <section class="actions">
-            <label class="namefield" for="name">
-              <span>Your name</span>
-              <input id="name" maxlength="12" autocomplete="off" spellcheck="false" placeholder="Player" />
-            </label>
-
-            <button id="btn-create" class="card-btn primary" type="button">
-              <span class="crest"><svg><use href="#i-swords" /></svg></span>
-              <span class="txt"><b>Create a room</b><small>Host a match and share the code with friends</small></span>
-              <svg class="chev"><use href="#i-chev" /></svg>
-            </button>
-
-            <form id="join-form" class="card-btn join" autocomplete="off">
-              <span class="crest"><svg><use href="#i-gate" /></svg></span>
-              <span class="txt"><b>Join a room</b><small>Type the 4-letter code a friend gave you</small></span>
-              <span class="join-row">
-                <input id="code" maxlength="4" placeholder="CODE" spellcheck="false" autocapitalize="characters" aria-label="Room code" />
-                <button class="mini-btn" type="submit">Join</button>
-              </span>
-            </form>
-
-            <button id="btn-practice" class="card-btn" type="button">
-              <span class="crest"><svg><use href="#i-dummy" /></svg></span>
-              <span class="txt"><b>Practice</b><small>Spar with bots. Works on your own.</small></span>
-              <svg class="chev"><use href="#i-chev" /></svg>
-            </button>
-
-            <p id="home-error" class="error" role="alert"></p>
-          </section>
-
-          <section class="howto" aria-label="Controls">
-            <div class="ctl"><span class="keys"><kbd>A</kbd><kbd>D</kbd></span><span>Run</span></div>
-            <div class="ctl"><span class="keys"><kbd>W</kbd><i>or</i><kbd class="wide">Space</kbd></span><span>Jump, and again in the air</span></div>
-            <div class="ctl"><span class="keys"><kbd>S</kbd></span><span>Drop through ledges</span></div>
-            <div class="ctl"><span class="keys"><kbd class="wide">Shift</kbd><i>or</i><kbd>E</kbd></span><span>Dash</span></div>
-            <div class="ctl note">Arrow keys work too. On a phone you get buttons.</div>
-          </section>
+    <!-- the match itself: canvases, heads-up display, touch controls -->
+    <div id="game" hidden>
+      <div id="stage"></div>
+      <div id="hud">
+        <ul id="pills" aria-label="Players"></ul>
+        <div class="clock">
+          <div id="timer" aria-label="Seconds left">60</div>
+          <div id="round-label"></div>
         </div>
-        <div class="rod"></div>
+        <button id="btn-pause" class="hud-btn" aria-label="Menu (Esc)"><svg class="ic"><use href="#i-menu" /></svg></button>
+        <div id="buffs"></div>
+        <div id="banner" role="status"></div>
+        <div id="count" aria-hidden="true"></div>
+        <div id="hint"></div>
       </div>
-      <p id="conn" class="conn">Connecting to server&hellip;</p>
-    </main>
+      <div id="touch" class="touch" hidden>
+        <div class="pad" data-pad>
+          <span data-side="l"><svg class="ic"><use href="#i-left" /></svg></span>
+          <span data-side="r"><svg class="ic"><use href="#i-right" /></svg></span>
+        </div>
+        <div class="acts">
+          <button class="t-down" data-bit="8" aria-label="Down"><svg class="ic"><use href="#i-down" /></svg></button>
+          <button class="t-jump" data-bit="4" aria-label="Jump"><svg class="ic"><use href="#i-up" /></svg></button>
+        </div>
+      </div>
+    </div>
 
-    <!-- LOBBY (online room, or practice setup) -->
-    <main id="lobby" class="screen hidden">
-      <div class="scroll lobby-scroll">
-        <div class="rod"></div>
-        <div class="paper lobby-paper">
-          <header class="lobby-head">
-            <button id="btn-leave" class="ghost-btn" type="button"><svg><use href="#i-back" /></svg>Leave</button>
-            <div class="roomcode">
-              <small id="room-label">Room code</small>
-              <div id="room-code" class="tiles" aria-live="polite"></div>
-            </div>
-            <button id="btn-copy" class="ghost-btn" type="button"><svg><use href="#i-copy" /></svg>Copy invite link</button>
-          </header>
+    <main id="ui">
+      <!-- 1. who are you -->
+      <section id="s-name" class="screen" hidden>
+        <form id="name-form" class="card narrow" autocomplete="off">
+          <h1 class="title">You're It<span class="bang">!</span></h1>
+          <label class="lead" for="name">What should we call you?</label>
+          <input id="name" type="text" maxlength="12" placeholder="Your name" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="go" data-autofocus />
+          <p class="error" id="name-error" role="alert"></p>
+          <button class="btn primary" id="btn-name" type="submit">Continue</button>
+        </form>
+      </section>
 
-          <div class="lobby-grid">
-            <section class="players-col">
-              <h2>Players</h2>
-              <ul id="players" class="players"></ul>
-              <div id="bots-row" class="set hidden">
-                <h3>Bots</h3>
-                <div id="opt-bots" class="opts seg"></div>
-              </div>
-            </section>
-
-            <section id="settings" class="settings-col">
-              <h2>Match <small id="settings-note"></small></h2>
-              <div class="set">
-                <h3>Rules</h3>
-                <div id="opt-mode" class="opts modes"></div>
-              </div>
-              <div class="set">
-                <h3>Art style</h3>
-                <div id="opt-theme" class="opts thumbs"></div>
-              </div>
-              <div class="set">
-                <h3>Arena</h3>
-                <div id="opt-arena" class="opts thumbs"></div>
-              </div>
-              <div class="set pair">
-                <div>
-                  <h3>Round length</h3>
-                  <div id="opt-duration" class="opts seg"></div>
-                </div>
-                <div>
-                  <h3>Power-ups</h3>
-                  <div id="opt-powerups" class="opts seg"></div>
-                </div>
-              </div>
-            </section>
+      <!-- 2. home -->
+      <section id="s-home" class="screen" hidden>
+        <div class="card narrow">
+          <h1 class="title">You're It<span class="bang">!</span></h1>
+          <p class="lead">Tag for 2-4 players. Don't be it when the clock runs out.</p>
+          <nav class="menu" aria-label="Main menu">
+            <button class="item" id="btn-create" data-autofocus><kbd>1</kbd><span><b>Create a room</b><small>Host a game and share the code</small></span></button>
+            <button class="item" id="btn-join"><kbd>2</kbd><span><b>Join a room</b><small>Enter a 4-digit code</small></span></button>
+            <button class="item" id="btn-practice"><kbd>3</kbd><span><b>Practice</b><small>Play against bots</small></span></button>
+          </nav>
+          <p class="error" id="home-error" role="alert"></p>
+          <div class="foot">
+            <button class="link" id="btn-rename">Playing as <b id="home-name"></b> - change</button>
+            <button class="link" id="btn-help">How to play</button>
+            <button class="link" id="btn-sound"></button>
           </div>
+          <p class="conn" id="conn"></p>
+        </div>
+      </section>
 
-          <footer class="lobby-foot">
-            <button id="btn-start" class="brush-btn" type="button">Start match</button>
-            <p id="lobby-wait" class="wait"></p>
+      <!-- 3. join by code, with our own number pad -->
+      <section id="s-join" class="screen" hidden>
+        <div class="card narrow">
+          <header class="bar">
+            <button class="icon-btn" id="btn-join-back" aria-label="Back (Esc)"><svg class="ic"><use href="#i-back" /></svg></button>
+            <h2>Join a room</h2>
+          </header>
+          <p class="lead">Type the 4-digit room code.</p>
+          <div class="digits" id="digits" role="group" aria-label="Room code"><span></span><span></span><span></span><span></span></div>
+          <p class="error" id="join-error" role="alert"></p>
+          <div class="numpad" id="numpad">
+            <button data-d="1">1</button><button data-d="2">2</button><button data-d="3">3</button>
+            <button data-d="4">4</button><button data-d="5">5</button><button data-d="6">6</button>
+            <button data-d="7">7</button><button data-d="8">8</button><button data-d="9">9</button>
+            <button data-d="back" aria-label="Delete"><svg class="ic"><use href="#i-erase" /></svg></button>
+            <button data-d="0">0</button>
+            <button data-d="go" class="go" id="btn-join-go" disabled>Join</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. lobby (an online room) and practice setup share this screen -->
+      <section id="s-lobby" class="screen" hidden>
+        <div class="card wide">
+          <header class="bar">
+            <button class="icon-btn" id="btn-leave" aria-label="Leave"><svg class="ic"><use href="#i-back" /></svg></button>
+            <h2 id="lobby-title">Room</h2>
+            <div class="code" id="lobby-code" aria-label="Room code"></div>
+            <button class="btn small" id="btn-copy"><svg class="ic"><use href="#i-link" /></svg><span>Copy invite link</span></button>
+          </header>
+          <div class="lobby">
+            <div class="col">
+              <h3 id="players-title">Players</h3>
+              <ul class="players" id="players"></ul>
+              <p class="note" id="lobby-note"></p>
+              <figure class="preview"><img id="preview" alt="" /><figcaption id="preview-cap"></figcaption></figure>
+            </div>
+            <div class="col">
+              <h3>Game</h3>
+              <div class="options" id="options"></div>
+            </div>
+          </div>
+          <footer class="actions">
+            <p class="note" id="start-note"></p>
+            <button class="btn primary big" id="btn-start">Start</button>
           </footer>
         </div>
-        <div class="rod"></div>
-      </div>
+      </section>
+
+      <!-- 5. results (shown over the finished match) -->
+      <section id="s-results" class="screen over" hidden>
+        <div class="card mid">
+          <p class="kicker" id="res-kicker"></p>
+          <h2 class="res-title" id="res-title"></h2>
+          <p class="lead" id="res-sub"></p>
+          <table class="table" id="res-table"></table>
+          <p class="note" id="res-note"></p>
+          <footer class="actions">
+            <button class="btn" id="btn-res-back"></button>
+            <button class="btn primary" id="btn-res-again"></button>
+          </footer>
+        </div>
+      </section>
+
+      <!-- pause menu (over a running match) -->
+      <section id="s-pause" class="screen over" hidden>
+        <div class="card narrow">
+          <h2>Paused</h2>
+          <p class="note" id="pause-note"></p>
+          <nav class="menu">
+            <button class="item plain" id="btn-resume" data-autofocus><span><b>Resume</b></span><kbd>Esc</kbd></button>
+            <button class="item plain" id="btn-pause-sound"><span><b id="pause-sound"></b></span></button>
+            <button class="item plain" id="btn-pause-full"><span><b>Full screen</b></span></button>
+            <button class="item plain" id="btn-pause-help"><span><b>How to play</b></span></button>
+            <button class="item plain danger" id="btn-quit"><span><b>Leave match</b></span></button>
+          </nav>
+        </div>
+      </section>
+
+      <!-- how to play -->
+      <section id="s-help" class="screen over" hidden>
+        <div class="card mid help">
+          <header class="bar">
+            <button class="icon-btn" id="btn-help-back" aria-label="Back (Esc)" data-autofocus><svg class="ic"><use href="#i-back" /></svg></button>
+            <h2>How to play</h2>
+          </header>
+          <p>One player is <b class="it">it</b>. Touch someone to pass it on. In <b>Hot Potato</b>, whoever is it when the clock hits zero loses. In <b>Least Time</b>, the player who spent the least time as it wins.</p>
+          <h3>Controls</h3>
+          <ul class="keys">
+            <li><span><kbd>&larr;</kbd><kbd>&rarr;</kbd> or <kbd>A</kbd><kbd>D</kbd></span> Run</li>
+            <li><span><kbd>&uarr;</kbd> <kbd>W</kbd> or <kbd>Space</kbd></span> Jump - press again in the air for a second jump</li>
+            <li><span><kbd>&darr;</kbd> or <kbd>S</kbd></span> Drop through thin ledges and slopes, fall faster</li>
+          </ul>
+          <h3>Around the arena</h3>
+          <ul class="plain">
+            <li><b>Trampolines</b> launch you high.</li>
+            <li><b>Updrafts</b> (columns of rising air) carry you up - let go and ride.</li>
+            <li><b>Portals</b> turn you into a spark and fly you to the matching portal. Nobody can tag you on the way.</li>
+            <li><b>Slopes</b> can be walked up and down, and jumped through from below.</li>
+          </ul>
+          <h3>Power-ups</h3>
+          <ul class="powers">
+            <li><svg class="ic" style="color: #e89a10"><use href="#i-speed" /></svg><b>Swift</b> Run faster for 6 s</li>
+            <li><svg class="ic" style="color: #2fae58"><use href="#i-jump" /></svg><b>Spring</b> Jump higher for 7 s</li>
+            <li><svg class="ic" style="color: #3b8fe8"><use href="#i-shield" /></svg><b>Ward</b> Blocks one tag</li>
+            <li><svg class="ic" style="color: #45b9d8"><use href="#i-freeze" /></svg><b>Frost</b> Freezes the other side for a moment</li>
+          </ul>
+          <h3>Tournament</h3>
+          <ul class="plain">
+            <li>Several rounds. Each round, the less time you spent as it, the more points you get.</li>
+            <li>Everyone who is <b>not</b> it at the buzzer gets a bonus point.</li>
+            <li>The leader starts the next round as it. Every second round has a twist. The last round counts double.</li>
+          </ul>
+        </div>
+      </section>
     </main>
 
-    <!-- RESULTS -->
-    <div id="results" class="screen overlay hidden">
-      <div class="scroll results-scroll">
-        <div class="rod"></div>
-        <div class="paper results-paper">
-          <div class="verdict">
-            <span id="results-seal" class="seal big" aria-hidden="true">勝</span>
-            <div>
-              <h2 id="results-title">Round over</h2>
-              <p id="results-sub"></p>
-            </div>
-          </div>
-          <ol id="results-list" class="results-list"></ol>
-          <div class="btn-row">
-            <button id="btn-again" class="brush-btn" type="button">Play again</button>
-            <button id="btn-tolobby" class="ghost-btn" type="button">Change settings</button>
-            <button id="btn-quit" class="ghost-btn" type="button">Leave</button>
-          </div>
-          <p id="results-wait" class="wait"></p>
-        </div>
-        <div class="rod"></div>
-      </div>
-    </div>
+    <div id="toasts" role="status"></div>
 
-    <div id="topbar">
-      <button id="btn-exit" class="icon hidden" type="button" title="Leave match" aria-label="Leave match"><svg><use href="#i-exit" /></svg></button>
-      <button id="btn-full" class="icon" type="button" title="Full screen" aria-label="Full screen"><svg><use href="#i-full" /></svg></button>
-      <button id="btn-mute" class="icon" type="button" title="Sound on/off" aria-label="Sound on/off"><svg><use href="#i-sound" /></svg></button>
-    </div>
-
-    <div id="touch" class="hidden">
-      <div class="pad">
-        <button data-bit="1" aria-label="Move left">&#9664;</button>
-        <button data-bit="2" aria-label="Move right">&#9654;</button>
-      </div>
-      <div class="pad right">
-        <div class="stack">
-          <button class="small" data-bit="16" aria-label="Dash">DASH</button>
-          <button class="small" data-bit="8" aria-label="Drop down">&#9660;</button>
-        </div>
-        <button class="jump" data-bit="4" aria-label="Jump">JUMP</button>
-      </div>
-    </div>
-
-    <div id="toasts" aria-live="polite"></div>
-
+    <script src="/socket.io/socket.io.js"></script>
     <script type="module" src="/js/main.js"></script>
   </body>
 </html>

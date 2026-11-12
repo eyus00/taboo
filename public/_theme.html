@@ -1,0 +1,107 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>style test</title>
+<link rel="stylesheet" href="/css/fonts.css" />
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #stage { position: absolute; inset: 0; overflow: hidden; }
+  .layer { position: absolute; left: 0; top: 0; }
+  .layer.fg { width: 100%; height: 100%; }
+  .flash { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+  .flash.go { animation: flash 0.35s ease-out; }
+  @keyframes flash { from { opacity: var(--a, 0.2); } to { opacity: 0; } }
+  #info { position: absolute; left: 8px; bottom: 8px; font: 12px monospace; color: #fff; background: rgba(0,0,0,.6); padding: 2px 6px; }
+</style>
+<div id="stage"></div>
+<div id="info"></div>
+<script type="module">
+  // Development page: four bots play a match in one art style.
+  //   /_theme.html?theme=ink&arena=hills            whole arena, as on a laptop
+  //   ...&zoom=1.6&fx=820&fy=900                    fixed close-up centred on a world point
+  //   ...&seed=3&names=0&freeze=5                    different match / no names / stop the clock after 5 s
+  import { PW, PH } from '/shared/config.js';
+  import { arenaById } from '/shared/arenas.js';
+  import { Sim } from '/shared/sim.js';
+  import { makeBot, botThink } from '/shared/bots.js';
+  import { Renderer } from '/js/renderer.js';
+  import { THEME_MAP } from '/js/themes/index.js';
+
+  const q = new URLSearchParams(location.search);
+  const arena = arenaById(q.get('arena') || 'hills');
+  const zoom = Number(q.get('zoom')) || 0;
+  const opts = zoom ? { zoom, focus: { x: Number(q.get('fx')) || arena.w / 2, y: Number(q.get('fy')) || arena.h / 2 } } : {};
+  const R = new Renderer(document.getElementById('stage'), opts);
+  await document.fonts.ready;
+  for (const f of document.fonts) f.load().catch(() => {});
+  await document.fonts.ready;
+  const themeId = q.get('theme') || 'ink';
+  if (!THEME_MAP[themeId]) THEME_MAP[themeId] = (await import(`/js/themes/${themeId}.js`)).default; // errors show up, no fallback
+  R.setScene(arena, themeId);
+  addEventListener('resize', () => R.resize());
+
+  let seed = Number(q.get('seed')) || 7;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const sim = new Sim(arena, rnd);
+  const names = ['Mika', 'Jo', 'Sam', 'Lee'];
+  const bots = [];
+  for (let i = 0; i < 4; i++) {
+    sim.add(i);
+    bots.push(makeBot(i + 1));
+  }
+  sim.twist = { grav: 1, speed: 1, items: 3 };
+  sim.start();
+  sim.nextPickup = 20;
+  R.onEvent = () => {};
+
+  const freeze = Number(q.get('freeze')) || 0;
+  let last = performance.now();
+  let acc = 0;
+  let simT = 0;
+  const frames = [];
+  const draws = [];
+  window.__perf = () => {
+    const f = frames.slice(-240);
+    const d = draws.slice(-240);
+    const avg = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
+    const sorted = f.slice().sort((x, y) => x - y);
+    return { frame: avg(f), p95: sorted[Math.floor(sorted.length * 0.95)] || 0, draw: avg(d), level: R.level, n: f.length };
+  };
+  function frame(now) {
+    const dt = Math.min(100, now - last);
+    last = now;
+    frames.push(dt);
+    if (!freeze || simT < freeze) {
+      acc += dt;
+      while (acc >= 1000 / 60) {
+        acc -= 1000 / 60;
+        simT += 1 / 60;
+        sim.step([0, 1, 2, 3].map((i) => botThink(sim, i, bots[i])));
+        for (const e of sim.events) {
+          if (e.type === 'tag') R.tagFx(e.from, e.to);
+          else if (e.type === 'block') R.blockFx(e.from, e.to);
+          else if (e.type === 'pick') R.pickFx(e.slot, e.kind);
+        }
+        sim.events.length = 0;
+      }
+    }
+    const view = {
+      phase: 'playing',
+      it: sim.it,
+      names: q.get('names') !== '0',
+      pickups: sim.pickups,
+      players: sim.active().map((p) => ({ slot: p.slot, name: names[p.slot], x: p.s.x, y: p.s.y, vx: p.s.vx, vy: p.s.vy, ground: p.s.ground, face: p.s.face, immune: p.immune, stun: p.s.stun, frz: p.s.frz, dead: p.s.dead, orb: p.s.orb, spd: p.s.spd, jmp: p.s.jmp, shd: p.s.shd, itTicks: p.itTicks, local: p.slot === 0 })),
+    };
+    const t0 = performance.now();
+    R.draw(view, now);
+    draws.push(performance.now() - t0);
+    if (frames.length % 30 === 0) {
+      const p = window.__perf();
+      const el = document.getElementById('info');
+      if (el) el.textContent = `${(1000 / p.frame).toFixed(0)} fps  draw ${p.draw.toFixed(2)} ms  level ${p.level}`;
+    }
+    requestAnimationFrame(frame);
+  }
+  if (q.get('info') === '0') document.getElementById('info').remove();
+  requestAnimationFrame(frame);
+  window.__ready = true;
+</script>

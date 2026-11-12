@@ -1,137 +1,314 @@
-// Draws a match. Everything that depends on the art style is delegated to a
-// theme (see ./themes); this file owns the camera, layout, animation state,
-// particles, labels, the minimap and the HUD.
+// Draws a match. Built to hold a steady frame rate on modest laptops:
 //
-// Three coordinate systems are used while drawing a frame:
-//   world  - arena pixels; moves and zooms with the camera
-//   art    - the theme's 800x500 backdrop board, scaled to cover the screen
-//   screen - 540 units tall, as wide as the window; HUD and labels live here
+//  * Everything that never moves - backdrop, platforms, slopes - is painted
+//    ONCE into a background canvas. The browser keeps that as a finished
+//    picture; showing it again costs nothing.
+//  * A transparent foreground canvas sits on top. Each frame it is cleared and
+//    only the few moving things are drawn: players, items, sparks.
+//  * Anything fancy (glows, gradients, text) is pre-rendered into small sprites.
+//  * If frames still take too long, the foreground drops its resolution.
+//
+// The whole arena is shown at once whenever the screen is big enough for the
+// characters to stay readable; on small screens the view follows your player.
 
-import { VIEW_H, ZOOM_MIN, ZOOM_MAX, ART_W, ART_H, PW, PH, TICK_RATE, PICKUP_TYPES, PICKUP_INFO, DASH_COOLDOWN, DASH_TICKS, SPEED_BUFF_TICKS, JUMP_BUFF_TICKS, SHIELD_TICKS } from '/shared/config.js';
+import { ART_W, ART_H, PW, PH, PICKUP_TYPES, PICKUP_INFO } from '/shared/config.js';
+import { LEDGE_H } from '/shared/arenas.js';
 import { THEME_MAP } from './themes/index.js';
-import { clamp, mulberry32, hashStr, rr, fitText, drawIcon, KIND_COLORS } from './util.js';
+import { clamp, mulberry32, hashStr, hash1, rgba, rr, KIND_COLORS, PORTAL_COLORS } from './util.js';
 
-const MIN_ASPECT = 1.25;
-const MAX_ASPECT = 2.4;
-const SOLO_ZOOM = 0.78; // nobody else nearby
+const MIN_FIT = 0.5; // CSS px per world unit: below this the whole map would be too small to play
+const FOLLOW_K = 0.62; // zoom used instead, with the view following you
+const MAX_BG_PIXELS = 3.4e6; // cap on the background canvas (keeps 4K / retina screens fast)
+const CAP = 16; // slopes are drawn this much longer at each end (a player's centre rides them)
+const LABEL_PX = 12;
 
 export class Renderer {
-  // opts.size = [w, h] renders into an off-screen canvas of that many pixels (thumbnails)
-  constructor(canvas, opts = {}) {
-    this.canvas = canvas;
-    this.fixed = opts.size || null;
-    this.ctx = canvas.getContext('2d', { alpha: false });
+  // stage: an element to put the canvases in, or null to draw off screen (opts.size = [w, h]).
+  // opts.whole: always show the whole arena. opts.zoom / opts.focus: fixed zoom and centre.
+  // opts.padBottom: CSS px the following view may scroll below the arena (room for touch buttons).
+  constructor(stage, opts = {}) {
+    this.stage = stage;
+    this.opts = opts;
+    this.bg = document.createElement('canvas');
+    this.fg = document.createElement('canvas');
+    this.bg.className = 'layer bg';
+    this.fg.className = 'layer fg';
+    this.bgx = this.bg.getContext('2d', { alpha: false });
+    this.fgx = this.fg.getContext('2d');
+    if (stage) {
+      this.flashEl = document.createElement('div');
+      this.flashEl.className = 'flash';
+      stage.append(this.bg, this.fg, this.flashEl);
+    }
+    this.lo = document.createElement('canvas'); // low-res buffer for pixel-art styles
+    this.scratch = document.createElement('canvas');
+    this.scratch.width = 48;
+    this.scratch.height = 60;
+    this.sx = this.scratch.getContext('2d');
     this.theme = null;
     this.arena = null;
     this.scene = null;
-    this.sprites = [];
-    this.gen = 0; // bumped whenever the scene changes, to reset per-player animation
-    this.anim = [null, null, null, null];
-    this.last = [null, null, null, null]; // last drawn view-model per slot
+    this.key = '';
+    this.q = 1; // foreground resolution factor (lowered by the frame-rate governor)
+    this.level = 0; // 0 full detail, 1 no ambient animation, 2 half-resolution foreground
+    this.cam = { x: 0, y: 0, set: false };
     this.parts = [];
-    this.shakeAmt = 0;
-    this.flashA = 0;
-    this.flashColor = '#fff';
-    this.lastT = 0;
-    this.cam = { x: 0, y: 0, z: SOLO_ZOOM, ready: false, paired: false };
+    this.anim = [];
+    this.last = [null, null, null, null];
+    this.labels = new Map();
+    this.spr = null;
     this.trampT = [];
-    this.onEvent = null; // (type, pv) -> used for sound
-    this.lo = document.createElement('canvas'); // low-res buffer for pixel-art themes
-    this.loCtx = this.lo.getContext('2d');
-    this.resize();
-  }
-
-  resize() {
-    let cw;
-    let ch;
-    if (this.fixed) [cw, ch] = this.fixed;
-    else {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      cw = Math.round(Math.max(1, this.canvas.clientWidth) * dpr);
-      ch = Math.round(Math.max(1, this.canvas.clientHeight) * dpr);
-    }
-    this.canvas.width = cw;
-    this.canvas.height = ch;
-    const aspect = clamp(cw / ch, MIN_ASPECT, MAX_ASPECT);
-    this.vw = Math.round(Math.min(cw, ch * aspect));
-    this.vh = Math.round(Math.min(ch, cw / aspect));
-    this.vx = Math.round((cw - this.vw) / 2);
-    this.vy = Math.round((ch - this.vh) / 2);
-    this.sK = this.vh / VIEW_H; // device pixels per screen unit
-    this.SW = this.vw / this.sK;
-    this.SH = VIEW_H;
-    this.aK = Math.max(this.SW / ART_W, this.SH / ART_H) * 1.07; // backdrop slightly oversized, for parallax
-    this.rebuild();
+    this.gen = 0;
+    this.lastT = 0;
+    this.frameMs = 16;
+    this.slow = 0;
+    this.shakeAmt = 0;
+    this.onEvent = null; // (name, pv) => void, for sound
   }
 
   setScene(arena, themeId) {
-    const theme = THEME_MAP[themeId] || THEME_MAP.ink;
-    if (this.arena === arena && this.theme === theme) return;
     this.arena = arena;
-    this.theme = theme;
+    this.theme = THEME_MAP[themeId] || THEME_MAP.ink;
     this.parts.length = 0;
-    this.shakeAmt = 0;
-    this.flashA = 0;
-    this.cam.ready = false;
+    this.anim = [];
+    this.last = [null, null, null, null];
     this.trampT = arena.tramps.map(() => -10);
-    this.rebuild();
+    this.cam.set = false;
+    this.gen++;
+    this.layout(true);
   }
 
-  rebuild() {
-    if (!this.theme || !this.arena) return;
-    const theme = this.theme;
-    const artScale = clamp(this.sK * this.aK, 0.4, 2.5);
-    const seed = hashStr(`${this.arena.id}/${theme.id}`);
+  resize() {
+    this.layout(false);
+  }
+
+  // Work out sizes, then repaint the background if anything changed.
+  layout(force) {
+    const A = this.arena;
+    if (!A || !this.theme) return;
+    let cssW;
+    let cssH;
+    let dpr;
+    if (this.opts.size) {
+      [cssW, cssH] = this.opts.size;
+      dpr = this.opts.dpr || 1;
+    } else {
+      cssW = Math.max(1, this.stage.clientWidth);
+      cssH = Math.max(1, this.stage.clientHeight);
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+    }
+    const fit = Math.min(cssW / A.w, cssH / A.h);
+    const follow = this.opts.whole ? false : this.opts.zoom ? true : fit < MIN_FIT;
+    const kCss = this.opts.zoom || (follow ? FOLLOW_K : fit);
+    const pad = follow ? this.opts.padBottom || 0 : 0;
+    this.padB = pad / kCss; // the same, in world units
+    const bwCss = follow ? A.w * kCss : cssW;
+    const bhCss = follow ? A.h * kCss + pad : cssH;
+    const s = Math.min(dpr, Math.sqrt(MAX_BG_PIXELS / (bwCss * bhCss)));
+    const key = [cssW, cssH, s.toFixed(3), follow, this.q, this.theme.id, A.id].join();
+    if (!force && key === this.key) return;
+    this.key = key;
+    this.cssW = cssW;
+    this.cssH = cssH;
+    this.follow = follow;
+    this.kCss = kCss;
+    this.s = s;
+    this.kDev = kCss * s; // background pixels per world unit
+    this.kf = this.kDev * this.q; // foreground pixels per world unit
+    this.viewW = cssW / kCss; // world units across the screen
+    this.viewH = cssH / kCss;
+
+    this.bg.width = Math.round(bwCss * s);
+    this.bg.height = Math.round(bhCss * s);
+    this.fg.width = Math.max(1, Math.round(cssW * s * this.q));
+    this.fg.height = Math.max(1, Math.round(cssH * s * this.q));
+    if (this.stage) {
+      this.bg.style.width = `${bwCss}px`;
+      this.bg.style.height = `${bhCss}px`;
+      this.bg.style.transform = '';
+    }
+    // where the arena's top-left corner sits on the background canvas
+    this.ox = follow ? 0 : Math.round((this.bg.width - A.w * this.kDev) / 2);
+    this.oy = follow ? 0 : Math.round((this.bg.height - A.h * this.kDev) / 2);
+    this.bake();
+    if (!follow) {
+      this.cam.x = -this.ox / this.kDev;
+      this.cam.y = -this.oy / this.kDev;
+    }
+  }
+
+  // --- the static picture ----------------------------------------------------------
+  bake() {
+    const th = this.theme;
+    const A = this.arena;
+    const bw = this.bg.width;
+    const bh = this.bg.height;
+    const U = th.pixel || 0;
+    const seed = hashStr(`${A.id}/${th.id}`);
+
+    // pixel-art styles are painted small and blown up without smoothing
+    let g = this.bgx;
+    let unit = 1; // background pixels per pixel of the canvas we paint on
+    if (U) {
+      unit = this.kDev * U;
+      this.lo.width = Math.ceil(bw / unit);
+      this.lo.height = Math.ceil(bh / unit);
+      g = this.lo.getContext('2d', { alpha: false });
+      // keep the arena on the coarse pixel grid
+      this.ox = Math.round(this.ox / unit) * unit;
+      this.oy = Math.round(this.oy / unit) * unit;
+    }
+    const cw = bw / unit;
+    const ch = bh / unit;
+    const aS = Math.max(cw / ART_W, ch / ART_H); // the 800x500 art board covers the canvas
+    const art = { s: aS, x: (cw - ART_W * aS) / 2, y: (ch - ART_H * aS) / 2 };
+    this.art = { s: aS * unit, x: art.x * unit, y: art.y * unit }; // same, in background pixels
+    const kw = this.kDev / unit; // painted pixels per world unit
+    const wx = this.ox / unit;
+    const wy = this.oy / unit;
+
     const env = {
-      arena: this.arena,
-      scale: artScale,
+      arena: A,
+      scale: aS,
       rnd: mulberry32(seed),
-      // Pre-render something static once; themes blit it every frame.
-      layer: (draw, s = theme.pixel ? 1 / theme.pixel : artScale) => {
+      // Pre-render something on the art board; returns a canvas to drawImage(c, 0, 0, 800, 500).
+      layer: (draw, sc = U ? 1 / U : aS) => {
         const c = document.createElement('canvas');
-        c.width = Math.ceil(ART_W * s);
-        c.height = Math.ceil(ART_H * s);
-        const g = c.getContext('2d');
-        g.scale(s, s);
-        draw(g);
+        c.width = Math.ceil(ART_W * sc);
+        c.height = Math.ceil(ART_H * sc);
+        const lg = c.getContext('2d');
+        lg.scale(sc, sc);
+        draw(lg);
         return c;
       },
+      // Pre-render a small picture w x h world units big; draw it with g.drawImage(c, x, y, w, h).
+      sprite: (w, h, draw) => this.makeSprite(0, 0, w, h, draw).c,
     };
-    this.scene = theme.build(env);
+    this.scene = th.build(env);
 
-    // Every platform is painted once into its own little canvas.
-    const pad = theme.platPad || { x: 8, top: 8, bottom: 8 };
-    const ps = theme.pixel ? 1 / theme.pixel : clamp(this.sK * ZOOM_MAX, 0.5, 2);
-    const variants = theme.platVariants || 1;
-    this.sprites = this.arena.platforms.map((p, i) => {
-      const wx = p.x - pad.x;
-      const wy = p.y - pad.top;
-      const ww = p.w + pad.x * 2;
-      const wh = p.h + pad.top + pad.bottom;
-      const frames = [];
-      for (let v = 0; v < variants; v++) {
-        const c = document.createElement('canvas');
-        c.width = Math.ceil(ww * ps);
-        c.height = Math.ceil(wh * ps);
-        const g = c.getContext('2d');
-        g.scale(ps, ps);
-        g.translate(-wx, -wy);
-        theme.platform(g, p, i, mulberry32(seed + i * 131 + v * 977), this.arena);
-        frames.push(c);
-      }
-      return { p, wx, wy, ww, wh, frames };
-    });
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    g.imageSmoothingEnabled = !U;
+    g.fillStyle = th.letterbox;
+    g.fillRect(0, 0, cw, ch);
+    g.setTransform(art.s, 0, 0, art.s, art.x, art.y);
+    g.save();
+    th.back(g, this.scene, 0, null, []);
+    g.restore();
 
-    if (theme.pixel) {
-      this.lo.width = Math.ceil(this.SW / ZOOM_MIN / theme.pixel) + 4;
-      this.lo.height = Math.ceil(this.SH / ZOOM_MIN / theme.pixel) + 4;
+    // out of bounds: dim whatever lies outside the arena
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    const aw = A.w * kw;
+    const ah = A.h * kw;
+    if (wx > 1 || wy > 1) {
+      g.fillStyle = rgba(th.letterbox, 0.55);
+      g.fillRect(0, 0, cw, wy);
+      g.fillRect(0, wy + ah, cw, ch - wy - ah);
+      g.fillRect(0, wy, wx, ah);
+      g.fillRect(wx + aw, wy, cw - wx - aw, ah);
     }
-    this.gen++;
+
+    // the arena itself
+    g.setTransform(kw, 0, 0, kw, wx, wy);
+    const below = (ch - wy - ah) / kw; // world units of screen under the arena
+    this.paintLifts(g);
+    A.platforms.forEach((p, i) => {
+      // the floor carries on down to the bottom of the screen
+      const q = p.ground && p.y + p.h >= A.h - 1 && below > 1 ? { ...p, h: p.h + below + 2 } : p;
+      g.save();
+      th.platform(g, q, i, mulberry32(seed + i * 131), A);
+      g.restore();
+    });
+    A.ramps.forEach((r, i) => {
+      const rnd = mulberry32(seed + 9001 + i * 197);
+      g.save();
+      if (th.ramp) th.ramp(g, r, i, rnd, A);
+      else {
+        // by default a slope is the style's thin ledge, tilted
+        const len = Math.hypot(r.x1 - r.x0, r.y1 - r.y0);
+        g.translate(r.x0, r.y0);
+        g.rotate(Math.atan2(r.y1 - r.y0, r.x1 - r.x0));
+        th.platform(g, { x: -CAP, y: 0, w: len + CAP * 2, h: LEDGE_H, oneway: true, ground: false, ramp: true }, 100 + i, rnd, A);
+      }
+      g.restore();
+    });
+    g.save();
+    th.decor?.(g, this.scene, A); // optional extras painted over the platforms
+    g.restore();
+
+    g.setTransform(art.s, 0, 0, art.s, art.x, art.y);
+    g.save();
+    th.front?.(g, this.scene, 0, null, []);
+    g.restore();
+
+    if (U) {
+      this.bgx.setTransform(1, 0, 0, 1, 0, 0);
+      this.bgx.imageSmoothingEnabled = false;
+      this.bgx.drawImage(this.lo, 0, 0, this.lo.width * unit, this.lo.height * unit);
+    }
+    this.buildSprites();
   }
 
-  // --- effects API used by themes -------------------------------------------------
+  // Updraft columns: a faint band of colour and a vent at the bottom, so the
+  // column reads even in a still picture. The moving streaks are drawn live.
+  paintLifts(g) {
+    const col = this.theme.lift || '#ffffff';
+    for (const z of this.arena.lifts) {
+      g.fillStyle = rgba(col, 0.1);
+      g.fillRect(z.x, z.y, z.w, z.h);
+      g.fillStyle = rgba(col, 0.16);
+      g.fillRect(z.x, z.y, 3, z.h);
+      g.fillRect(z.x + z.w - 3, z.y, 3, z.h);
+    }
+  }
+
+  // A picture pre-rendered at screen resolution. The box is in world units
+  // around the sprite's own origin; blit() puts that origin at a world position.
+  makeSprite(x0, y0, w, h, draw, mul = 1) {
+    const U = this.theme.pixel || 0;
+    const k = U ? 1 / U : this.kf * mul;
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(w * k));
+    c.height = Math.max(1, Math.ceil(h * k));
+    const g = c.getContext('2d');
+    g.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+    draw(g);
+    return { c, x0, y0, w, h };
+  }
+
+  blit(g, s, x, y, scale = 1) {
+    // snap to whole pixels: sharper, and cheaper to draw
+    const k = this.kf;
+    const px = Math.round((x + s.x0 * scale) * k) / k;
+    const py = Math.round((y + s.y0 * scale) * k) / k;
+    g.drawImage(s.c, px, py, s.w * scale, s.h * scale);
+  }
+
+  buildSprites() {
+    const th = this.theme;
+    const A = this.arena;
+    const sc = this.scene;
+    const spr = (this.spr = { portals: [], pickups: [], tramps: [], marker: null });
+    this.labels.clear();
+    A.portals.forEach((po, i) => {
+      spr.portals.push(
+        this.makeSprite(-46, -56, 92, 112, (g) => th.portal(g, { ...po, x: -po.w / 2, y: -po.h / 2, cx: 0, cy: 0 }, 0, i, sc)),
+      );
+    });
+    PICKUP_TYPES.forEach((kind) => {
+      spr.pickups.push(this.makeSprite(-34, -34, 68, 68, (g) => th.pickup(g, kind, 0, 0, 0, sc)));
+    });
+    A.tramps.forEach((tr) => {
+      spr.tramps.push(this.makeSprite(-10, -34, tr.w + 20, tr.h + 42, (g) => th.trampoline(g, { ...tr, x: 0, y: 0, cx: tr.w / 2 }, 0, 0, sc)));
+    });
+    // the IT sign keeps a readable size however far the view is pulled back
+    this.markK = this.theme.pixel ? 1 : clamp(0.8 / this.kCss, 1, 1.5);
+    spr.marker = this.makeSprite(-44, -60, 88, 78, (g) => th.marker(g, 0, 0, 0, { color: th.colors[0], slot: 0 }, sc), this.markK);
+  }
+
+  // --- effects API (used by the art styles and by the game) ------------------------
   emit(p) {
-    if (this.parts.length > 460) return;
+    if (this.parts.length > (this.level ? 160 : 320)) return;
     this.parts.push({ x: 0, y: 0, vx: 0, vy: 0, g: 0, drag: 0, life: 0.5, size: 3, grow: 0, color: '#fff', shape: 'circle', rot: 0, vr: 0, alpha: 1, back: false, ...p, age: 0 });
   }
 
@@ -140,27 +317,31 @@ export class Renderer {
   }
 
   flash(color, alpha) {
-    this.flashColor = color;
-    this.flashA = Math.max(this.flashA, alpha);
+    const el = this.flashEl;
+    if (!el) return;
+    el.style.background = color;
+    el.style.setProperty('--a', String(Math.min(0.5, alpha * 1.6)));
+    el.classList.remove('go');
+    void el.offsetWidth; // restart the fade
+    el.classList.add('go');
   }
 
-  // Called by the game when the server reports things.
   tagFx(fromSlot, toSlot) {
     const to = this.last[toSlot];
     const from = this.last[fromSlot];
     if (!to || !this.theme) return;
-    this.shake(to.local || (from && from.local) ? 11 : 6);
+    this.shake(to.local || (from && from.local) ? 9 : 5);
     this.theme.fx?.tag?.(this, to, from || to);
   }
 
   blockFx(fromSlot, toSlot) {
     const to = this.last[toSlot];
     if (!to) return;
-    this.shake(6);
+    this.shake(5);
     const col = KIND_COLORS.shield;
     this.emit({ x: to.cx, y: to.y + 20, life: 0.4, size: 20, grow: 160, shape: 'ring', width: 4, color: col });
-    for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * 6.283;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * 6.283;
       this.emit({ x: to.cx + Math.cos(a) * 24, y: to.y + 20 + Math.sin(a) * 26, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260, drag: 4, life: 0.4, size: 3, color: i % 2 ? col : '#ffffff' });
     }
   }
@@ -168,279 +349,233 @@ export class Renderer {
   pickFx(slot, kind) {
     const pv = this.last[slot];
     if (!pv) return;
-    const col = KIND_COLORS[PICKUP_TYPES[kind]];
+    const name = PICKUP_TYPES[kind];
+    const col = KIND_COLORS[name];
     this.emit({ x: pv.cx, y: pv.y + 20, life: 0.45, size: 10, grow: 120, shape: 'ring', width: 3, color: col });
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 10; i++) {
       this.emit({ x: pv.cx + (Math.random() - 0.5) * 30, y: pv.y + 30 - Math.random() * 30, vx: (Math.random() - 0.5) * 80, vy: -90 - Math.random() * 120, g: 120, life: 0.6, size: 2.5, color: i % 3 ? col : '#ffffff' });
     }
     // say what it was
-    if (!this.theme.pixel) {
-      const lab = this.theme.label;
-      const word = `${PICKUP_INFO[PICKUP_TYPES[kind]].name}!`;
-      this.emit({
-        x: pv.cx,
-        y: pv.y - 30,
-        vy: -46,
-        life: 1.1,
-        draw(g, p, k) {
-          g.globalAlpha = Math.min(1, k * 2.5);
-          g.font = lab.youFont || lab.font;
-          g.textAlign = 'center';
-          g.lineJoin = 'round';
-          g.lineWidth = 4;
-          g.strokeStyle = lab.stroke || 'rgba(0,0,0,.6)';
-          g.strokeText(word, p.x, p.y);
-          g.fillStyle = col;
-          g.fillText(word, p.x, p.y);
-        },
-      });
-    }
+    const word = this.label(`${PICKUP_INFO[name].name}!`, col);
+    const k = 1 / this.kf;
+    this.emit({
+      x: pv.cx,
+      y: pv.y - 34,
+      vy: -40,
+      life: 1.1,
+      draw: (g, p, f) => {
+        g.globalAlpha = Math.min(1, f * 2.5);
+        g.drawImage(word.c, p.x - (word.w * k) / 2, p.y - word.h * k, word.w * k, word.h * k);
+      },
+    });
   }
 
-  // --- frame ----------------------------------------------------------------------
+  // Text is drawn once into a small canvas and reused.
+  label(text, color, font) {
+    const key = `${text}|${color}|${font || ''}`;
+    let hit = this.labels.get(key);
+    if (hit) return hit;
+    const lab = this.theme.label;
+    const px = Math.round((this.theme.pixel ? 8 : LABEL_PX) * this.s * this.q * (font ? 1.1 : 1));
+    const f = (font || lab.font).replace(/\d+(\.\d+)?px/, `${px}px`);
+    const m = this.sx;
+    m.font = f;
+    const w = Math.ceil(m.measureText(text).width) + 10;
+    const h = Math.ceil(px * 1.5) + 4;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d');
+    g.font = f;
+    g.textAlign = 'center';
+    g.textBaseline = 'alphabetic';
+    g.lineJoin = 'round';
+    g.lineWidth = Math.max(2, (lab.strokeWidth || 3) * this.s * this.q * 0.8);
+    g.strokeStyle = lab.stroke || 'rgba(0,0,0,.6)';
+    g.strokeText(text, w / 2, h - 5 - px * 0.2);
+    g.fillStyle = color;
+    g.fillText(text, w / 2, h - 5 - px * 0.2);
+    hit = { c, w, h };
+    this.labels.set(key, hit);
+    return hit;
+  }
+
+  // --- one frame ---------------------------------------------------------------------
   draw(view, nowMs) {
-    const ctx = this.ctx;
+    const g = this.fgx;
     const th = this.theme;
     const t = nowMs / 1000;
-    const dt = clamp(t - this.lastT, 0, 0.1);
+    const raw = t - this.lastT;
+    const dt = clamp(raw, 0, 0.1);
     this.lastT = t;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    if (!th || !this.scene) {
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-      return;
-    }
-    const { vx, vy, vw, vh, sK, SW, SH } = this;
+    if (!th || !this.scene) return;
+    this.govern(raw);
+
     const pvs = this.updatePlayers(view, t, dt);
     this.updateCamera(view, pvs, dt);
+    const kf = this.kf;
     const cam = this.cam;
-    const z = cam.z;
-    const wK = sK * z;
+    const tx = -cam.x * kf;
+    const ty = -cam.y * kf;
 
-    this.shakeAmt *= Math.exp(-dt * 10);
-    if (this.shakeAmt < 0.2) this.shakeAmt = 0;
-    let shx = (Math.random() * 2 - 1) * this.shakeAmt * sK;
-    let shy = (Math.random() * 2 - 1) * this.shakeAmt * sK;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    g.clearRect(0, 0, this.fg.width, this.fg.height);
+    g.imageSmoothingEnabled = !th.pixel;
 
-    // where each player is on screen / on the backdrop board (themes use this for lighting)
-    const artK = sK * this.aK;
-    const mX = (ART_W * this.aK - SW) / 2;
-    const mY = (ART_H * this.aK - SH) / 2;
-    const parX = clamp((cam.x / this.arena.w - 0.5) * 2, -1, 1);
-    const parY = clamp((cam.y / this.arena.h - 0.5) * 2, -1, 1);
-    const artOX = -mX - parX * mX * 0.9; // in screen units
-    const artOY = -mY - parY * mY * 0.9;
-    for (const pv of pvs) {
-      pv.sx = (pv.cx - cam.x) * z + SW / 2;
-      pv.sy = (pv.y - cam.y) * z + SH / 2;
-      pv.ax = (pv.sx - artOX) / this.aK;
-      pv.ay = (pv.sy + 20 * z - artOY) / this.aK;
-      pv.ak = z / this.aK;
-    }
-    const setArt = () => ctx.setTransform(artK, 0, 0, artK, vx + artOX * sK, vy + artOY * sK);
-
-    ctx.fillStyle = th.letterbox;
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(vx, vy, vw, vh);
-    ctx.clip();
-
-    // 1. backdrop
-    setArt();
-    if (th.pixel) ctx.imageSmoothingEnabled = false;
-    th.back(ctx, this.scene, t, view, pvs);
-    ctx.imageSmoothingEnabled = true;
-
-    // 2. the world
-    const halfW = SW / z / 2;
-    const halfH = SH / z / 2;
-    const vis = { x0: cam.x - halfW - 40, x1: cam.x + halfW + 40, y0: cam.y - halfH - 40, y1: cam.y + halfH + 40 };
-    let g = ctx;
-    let left = 0;
-    let top = 0;
-    let bw = 0;
-    let bh = 0;
-    if (th.pixel) {
-      const U = th.pixel;
-      g = this.loCtx;
-      left = Math.floor((cam.x - halfW) / U) * U;
-      top = Math.floor((cam.y - halfH) / U) * U;
-      bw = Math.min(this.lo.width, Math.ceil((halfW * 2) / U) + 2);
-      bh = Math.min(this.lo.height, Math.ceil((halfH * 2) / U) + 2);
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      g.clearRect(0, 0, bw, bh);
-      g.setTransform(1 / U, 0, 0, 1 / U, -left / U, -top / U);
-      g.imageSmoothingEnabled = false;
+    // ambient animation (petals, rain, twinkling stars...) on the art board
+    if (th.live && this.level === 0) {
+      const a = this.art;
+      g.setTransform(a.s * this.q, 0, 0, a.s * this.q, (a.x - this.ox) * this.q + tx, (a.y - this.oy) * this.q + ty);
+      g.save();
+      th.live(g, this.scene, t, view, pvs);
+      g.restore();
       g.globalAlpha = 1;
-    } else {
-      ctx.setTransform(wK, 0, 0, wK, vx + vw / 2 - cam.x * wK + shx, vy + vh / 2 - cam.y * wK + shy);
-    }
-    this.drawWorld(g, view, pvs, t, dt, vis);
-    if (th.pixel) {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.imageSmoothingEnabled = false;
-      const U = th.pixel;
-      ctx.drawImage(this.lo, 0, 0, bw, bh, vx + vw / 2 + (left - cam.x) * wK + shx, vy + vh / 2 + (top - cam.y) * wK + shy, bw * U * wK, bh * U * wK);
-      ctx.imageSmoothingEnabled = true;
     }
 
-    // 3. weather, lighting, screen effects
-    setArt();
-    th.front(ctx, this.scene, t, view, pvs);
+    g.setTransform(kf, 0, 0, kf, tx, ty);
+    this.drawWorld(g, view, pvs, t, dt);
 
-    // 4. screen space
-    ctx.setTransform(sK, 0, 0, sK, vx, vy);
-    if (this.flashA > 0.01) {
-      ctx.globalAlpha = this.flashA;
-      ctx.fillStyle = this.flashColor;
-      ctx.fillRect(0, 0, SW, SH);
-      ctx.globalAlpha = 1;
-      this.flashA *= Math.exp(-dt * 9);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    this.drawLabels(g, view, pvs, t);
+
+    // screen shake moves the whole stage; the browser does that without repainting
+    if (this.stage) {
+      this.shakeAmt *= Math.exp(-dt * 10);
+      if (this.shakeAmt > 0.4) {
+        const sx = (Math.random() * 2 - 1) * this.shakeAmt;
+        const sy = (Math.random() * 2 - 1) * this.shakeAmt;
+        this.stage.style.transform = `translate(${sx.toFixed(1)}px,${sy.toFixed(1)}px)`;
+        this.shaking = true;
+      } else if (this.shaking) {
+        this.stage.style.transform = '';
+        this.shaking = false;
+        this.shakeAmt = 0;
+      }
     }
-    const me = pvs.find((p) => p.local);
-    if (view.hud && me && me.isIt && view.phase === 'playing') this.drawItVignette(ctx, t);
-    ctx.setTransform(sK, 0, 0, sK, vx + shx, vy + shy);
-    this.drawLabels(ctx, view, pvs, t);
-    ctx.setTransform(sK, 0, 0, sK, vx, vy);
-    if (view.hud) {
-      this.drawArrows(ctx, view, pvs, t);
-      this.drawHud(ctx, view, t, pvs);
-    }
-    this.drawOverlay(ctx, view, t);
-    ctx.restore();
   }
 
-  // Platforms, gadgets, players and particles - everything that lives in the arena.
-  drawWorld(g, view, pvs, t, dt, vis) {
-    const th = this.theme;
-    const arena = this.arena;
-    const frame = (th.platVariants || 1) > 1 ? Math.floor(t * 6) % th.platVariants : 0;
-    const shown = [];
-    for (const s of this.sprites) {
-      if (s.wx > vis.x1 || s.wx + s.ww < vis.x0 || s.wy > vis.y1 || s.wy + s.wh < vis.y0) continue;
-      g.drawImage(s.frames[frame], s.wx, s.wy, s.ww, s.wh);
-      shown.push(s.p);
-    }
-    th.platformFx?.(g, this.scene, t, shown, arena);
+  // Frame-rate governor: if frames keep taking too long, give up detail.
+  govern(raw) {
+    if (!this.stage || raw <= 0 || raw > 0.25) return; // tab was hidden, or first frame
+    this.frameMs += (raw * 1000 - this.frameMs) * 0.05;
+    if (this.frameMs > 24 && this.level < 2) {
+      if (++this.slow > 90) {
+        this.slow = 0;
+        this.level++;
+        this.frameMs = 16;
+        if (this.level === 2) {
+          this.q = 0.6;
+          this.layout(true);
+        }
+      }
+    } else if (this.slow > 0) this.slow--;
+  }
 
-    for (let i = 0; i < arena.portals.length; i++) {
-      const p = arena.portals[i];
-      if (p.x > vis.x1 || p.x + p.w < vis.x0 || p.y > vis.y1 || p.y + p.h < vis.y0) continue;
-      g.save();
-      th.portal(g, p, t, i);
-      g.restore();
+  updateCamera(view, pvs, dt) {
+    if (!this.follow) return;
+    const A = this.arena;
+    const cam = this.cam;
+    const vw = this.viewW;
+    const vh = this.viewH;
+    let cx = A.w / 2;
+    let cy = A.h / 2;
+    if (this.opts.focus) {
+      cx = this.opts.focus.x;
+      cy = this.opts.focus.y;
+    } else {
+      const me = pvs.find((p) => p.local) || pvs.find((p) => p.isIt) || pvs[0];
+      if (me) {
+        cx = me.cx + clamp(me.vx * 0.22, -80, 80);
+        cy = me.y + PH / 2;
+        // lean towards whoever is it, without ever losing sight of yourself
+        const it = pvs.find((p) => p.isIt);
+        if (it && it !== me) {
+          cx += clamp((it.cx - me.cx) * 0.4, -vw * 0.26, vw * 0.26);
+          cy += clamp((it.y - me.y) * 0.4, -vh * 0.22, vh * 0.22);
+        }
+      }
     }
-    for (let i = 0; i < arena.tramps.length; i++) {
-      const tr = arena.tramps[i];
-      if (tr.x > vis.x1 || tr.x + tr.w < vis.x0 || tr.y > vis.y1 || tr.y + tr.h < vis.y0) continue;
-      const k = clamp(1 - (t - this.trampT[i]) / 0.35, 0, 1);
-      g.save();
-      th.trampoline(g, tr, t, k * k);
-      g.restore();
+    const tx = vw >= A.w ? (A.w - vw) / 2 : clamp(cx - vw / 2, 0, A.w - vw);
+    const ty = vh >= A.h + this.padB ? (A.h - vh) / 2 : clamp(cy - vh / 2, 0, A.h + this.padB - vh);
+    if (!cam.set) {
+      cam.fx = tx;
+      cam.fy = ty;
+      cam.set = true;
+    } else {
+      const k = 1 - Math.exp(-dt * 5);
+      cam.fx += (tx - cam.fx) * k;
+      cam.fy += (ty - cam.fy) * k;
     }
+    // whole background pixels, so the two layers never shimmer against each other
+    cam.x = Math.round(cam.fx * this.kDev) / this.kDev;
+    cam.y = Math.round(cam.fy * this.kDev) / this.kDev;
+    if (this.stage) this.bg.style.transform = `translate3d(${(-cam.x * this.kCss).toFixed(2)}px,${(-cam.y * this.kCss).toFixed(2)}px,0)`;
+  }
+
+  drawWorld(g, view, pvs, t, dt) {
+    const th = this.theme;
+    const A = this.arena;
+    const spr = this.spr;
+
+    // updrafts: streaks of air rushing up the column
+    if (A.lifts.length) {
+      g.strokeStyle = rgba(th.lift || '#ffffff', 0.55);
+      g.lineWidth = 2.5;
+      g.lineCap = 'round';
+      g.beginPath();
+      A.lifts.forEach((z, zi) => {
+        const n = Math.max(4, Math.round(z.h / 60));
+        for (let i = 0; i < n; i++) {
+          const f = (t * (0.45 + 0.25 * hash1(i, zi + 7)) + hash1(i, zi)) % 1;
+          const x = z.x + 8 + (z.w - 16) * hash1(i, zi + 3);
+          const y = z.y + z.h * (1 - f);
+          const len = 14 + 22 * Math.sin(f * Math.PI);
+          g.moveTo(x, y);
+          g.lineTo(x, y - len);
+        }
+      });
+      g.stroke();
+    }
+
+    // portals: the pre-rendered ring, breathing a little, with sparks circling it
+    A.portals.forEach((po, i) => {
+      const col = PORTAL_COLORS[po.pair % PORTAL_COLORS.length];
+      this.blit(g, spr.portals[i], po.cx, po.cy, 1 + 0.035 * Math.sin(t * 3 + i));
+      g.fillStyle = col;
+      for (let k = 0; k < 3; k++) {
+        const a = t * 2.4 + i * 1.3 + (k * 6.283) / 3;
+        const r = 2.2 + 0.8 * Math.sin(t * 5 + k);
+        g.fillRect(po.cx + Math.cos(a) * 21 - r / 2, po.cy + Math.sin(a) * 35 - r / 2, r, r);
+      }
+    });
+
+    // trampolines: a sprite at rest, drawn live only while they wobble
+    A.tramps.forEach((tr, i) => {
+      const age = t - this.trampT[i];
+      if (age < 0.5) {
+        const k = Math.exp(-age * 9) * Math.cos(age * 30);
+        g.save();
+        th.trampoline(g, tr, t, k * k, this.scene);
+        g.restore();
+      } else this.blit(g, spr.tramps[i], tr.x, tr.y);
+    });
+
     for (const pk of view.pickups || []) {
-      const pt = arena.pickups[pk.point];
-      if (!pt || pt.x < vis.x0 || pt.x > vis.x1 || pt.y < vis.y0 || pt.y > vis.y1) continue;
-      g.save();
-      th.pickup(g, PICKUP_TYPES[pk.type], pt.x, pt.y + Math.sin(t * 3 + pk.point) * 3, t);
-      g.restore();
+      const pt = A.pickups[pk.point];
+      if (pt) this.blit(g, spr.pickups[pk.type], pt.x, pt.y + Math.sin(t * 3 + pk.point) * 3);
     }
 
     this.drawParticles(g, dt, true);
-    for (const pv of pvs) this.drawPlayer(g, pv, t);
+    for (const pv of pvs) {
+      if (pv.orb) this.drawOrb(g, pv, t);
+      else this.drawPlayer(g, pv, t);
+    }
     this.drawParticles(g, 0, false);
+    g.globalAlpha = 1;
   }
 
-  // Follow the local player; when "it" (or, if you are it, your nearest target)
-  // is close enough, frame both and zoom to fit. Otherwise stay on the local
-  // player and let the edge arrows point the way.
-  updateCamera(view, pvs, dt) {
-    const a = this.arena;
-    const cam = this.cam;
-    const { SW, SH } = this;
-    const me = pvs.find((p) => p.local) || null;
-    const itp = pvs.find((p) => p.isIt) || null;
-    const focus = me || itp || pvs[0] || null;
-    let tx = cam.x;
-    let ty = cam.y;
-    let tz = cam.z;
-    if (focus) {
-      let other = null;
-      if (!focus.isIt) other = itp;
-      else {
-        let best = Infinity;
-        for (const p of pvs) {
-          if (p === focus) continue;
-          const d = Math.hypot(p.cx - focus.cx, p.y - focus.y);
-          if (d < best) {
-            best = d;
-            other = p;
-          }
-        }
-      }
-      let paired = false;
-      if (other) {
-        const x0 = Math.min(focus.cx, other.cx) - 210;
-        const x1 = Math.max(focus.cx, other.cx) + 210;
-        const y0 = Math.min(focus.y, other.y) - 150;
-        const y1 = Math.max(focus.feet, other.feet) + 130;
-        const need = Math.min(SW / (x1 - x0), SH / (y1 - y0));
-        // a little hysteresis so the camera does not flip-flop at the edge of range
-        paired = need >= ZOOM_MIN * (cam.paired ? 0.9 : 1.04);
-        if (paired) {
-          tz = clamp(need, ZOOM_MIN, ZOOM_MAX);
-          tx = (x0 + x1) / 2;
-          ty = (y0 + y1) / 2;
-        }
-      }
-      cam.paired = paired;
-      if (!paired) {
-        tz = SOLO_ZOOM;
-        tx = focus.cx + clamp(focus.vx, -400, 400) * 0.25;
-        ty = focus.y - 10;
-        // dead zone: small moves and ordinary jumps do not drag the camera around
-        if (cam.ready) {
-          if (Math.abs(tx - cam.x) < 46 / tz) tx = cam.x;
-          if (Math.abs(ty - cam.y) < 74 / tz) ty = cam.y;
-        }
-      }
-      // whatever happens, the focus player stays comfortably on screen
-      const mx = (SW / tz) * 0.34;
-      const my = (SH / tz) * 0.3;
-      tx = clamp(tx, focus.cx - mx, focus.cx + mx);
-      ty = clamp(ty, focus.y + 20 - my, focus.y + 20 + my);
-    } else if (!cam.ready) {
-      tx = a.w / 2;
-      ty = a.h / 2;
-      tz = ZOOM_MIN;
-    }
-    if (!cam.ready) {
-      cam.x = tx;
-      cam.y = ty;
-      cam.z = tz;
-      cam.ready = true;
-    } else {
-      const far = Math.hypot(tx - cam.x, ty - cam.y) > 520;
-      const kp = 1 - Math.exp(-dt * (far ? 11 : 5.5));
-      cam.x += (tx - cam.x) * kp;
-      cam.y += (ty - cam.y) * kp;
-      cam.z += (tz - cam.z) * (1 - Math.exp(-dt * 3));
-    }
-    // stay inside the arena
-    const hw = SW / cam.z / 2;
-    const hh = SH / cam.z / 2;
-    cam.x = a.w <= hw * 2 ? a.w / 2 : clamp(cam.x, hw, a.w - hw);
-    cam.y = a.h + 90 <= hh * 2 ? a.h / 2 : clamp(cam.y, hh - 70, a.h - hh + 20);
-    if (this.theme.pixel) {
-      // keep the pixel grid steady
-      cam.z = Math.round(cam.z * 50) / 50;
-    }
-  }
-
-  // Turn raw player states into view-models, advance animation and spot
-  // jump / land / bounce / dash / portal moments for effects and sound.
+  // --- players -------------------------------------------------------------------------
   updatePlayers(view, t, dt) {
     const th = this.theme;
     const out = [];
@@ -449,7 +584,7 @@ export class Renderer {
       seen[p.slot] = true;
       let a = this.anim[p.slot];
       if (!a || a.gen !== this.gen) {
-        a = this.anim[p.slot] = { gen: this.gen, run: 0, squash: 0, ground: p.ground, vy: p.vy, x: p.x, y: p.y, dead: p.dead > 0, dash: false, step: 0, blink: 0, nextBlink: t + 1 + Math.random() * 3, streak: 0 };
+        a = this.anim[p.slot] = { gen: this.gen, run: 0, squash: 0, ground: p.ground, vy: p.vy, x: p.x, y: p.y, dead: p.dead > 0, orb: false, step: 0, blink: 0, nextBlink: t + 1 + Math.random() * 3, streak: 0 };
       }
       const pv = {
         slot: p.slot,
@@ -467,7 +602,7 @@ export class Renderer {
         immune: p.immune > 0,
         stunned: p.stun > 0,
         frozen: !!p.frz,
-        dash: !!p.dash,
+        orb: !!p.orb,
         speedy: !!p.spd,
         springy: !!p.jmp,
         shield: !!p.shd,
@@ -487,38 +622,41 @@ export class Renderer {
         this.last[p.slot] = null;
         continue;
       }
-      const moved = Math.hypot(p.x - a.x, p.y - a.y);
       if (a.dead) {
         a.dead = false;
         a.ground = false;
         th.fx?.respawn?.(this, pv);
         this.onEvent?.('respawn', pv);
-      } else if (moved > 150) {
-        // stepped through a portal
-        this.portalFx(a.x + PW / 2, a.y + PH / 2, pv);
-        this.onEvent?.('portal', pv);
+      } else if (pv.orb !== a.orb) {
+        // into a portal, or out of one
+        this.portalFx(pv.cx, pv.y + PH / 2, pv);
+        if (pv.orb) this.onEvent?.('portal', pv);
+      } else if (pv.orb) {
+        // a trail of sparks behind the orb
+        if (this.level < 2 || Math.random() < 0.5) {
+          this.emit({ x: pv.cx + (Math.random() - 0.5) * 10, y: pv.y + PH / 2 + (Math.random() - 0.5) * 10, life: 0.32, size: 2.4 + Math.random() * 2, grow: -6, color: Math.random() < 0.4 ? '#ffffff' : pv.color, back: true });
+        }
       } else if (!p.ground && p.vy < -1150 && a.vy > -1000) {
-        // launched by a trampoline
-        this.bounceFx(pv, t);
+        this.bounceFx(pv, t); // launched by a trampoline
         this.onEvent?.('bounce', pv);
       } else if (a.ground && !p.ground && p.vy < -300) {
         a.squash = -0.2;
         th.fx?.jump?.(this, pv);
         this.onEvent?.('jump', pv);
       } else if (!a.ground && !p.ground && p.vy < -500 && p.vy - a.vy < -260) {
-        // double jump
-        a.squash = -0.16;
+        a.squash = -0.16; // double jump
         this.emit({ x: pv.cx, y: pv.feet, life: 0.3, size: 6, grow: 70, shape: 'ring', width: 2.5, color: pv.color, back: true });
         th.fx?.jump?.(this, pv);
         this.onEvent?.('airjump', pv);
       } else if (!a.ground && p.ground) {
-        const impact = clamp(a.vy / 900, 0.1, 1);
+        const impact = clamp(a.vy / 800, 0.1, 1);
         a.squash = 0.1 + 0.2 * impact;
-        th.fx?.land?.(this, pv, impact);
-        this.onEvent?.('land', pv);
+        if (a.vy > 120) {
+          th.fx?.land?.(this, pv, impact);
+          this.onEvent?.('land', pv);
+        }
       }
-      if (pv.dash && !a.dash) this.onEvent?.('dash', pv);
-      a.dash = pv.dash;
+      a.orb = pv.orb;
       a.ground = p.ground;
       a.vy = p.vy;
       a.x = p.x;
@@ -531,7 +669,7 @@ export class Renderer {
         a.step += speed * dt;
         if (a.step > 40) {
           a.step = 0;
-          th.fx?.step?.(this, pv);
+          if (this.level < 2) th.fx?.step?.(this, pv);
         }
       }
       if (t > a.nextBlink) {
@@ -542,15 +680,17 @@ export class Renderer {
       pv.run = a.run;
       pv.squash = a.squash;
       pv.blink = a.blink;
-      // speed lines behind anyone dashing or running on Swift
-      if ((pv.dash || (pv.speedy && speed > 200)) && t - a.streak > (pv.dash ? 0.012 : 0.045)) {
-        a.streak = t;
-        this.emit({ x: pv.cx - pv.face * 10, y: pv.y + 6 + Math.random() * 28, vx: -pv.vx * 0.15, life: pv.dash ? 0.22 : 0.16, size: pv.dash ? 2.2 : 1.6, shape: 'line', width: pv.dash ? 3 : 2, color: pv.dash ? '#ffffff' : KIND_COLORS.speed, back: true, lx: -pv.face * (pv.dash ? 34 : 18) });
+      if (!pv.orb) {
+        // speed lines behind anyone running on Swift, sparkles under Spring
+        if (pv.speedy && speed > 200 && t - a.streak > 0.05) {
+          a.streak = t;
+          this.emit({ x: pv.cx - pv.face * 10, y: pv.y + 6 + Math.random() * 28, vx: -pv.vx * 0.15, life: 0.16, size: 1.6, shape: 'line', width: 2, color: KIND_COLORS.speed, back: true, lx: -pv.face * 18 });
+        }
+        if (pv.springy && p.ground && Math.random() < dt * 8) {
+          this.emit({ x: pv.cx + (Math.random() - 0.5) * 24, y: pv.feet - 2, vy: -70, life: 0.4, size: 2, color: KIND_COLORS.jump, back: true });
+        }
+        if (this.level < 2) th.fx?.trail?.(this, pv, dt, t);
       }
-      if (pv.springy && p.ground && Math.random() < dt * 8) {
-        this.emit({ x: pv.cx + (Math.random() - 0.5) * 24, y: pv.feet - 2, vy: -70, life: 0.4, size: 2, color: KIND_COLORS.jump, back: true });
-      }
-      th.fx?.trail?.(this, pv, dt, t);
       this.last[p.slot] = pv;
       out.push(pv);
     }
@@ -573,61 +713,96 @@ export class Renderer {
     if (best >= 0) this.trampT[best] = t;
     const y = best >= 0 ? this.arena.tramps[best].y : pv.feet;
     this.emit({ x: pv.cx, y, life: 0.35, size: 8, grow: 150, shape: 'ring', width: 3, color: '#ffffff' });
-    for (let i = 0; i < 8; i++) this.emit({ x: pv.cx + (Math.random() - 0.5) * 40, y, vx: (Math.random() - 0.5) * 200, vy: -100 - Math.random() * 200, g: 500, life: 0.4, size: 2.4, color: i % 2 ? pv.color : '#ffffff' });
+    for (let i = 0; i < 6; i++) this.emit({ x: pv.cx + (Math.random() - 0.5) * 40, y, vx: (Math.random() - 0.5) * 200, vy: -100 - Math.random() * 200, g: 500, life: 0.4, size: 2.4, color: i % 2 ? pv.color : '#ffffff' });
   }
 
-  portalFx(fromX, fromY, pv) {
-    for (const [x, y] of [
-      [fromX, fromY],
-      [pv.cx, pv.y + PH / 2],
-    ]) {
-      this.emit({ x, y, life: 0.4, size: 30, grow: -60, shape: 'ring', width: 3, color: pv.color });
-      for (let i = 0; i < 10; i++) {
-        const a = (i / 10) * 6.283;
-        this.emit({ x: x + Math.cos(a) * 34, y: y + Math.sin(a) * 38, vx: -Math.cos(a) * 110, vy: -Math.sin(a) * 110, life: 0.32, size: 2.4, color: i % 2 ? pv.color : '#ffffff' });
-      }
+  portalFx(x, y, pv) {
+    this.emit({ x, y, life: 0.4, size: 30, grow: -60, shape: 'ring', width: 3, color: pv.color });
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * 6.283;
+      this.emit({ x: x + Math.cos(a) * 12, y: y + Math.sin(a) * 12, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, drag: 3, life: 0.35, size: 2.4, color: i % 2 ? pv.color : '#ffffff' });
     }
   }
 
+  // Travelling between portals: a bright ball of light with sparks circling it.
+  drawOrb(g, pv, t) {
+    const x = pv.cx;
+    const y = pv.y + PH / 2;
+    g.globalAlpha = 0.35;
+    g.fillStyle = pv.color;
+    g.beginPath();
+    g.arc(x, y, 15, 0, 6.283);
+    g.fill();
+    g.globalAlpha = 1;
+    g.beginPath();
+    g.arc(x, y, 10, 0, 6.283);
+    g.fill();
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.arc(x, y, 5.5, 0, 6.283);
+    g.fill();
+    g.strokeStyle = '#ffffff';
+    g.lineWidth = 1.6;
+    g.lineCap = 'round';
+    g.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = t * 9 + (i * 6.283) / 4;
+      const r = 17 + 3 * Math.sin(t * 13 + i * 2);
+      const sx = x + Math.cos(a) * r;
+      const sy = y + Math.sin(a) * r;
+      g.moveTo(sx - 3, sy);
+      g.lineTo(sx + 3, sy);
+      g.moveTo(sx, sy - 3);
+      g.lineTo(sx, sy + 3);
+    }
+    g.stroke();
+  }
+
   drawPlayer(g, pv, t) {
-    g.save();
+    const th = this.theme;
+    const U = th.pixel;
     // tag protection: flash between solid and see-through
-    if (pv.immune) g.globalAlpha = Math.floor(t * 14) % 2 ? 0.3 : 0.9;
-    this.theme.player(g, pv, t, this.scene);
-    g.restore();
-    const px = this.theme.pixel;
+    const a = pv.immune ? (Math.floor(t * 14) % 2 ? 0.35 : 0.9) : 1;
+    if (U) {
+      // pixel-art styles: draw at one canvas pixel per art pixel, then blow it up
+      const sg = this.sx;
+      const bx = Math.floor((pv.x - 30) / U) * U;
+      const by = Math.floor((pv.y - 34) / U) * U;
+      sg.setTransform(1, 0, 0, 1, 0, 0);
+      sg.clearRect(0, 0, this.scratch.width, this.scratch.height);
+      sg.setTransform(1 / U, 0, 0, 1 / U, -bx / U, -by / U);
+      sg.save();
+      th.player(sg, pv, t, this.scene);
+      sg.restore();
+      g.globalAlpha = a;
+      g.drawImage(this.scratch, bx, by, this.scratch.width * U, this.scratch.height * U);
+      g.globalAlpha = 1;
+    } else {
+      g.save();
+      g.globalAlpha = a;
+      th.player(g, pv, t, this.scene);
+      g.restore();
+    }
     if (pv.frozen) {
       // block of ice
       g.fillStyle = 'rgba(170,235,255,.55)';
       g.strokeStyle = 'rgba(235,252,255,.95)';
       g.lineWidth = 2;
-      if (px) {
-        g.fillRect(pv.x - 4, pv.y - 4, PW + 8, PH + 6);
-        g.fillStyle = '#ffffff';
-        g.fillRect(pv.x - 2, pv.y - 2, 6, 2);
-        g.fillRect(pv.x - 2, pv.y, 2, 6);
-      } else {
+      if (U) g.fillRect(pv.x - 4, pv.y - 4, PW + 8, PH + 6);
+      else {
         rr(g, pv.x - 5, pv.y - 6, PW + 10, PH + 8, 7);
         g.fill();
-        g.stroke();
-        g.beginPath();
-        g.moveTo(pv.x + 2, pv.y + 6);
-        g.lineTo(pv.x + 10, pv.y - 1);
-        g.moveTo(pv.x + 22, pv.y + 30);
-        g.lineTo(pv.x + 31, pv.y + 20);
         g.stroke();
       }
     }
     if (pv.shield) {
       const pulse = 1 + 0.05 * Math.sin(t * 7);
       g.strokeStyle = KIND_COLORS.shield;
-      g.fillStyle = 'rgba(74,163,255,.14)';
       g.lineWidth = 2.5;
       g.beginPath();
       g.ellipse(pv.cx, pv.y + 19, 27 * pulse, 30 * pulse, 0, 0, 6.283);
-      g.fill();
       g.stroke();
-      g.strokeStyle = 'rgba(255,255,255,.8)';
+      g.strokeStyle = 'rgba(255,255,255,.85)';
       g.lineWidth = 1.5;
       g.beginPath();
       g.ellipse(pv.cx, pv.y + 19, 27 * pulse, 30 * pulse, 0, -2.4 + t * 2, -1.5 + t * 2);
@@ -693,6 +868,8 @@ export class Renderer {
         g.rotate(p.rot);
         g.fillRect(-size / 2, -size / 2, size, size);
         g.restore();
+      } else if (size < 2.2) {
+        g.fillRect(p.x - size, p.y - size, size * 2, size * 2); // too small to tell from a dot
       } else {
         g.beginPath();
         g.arc(p.x, p.y, size, 0, 6.283);
@@ -702,366 +879,73 @@ export class Renderer {
     g.globalAlpha = 1;
   }
 
-  // Names, the IT marker, "YOU" pointer, stun stars - drawn at a constant size
-  // on screen however far the camera has pulled back.
-  drawLabels(ctx, view, pvs, t) {
+  // Names and the IT sign, at a fixed size on screen. Also the pointer to "it"
+  // when the view follows you and they are out of sight.
+  drawLabels(g, view, pvs, t) {
     const th = this.theme;
     const lab = th.label;
-    const z = this.cam.z;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.lineJoin = 'round';
-    for (const pv of pvs) {
-      const cx = pv.sx;
-      let y = pv.sy - (th.labelGap ?? 7) * z;
-      if (cx < -40 || cx > this.SW + 40 || y < -60 || y > this.SH + 80) continue;
-      if (view.hud && cx < 176 && y < 150) continue; // would sit under the minimap
-      if (view.names !== false) {
-        ctx.font = lab.font;
-        ctx.lineWidth = lab.strokeWidth ?? 3;
-        ctx.strokeStyle = lab.stroke;
-        ctx.fillStyle = pv.local ? lab.localColor || lab.color : lab.color;
-        if (lab.stroke) ctx.strokeText(pv.name, cx, y);
-        ctx.fillText(pv.name, cx, y);
-        y -= lab.size + 4;
-      }
-      if (pv.stunned) {
-        for (let i = 0; i < 3; i++) {
-          const a = t * 9 + i * 2.094;
-          ctx.fillStyle = lab.stun || lab.color;
-          ctx.fillRect(cx + Math.cos(a) * 12 - 1.5, y - 2 + Math.sin(a) * 3.5 - 1.5, 3, 3);
-        }
-        y -= 8;
-      }
-      if (pv.isIt) {
-        th.marker(ctx, cx, y - 11 + Math.sin(t * 6) * 2, t, pv);
-        y -= 28;
-      }
-      if (pv.local && view.pointYou) {
-        const bob = Math.abs(Math.sin(t * 5)) * 5;
-        ctx.font = lab.youFont || lab.font;
-        ctx.lineWidth = 3.5;
-        ctx.strokeStyle = lab.stroke || 'rgba(0,0,0,.6)';
-        ctx.fillStyle = lab.you || lab.color;
-        ctx.strokeText('YOU', cx, y - 9 - bob);
-        ctx.fillText('YOU', cx, y - 9 - bob);
-        ctx.beginPath();
-        ctx.moveTo(cx - 6, y - 6 - bob);
-        ctx.lineTo(cx + 6, y - 6 - bob);
-        ctx.lineTo(cx, y + 1 - bob);
-        ctx.closePath();
-        ctx.stroke();
-        ctx.fill();
-      }
-    }
-  }
-
-  // Arrows on the edge of the screen pointing at anyone the camera cannot see.
-  drawArrows(ctx, view, pvs, t) {
-    const h = this.theme.hud;
-    const { SW, SH } = this;
-    const z = this.cam.z;
-    const m = 26;
-    for (const pv of pvs) {
-      const x = pv.sx;
-      const y = pv.sy + 20 * z;
-      if (x > -10 && x < SW + 10 && y > -10 && y < SH + 10) continue;
-      const cx = clamp(x, m, SW - m);
-      const cy = clamp(y, m + 70, SH - m - 8);
-      const ang = Math.atan2(y - cy, x - cx);
-      const big = pv.isIt;
-      const r = big ? 13 + Math.sin(t * 8) * 1.5 : 9;
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.fillStyle = pv.color;
-      ctx.strokeStyle = h.outline || 'rgba(0,0,0,.65)';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, 6.283);
-      ctx.stroke();
-      ctx.fill();
-      ctx.rotate(ang);
-      ctx.beginPath();
-      ctx.moveTo(r + 9, 0);
-      ctx.lineTo(r + 1, -6);
-      ctx.lineTo(r + 1, 6);
-      ctx.closePath();
-      ctx.stroke();
-      ctx.fill();
-      ctx.restore();
-      if (big) {
-        ctx.font = `800 10px ${h.labelFont || h.font}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#fff';
-        ctx.strokeStyle = 'rgba(0,0,0,.7)';
-        ctx.lineWidth = 2.5;
-        ctx.strokeText('IT', cx, cy + 0.5);
-        ctx.fillText('IT', cx, cy + 0.5);
-      }
-    }
-  }
-
-  // A red pulse around the screen while you are "it".
-  drawItVignette(ctx, t) {
-    const { SW, SH } = this;
-    const a = 0.2 + 0.08 * Math.sin(t * 5);
-    const col = this.theme.hud.warn || '#ff3030';
-    const gr = ctx.createRadialGradient(SW / 2, SH / 2, SH * 0.48, SW / 2, SH / 2, SH * 0.98);
-    gr.addColorStop(0, 'rgba(0,0,0,0)');
-    gr.addColorStop(1, col);
-    ctx.globalAlpha = a;
-    ctx.fillStyle = gr;
-    ctx.fillRect(0, 0, SW, SH);
-    ctx.globalAlpha = 1;
-  }
-
-  drawHud(ctx, view, t, pvs) {
-    const h = this.theme.hud;
-    const k = h.scale || 1;
-    const { SW, SH } = this;
-    const labelFont = (px, w = h.labelWeight || 600) => `${w} ${Math.round(px * (h.labelScale || 1))}px ${h.labelFont || h.font}`;
-    ctx.save();
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-
-    const setGlow = (on) => {
-      ctx.shadowColor = on && h.glow ? h.glow : 'transparent';
-      ctx.shadowBlur = on && h.glow ? h.glowBlur || 10 : 0;
-    };
-    const text = (str, x, y, color) => {
-      if (h.outline) {
-        ctx.strokeStyle = h.outline;
-        ctx.lineWidth = h.outlineWidth || 4;
-        ctx.strokeText(str, x, y);
-      }
-      ctx.fillStyle = color;
-      ctx.fillText(str, x, y);
-    };
-
-    // round timer
-    const secs = Math.max(0, view.timeLeft);
-    const urgent = view.phase === 'playing' && secs <= 10;
-    const timerText = urgent ? secs.toFixed(1) : String(Math.ceil(secs));
-    const pulse = urgent ? 1 + 0.07 * Math.abs(Math.sin(t * 6.283)) : 1;
-    ctx.textAlign = 'center';
-    ctx.font = `${h.weight} ${Math.round(36 * k * pulse)}px ${h.font}`;
-    setGlow(true);
-    text(timerText, SW / 2, 27 + (h.timerDy || 0), urgent ? h.warn : h.text);
-    setGlow(false);
-
-    // one chip per player: colour, name, time spent as "it"
-    const list = view.players.slice().sort((a, b) => a.slot - b.slot);
-    const n = list.length;
-    const cw = Math.min(n > 3 ? 150 : 164, (SW - 40 - (n - 1) * 8) / n);
-    const gap = 8;
-    const ch = 24;
-    const rowW = n * cw + (n - 1) * gap;
-    let x = SW / 2 - rowW / 2;
-    const y = 50;
-    for (const p of list) {
-      const color = this.theme.colors[p.slot];
-      const isIt = view.it === p.slot;
-      rr(ctx, x, y, cw, ch, h.radius ?? 6);
-      ctx.fillStyle = isIt ? h.chipIt : h.chip;
-      ctx.fill();
-      ctx.lineWidth = isIt ? 2 : 1;
-      ctx.strokeStyle = isIt ? color : h.chipLine;
-      ctx.stroke();
-      ctx.fillStyle = color;
-      rr(ctx, x + 6, y + 6, 12, 12, h.swatchRadius ?? 3);
-      ctx.fill();
-      if (h.swatchLine) {
-        ctx.strokeStyle = h.swatchLine;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
-      ctx.textAlign = 'right';
-      ctx.font = `${h.weight} ${Math.round(13 * k)}px ${h.font}`;
-      // hot potato: what matters is who is it right now; least-time: the running totals
-      const stat = view.mode === 'potato' ? (isIt ? 'IT' : '') : `${(p.itTicks / TICK_RATE).toFixed(1)}s`;
-      const tw = stat ? ctx.measureText(stat).width : 0;
-      ctx.fillStyle = isIt ? h.chipItText || h.text : h.text;
-      if (stat) ctx.fillText(stat, x + cw - 7, y + ch / 2 + 1);
-      ctx.textAlign = 'left';
-      ctx.font = labelFont(13);
-      ctx.fillText(fitText(ctx, p.name + (p.local ? ' (you)' : ''), cw - tw - 36), x + 24, y + ch / 2 + 1);
-      x += cw + gap;
-    }
-
-    // "you are it" call-out
-    const me = pvs.find((p) => p.local);
-    if (me && view.phase === 'playing') {
-      ctx.textAlign = 'center';
-      ctx.font = `${h.weight} ${Math.round(15 * k)}px ${h.font}`;
-      if (me.isIt) text(view.mode === 'potato' ? "YOU'RE IT - TAG SOMEONE!" : "YOU'RE IT!", SW / 2, 92, h.warn);
-    }
-
-    // room code + ping, tucked into the corners
-    ctx.font = labelFont(12);
-    if (view.code) {
-      ctx.textAlign = 'left';
-      text(`ROOM ${view.code}`, 10, 14, h.dim);
-    }
-    if (view.ping != null) {
-      ctx.textAlign = 'right';
-      text(`${Math.round(view.ping)} ms`, SW - 10, SH - 12, h.dim);
-    }
-
-    this.drawMinimap(ctx, view, pvs, t, SW / 2 - rowW / 2 < 176 ? 86 : view.code ? 30 : 12);
-    if (view.me) this.drawStatus(ctx, view, t, labelFont);
-    ctx.restore();
-  }
-
-  // The whole arena in a corner: platforms, gadgets, everyone's position.
-  drawMinimap(ctx, view, pvs, t, top) {
-    const h = this.theme.hud;
-    const a = this.arena;
-    const s = Math.min(150 / a.w, 104 / a.h);
-    const w = a.w * s;
-    const hgt = a.h * s;
-    const x = 10;
-    const y = top;
-    ctx.save();
-    rr(ctx, x - 3, y - 3, w + 6, hgt + 6, 4);
-    ctx.fillStyle = h.chip;
-    ctx.fill();
-    ctx.strokeStyle = h.chipLine;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.rect(x, y, w, hgt);
-    ctx.clip();
-    ctx.fillStyle = h.dim;
-    for (const p of a.platforms) ctx.fillRect(x + p.x * s, y + p.y * s, Math.max(1.5, p.w * s), Math.max(1.2, p.oneway ? 1.2 : p.h * s));
-    for (const tr of a.tramps) {
-      ctx.fillStyle = h.warn;
-      ctx.fillRect(x + tr.x * s, y + tr.y * s - 1, Math.max(2, tr.w * s), 2);
-    }
-    for (const pk of view.pickups || []) {
-      const pt = a.pickups[pk.point];
-      ctx.fillStyle = KIND_COLORS[PICKUP_TYPES[pk.type]];
-      ctx.fillRect(x + pt.x * s - 1.5, y + pt.y * s - 1.5, 3, 3);
-    }
-    // what the camera currently shows
+    const kf = this.kf;
     const cam = this.cam;
-    ctx.strokeStyle = h.text;
-    ctx.globalAlpha = 0.5;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + (cam.x - this.SW / cam.z / 2) * s, y + (cam.y - this.SH / cam.z / 2) * s, (this.SW / cam.z) * s, (this.SH / cam.z) * s);
-    ctx.globalAlpha = 1;
+    const px = this.s * this.q; // canvas pixels per CSS pixel
+    g.imageSmoothingEnabled = !th.pixel;
     for (const pv of pvs) {
-      const px = x + pv.cx * s;
-      const py = y + (pv.y + 20) * s;
-      if (pv.isIt) {
-        ctx.strokeStyle = h.warn;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(px, py, 5 + Math.sin(t * 8) * 1.2, 0, 6.283);
-        ctx.stroke();
+      const sx = Math.round((pv.cx - cam.x) * kf);
+      if (sx < -20 * px || sx > this.fg.width + 20 * px) continue; // out of sight
+      let top = Math.round((pv.y - cam.y) * kf - (pv.orb ? 6 : (lab.gap || 7)) * px);
+      if (view.names !== false && pv.name) {
+        const l = this.label(pv.name, pv.local ? lab.you || lab.color : lab.color);
+        g.drawImage(l.c, clamp(sx - (l.w >> 1), 0, this.fg.width - l.w), top - l.h + 4); // names stay on screen at the edges
+        top -= l.h - 6;
       }
-      ctx.fillStyle = pv.color;
-      ctx.beginPath();
-      ctx.arc(px, py, pv.local ? 3.2 : 2.5, 0, 6.283);
-      ctx.fill();
-      if (pv.local) {
-        ctx.strokeStyle = h.text;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+      if (pv.isIt && view.phase !== 'countdown') {
+        const m = this.spr.marker;
+        const k = this.markK * kf;
+        const bob = Math.round(Math.sin(t * 5) * 2 * px);
+        g.drawImage(m.c, Math.round(sx + m.x0 * k), Math.round(top - 14 * px + bob + m.y0 * k), m.w * k, m.h * k);
       }
     }
-    ctx.restore();
+    if (!this.follow) return;
+    const it = pvs.find((p) => p.isIt);
+    const w = this.fg.width;
+    const h = this.fg.height;
+    if (!it || it.local) return;
+    const ix = (it.cx - cam.x) * kf;
+    const iy = (it.y + PH / 2 - cam.y) * kf;
+    if (ix > 0 && ix < w && iy > 0 && iy < h) return;
+    const m = 26 * px;
+    const ax = clamp(ix, m, w - m);
+    const ay = clamp(iy, m, h - m);
+    const ang = Math.atan2(iy - ay, ix - ax);
+    g.save();
+    g.translate(ax, ay);
+    g.rotate(ang);
+    g.fillStyle = it.color;
+    g.strokeStyle = lab.stroke || 'rgba(0,0,0,.6)';
+    g.lineWidth = 3 * px;
+    g.lineJoin = 'round';
+    g.beginPath();
+    g.moveTo(13 * px, 0);
+    g.lineTo(-8 * px, -10 * px);
+    g.lineTo(-8 * px, 10 * px);
+    g.closePath();
+    g.stroke();
+    g.fill();
+    g.restore();
   }
 
-  // Bottom centre: dash cooldown and whatever power-ups you are carrying.
-  drawStatus(ctx, view, t, labelFont) {
-    const h = this.theme.hud;
-    const me = view.me;
-    const items = [];
-    const ready = me.dashCd <= 0;
-    items.push({ label: 'DASH', frac: ready ? 1 : 1 - me.dashCd / (DASH_COOLDOWN + DASH_TICKS), color: ready ? h.text : h.dim, kind: null });
-    if (me.spd > 0) items.push({ label: 'SWIFT', frac: me.spd / SPEED_BUFF_TICKS, color: KIND_COLORS.speed, kind: 'speed' });
-    if (me.jmp > 0) items.push({ label: 'SPRING', frac: me.jmp / JUMP_BUFF_TICKS, color: KIND_COLORS.jump, kind: 'jump' });
-    if (me.shd > 0) items.push({ label: 'WARD', frac: me.shd / SHIELD_TICKS, color: KIND_COLORS.shield, kind: 'shield' });
-    const w = 74;
-    const gap = 8;
-    let x = this.SW / 2 - (items.length * w + (items.length - 1) * gap) / 2;
-    const y = this.SH - 30;
-    ctx.textBaseline = 'middle';
-    for (const it of items) {
-      rr(ctx, x, y, w, 20, h.radius ?? 6);
-      ctx.fillStyle = h.chip;
-      ctx.fill();
-      ctx.strokeStyle = h.chipLine;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.save();
-      rr(ctx, x + 2, y + 2, w - 4, 16, Math.max(0, (h.radius ?? 6) - 2));
-      ctx.clip();
-      ctx.globalAlpha = 0.3;
-      ctx.fillStyle = it.color;
-      ctx.fillRect(x + 2, y + 2, (w - 4) * clamp(it.frac, 0, 1), 16);
-      ctx.restore();
-      ctx.fillStyle = it.kind ? it.color : h.text;
-      if (it.kind) drawIcon(ctx, it.kind, x + 11, y + 10, 5.5, it.color);
-      ctx.font = labelFont(10.5);
-      ctx.textAlign = 'left';
-      ctx.fillStyle = h.text;
-      ctx.fillText(it.label, x + (it.kind ? 21 : 9), y + 11);
-      x += w + gap;
-    }
-  }
-
-  // Countdown numbers, GO!, spectator banner.
-  drawOverlay(ctx, view, t) {
-    const h = this.theme.hud;
-    const k = h.scale || 1;
-    const { SW, SH } = this;
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    let big = null;
-    let f = 0;
-    if (view.phase === 'countdown' && view.countdownMs != null) {
-      const ms = view.countdownMs;
-      const n = Math.ceil(ms / 1000);
-      if (n >= 1 && n <= 3) {
-        big = String(n);
-        f = 1 - (ms / 1000 - (n - 1));
-      }
-    } else if (view.goAge != null && view.goAge < 0.8) {
-      big = 'GO!';
-      f = view.goAge / 0.8;
-    }
-    if (big) {
-      const sc = 1.5 - 0.5 * Math.min(1, f * 4);
-      ctx.globalAlpha = f > 0.75 ? (1 - f) * 4 : 1;
-      ctx.font = `${h.weight} ${Math.round(130 * k * sc)}px ${h.font}`;
-      ctx.lineWidth = 10;
-      ctx.strokeStyle = h.bigStroke || 'rgba(0,0,0,.55)';
-      ctx.strokeText(big, SW / 2, SH / 2);
-      if (h.glow) {
-        ctx.shadowColor = h.glow;
-        ctx.shadowBlur = 30;
-      }
-      ctx.fillStyle = h.big || h.text;
-      ctx.fillText(big, SW / 2, SH / 2);
-      ctx.shadowBlur = 0;
-      ctx.globalAlpha = 1;
-    }
-    if (view.banner) {
-      ctx.font = `${h.labelWeight || 600} ${Math.round(14 * (h.labelScale || 1))}px ${h.labelFont || h.font}`;
-      const w = ctx.measureText(view.banner).width + 28;
-      rr(ctx, SW / 2 - w / 2, SH - 66, w, 26, 13);
-      ctx.fillStyle = h.chip;
-      ctx.fill();
-      ctx.strokeStyle = h.chipLine;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.fillStyle = h.text;
-      ctx.fillText(view.banner, SW / 2, SH - 52);
-    }
-    ctx.restore();
+  // Both layers flattened into one picture (for menu previews).
+  snapshot() {
+    const c = document.createElement('canvas');
+    c.width = this.fg.width;
+    c.height = this.fg.height;
+    const g = c.getContext('2d');
+    const k = this.q;
+    g.fillStyle = this.theme.letterbox;
+    g.fillRect(0, 0, c.width, c.height);
+    const bx = this.follow ? -this.cam.x * this.kDev * k : 0;
+    const by = this.follow ? -this.cam.y * this.kDev * k : 0;
+    g.drawImage(this.bg, bx, by, this.bg.width * k, this.bg.height * k);
+    g.drawImage(this.fg, 0, 0);
+    return c;
   }
 }
