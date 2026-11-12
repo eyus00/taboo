@@ -11,7 +11,7 @@
 //
 // Costs are in ticks, so the shortest route is the quickest one.
 
-import { PW, PH, MOVE_SPEED, AIR_TURN, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN } from './config.js';
+import { PW, PH, MOVE_SPEED, AIR_TURN, LAUNCH_VX, LAUNCH_VY, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN } from './config.js';
 import { rampY } from './arenas.js';
 import { RAMP_LIP, makeState, stepPlayer } from './physics.js';
 
@@ -150,7 +150,7 @@ const RISE_MAX = 720;
 const DROP_MAX = 1480;
 let REACH = null;
 
-function measureReach(launch) {
+function measureReach() {
   const y0 = 4000;
   const kinds = { hop: [], fall: [], tramp: [], fwd: [], back: [] };
   for (const kind of Object.keys(kinds)) {
@@ -158,7 +158,7 @@ function measureReach(launch) {
     const arena = {
       w: 40000, h: 9000, ramps: [], lifts: [], spikes: [], portals: [], pickups: [], spawns: [], respawns: [[0, 0]],
       platforms: [{ x: 19000, y: y0, w: 1000, h: 14, oneway: true }],
-      tramps: pad ? [{ x: 19926, y: y0 - 16, w: 68, h: 16, cx: 19960, vx: kind === 'tramp' ? 0 : launch[0], vy: kind === 'tramp' ? 0 : launch[1] }] : [],
+      tramps: pad ? [{ x: 19926, y: y0 - 16, w: 68, h: 16, cx: 19960, vx: kind === 'tramp' ? 0 : LAUNCH_VX, vy: kind === 'tramp' ? 0 : LAUNCH_VY }] : [],
     };
     const a = { id: 0, x0: 19002, x1: pad ? 19900 : 19998, y: y0, oneway: true };
     const tx = pad ? 19960 : 19998;
@@ -190,17 +190,16 @@ function measureReach(launch) {
   return kinds;
 }
 
-// the reach of a move for a target `rise` px higher (negative: lower) than the take-off
+// The reach of a move for a target `rise` px higher (negative: lower) than the
+// take-off. Rounds towards the easier target: this only decides what is worth trying.
 function reachOf(kind, rise) {
   const t = REACH[kind];
-  const i = clamp(Math.ceil((RISE_MAX - rise) / STEP), 0, t.length - 1); // rounds towards the higher target: never too generous
-  return t[i];
+  return t[clamp(Math.ceil((RISE_MAX - rise) / STEP), 0, t.length - 1)];
 }
 
 // ----------------------------------------------------------------------------
 export function buildNav(arena) {
-  const launcher = arena.tramps.find((t) => t.vx);
-  if (!REACH) REACH = measureReach(launcher ? [Math.abs(launcher.vx), launcher.vy] : [780, 1250]);
+  if (!REACH) REACH = measureReach();
   const solids = arena.platforms.filter((p) => !p.oneway);
   const surfaces = [];
   let runs = 0;
@@ -210,7 +209,7 @@ export function buildNav(arena) {
   for (const z of arena.spikes) zones.push({ y0: z.y + z.h, y1: z.y + z.h, x0: z.x - 16, x1: z.x + z.w + 16, kind: 'thorn' });
   arena.tramps.forEach((t, i) => zones.push({ y0: t.y + t.h, y1: t.y + t.h, x0: t.x - 14, x1: t.x + t.w + 14, kind: 'pad', i }));
   arena.portals.forEach((p, i) => zones.push({ y0: p.y + p.h, y1: p.y + p.h, x0: p.cx - 32, x1: p.cx + 32, kind: 'portal', i }));
-  arena.lifts.forEach((z, i) => zones.push({ y0: z.y + 1, y1: z.y + z.h + PH - 1, x0: z.x - HALF - 4, x1: z.x + z.w + HALF + 4, kind: 'lift', i }));
+  arena.lifts.forEach((z, i) => zones.push({ y0: z.y + 2, y1: z.y + z.h + PH - 2, x0: z.x - HALF - 4, x1: z.x + z.w + HALF + 4, kind: 'lift', i }));
   const zoneAt = (x, y) => zones.find((z) => y >= z.y0 - 1 && y <= z.y1 + 1 && x > z.x0 - 3 && x < z.x1 + 3);
 
   // 1. Standing surfaces: the top of every platform, minus the parts where a
@@ -373,7 +372,7 @@ export function buildNav(arena) {
     for (const b of surfaces) {
       if (b.ramp || a.run === b.run || Math.abs(a.y - b.y) > 6) continue;
       const gap = b.x0 - a.x1;
-      if (gap < -1 || gap > 44 || !a.endR || !b.endL || zoneAt((a.x1 + b.x0) / 2, a.y)) continue;
+      if (gap < -1 || gap > 8 || !a.endR || !b.endL) continue; // (anything wider is a hole: that takes a hop)
       add(a, b, { type: 'walk', dir: 1, cost: (mid(b) - mid(a)) / WALK });
       add(b, a, { type: 'walk', dir: -1, cost: (mid(b) - mid(a)) / WALK });
       a.joinR = b.joinL = true;
@@ -403,9 +402,9 @@ export function buildNav(arena) {
           let way = '';
           if (!open) {
             if (rise > PH - 2 && gap <= 70 && gap <= reachOf('hop', rise)) way = 'hop'; // up the wall we are standing against
-          } else if (rise < -10 && gap <= reachOf('fall', rise) - 6) way = 'fall';
+          } else if (rise < -10 && gap <= reachOf('fall', rise) + 6) way = 'fall';
           else if (Math.abs(rise) <= 6 && wet && wet.kind === 'lift' && gap < 200) way = 'fall'; // wade through the updraft
-          else if (gap <= reachOf('hop', rise) - 6) way = 'hop';
+          else if (gap <= reachOf('hop', rise) + 6) way = 'hop';
           if (!way) continue;
           pick = b;
           pickGap = gap;
@@ -414,7 +413,7 @@ export function buildNav(arena) {
         if (!pick) continue;
         const e = { type: how, x: tx, dir, lip: true };
         const start = how === 'fall' ? clamp(tx - dir * 34, a.x0, a.x1) : clamp(tx - dir * 4, a.x0, a.x1);
-        if (!tryEdge(a, pick, e, start) && how === 'fall' && pickGap <= reachOf('hop', ay - heightAt(pick, clamp(tx, pick.x0 + 14, pick.x1 - 14))) - 6) {
+        if (!tryEdge(a, pick, e, start) && how === 'fall' && pickGap <= reachOf('hop', ay - heightAt(pick, clamp(tx, pick.x0 + 14, pick.x1 - 14))) + 6) {
           tryEdge(a, pick, { type: 'hop', x: tx, dir, lip: true }, clamp(tx - dir * 4, a.x0, a.x1));
         }
       }
@@ -424,7 +423,7 @@ export function buildNav(arena) {
   // 2c. Straight up through a thin ledge or slope, round the side of a block
   //     overhead, and down through a thin ledge
   const clearColumn = (x, yTop, yBot) => !solids.some((b) => b.x < x + HALF && b.x + b.w > x - HALF && b.y < yBot && b.y + b.h > yTop);
-  const upMax = reachOf('hop', 0) > 0 ? RISE_MAX : 0;
+  const sideDone = new Set();
   for (const a of surfaces) {
     for (const b of surfaces) {
       if (a.run === b.run) continue;
@@ -433,7 +432,7 @@ export function buildNav(arena) {
       if (hi - lo < 12) continue;
       const m = (lo + hi) / 2;
       const rise = heightAt(a, m) - heightAt(b, m); // > 0: b is higher
-      if (rise > 6 && rise <= upMax && reachOf('hop', rise) >= 0) {
+      if (rise > 6 && reachOf('hop', rise) >= 0) {
         let done = false;
         if (b.oneway) {
           const xs = [m, lo + 8, hi - 8].filter((x, i) => i === 0 || hi - lo > 80);
@@ -459,10 +458,14 @@ export function buildNav(arena) {
         if (!done) {
           // take off beside it and come down on top
           for (const dir of [1, -1]) {
+            if (dir > 0 ? !b.endL : !b.endR) continue;
             const edge = dir > 0 ? (b.wall ? b.wall[0] : b.x0) : b.wall ? b.wall[1] : b.x1;
             const x = edge - dir * (HALF + 14);
-            if (x < a.x0 || x > a.x1 || (dir > 0 ? !b.endL : !b.endR)) continue;
-            if (tryEdge(a, b, { type: 'hop', x, dir }, x)) break;
+            const from = byRun[a.run].find((s) => x >= s.x0 && x <= s.x1);
+            const key = a.run + ':' + b.id + ':' + dir;
+            if (!from || sideDone.has(key)) continue;
+            sideDone.add(key);
+            tryEdge(from, b, { type: 'hop', x, dir }, x);
           }
         }
       } else if (rise < -6 && a.oneway) {

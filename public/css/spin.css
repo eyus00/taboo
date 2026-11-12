@@ -1,0 +1,128 @@
+/* Onigokko - the draw before a round (spinner.js): a lacquered rack of paper
+   reels, paper doors that slide open, red seals for the results.
+   Only transforms and opacity move, each with its delay set from the script. */
+
+.draw {
+  position: absolute; inset: 0; overflow: hidden; display: grid; place-items: center;
+  color: var(--ink); font-family: var(--serif); --cell: clamp(78px, 21vmin, 168px); --pic: calc((var(--cell) - 24px) * 1.7778);
+}
+.draw .veil { position: absolute; inset: 0; background: rgba(20, 16, 10, 0.5); animation: draw-fade 0.3s ease-out both, draw-gone 0.32s ease-in var(--out, 99s) forwards; }
+@keyframes draw-fade { from { opacity: 0; } }
+@keyframes draw-gone { to { opacity: 0; } }
+
+/* paper doors: a dark frame, a lattice, rice paper behind */
+.draw .door {
+  position: absolute; top: 0; bottom: 0; width: 50.3%; will-change: transform;
+  background:
+    linear-gradient(90deg, #33221a 0 9px, transparent 9px) 0 0 / 25% 100%,
+    linear-gradient(#33221a 0 9px, transparent 9px) 0 0 / 100% 20%,
+    var(--tex, linear-gradient(transparent, transparent)),
+    linear-gradient(#f6eedb, #e9dfc8);
+  box-shadow: inset 0 0 0 16px #2a1a12, inset 0 0 0 19px var(--gold);
+}
+.draw .door.l { left: 0; animation: door-l 0.52s cubic-bezier(0.6, 0, 0.25, 1) var(--open, 99s) forwards; }
+.draw .door.r { right: 0; animation: door-r 0.52s cubic-bezier(0.6, 0, 0.25, 1) var(--open, 99s) forwards; }
+@keyframes door-l { to { transform: translateX(-101%); } }
+@keyframes door-r { to { transform: translateX(101%); } }
+
+.draw .board {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: clamp(7px, 1.7vmin, 15px); max-width: 98vw;
+  animation: board-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.25) both, board-out 0.32s ease-in var(--out, 99s) forwards;
+}
+@keyframes board-in { from { opacity: 0; transform: translateY(-26px) scale(0.95); } }
+@keyframes board-out { to { opacity: 0; transform: translateY(-16px) scale(0.97); } }
+
+/* a paper tag hanging over the rack: which round this is */
+.draw .head {
+  margin: 0; display: flex; align-items: center; gap: 12px; padding: 5px 20px 4px; transform: rotate(-1.5deg);
+  background: var(--tex, none), var(--paper); box-shadow: 0 0 0 2px var(--ink), 0 6px 14px rgba(0, 0, 0, 0.35);
+  font: 800 12px/1.2 var(--serif); letter-spacing: 0.18em; text-transform: uppercase; white-space: nowrap;
+}
+.draw .head b { font: 400 clamp(19px, 3.6vmin, 27px)/1 var(--brush); letter-spacing: 0; text-transform: none; padding-top: 2px; }
+.draw .head span { color: var(--red-deep); }
+.draw .head .twist { color: #fff1dc; background: var(--red); padding: 3px 8px 2px; letter-spacing: 0.08em; }
+
+/* the rack: dark lacquer with brass ends, like the rods of the scrolls */
+.draw .rack {
+  position: relative; display: flex; align-items: flex-end; gap: clamp(8px, 2vmin, 20px);
+  padding: clamp(8px, 1.8vmin, 16px) clamp(16px, 3vmin, 30px) clamp(10px, 2.2vmin, 20px);
+  background: linear-gradient(#6a4c3b, #2a1a12 46%, #1f130e 70%, #46302a);
+  box-shadow: 0 0 0 2px #140c08, 0 20px 44px rgba(0, 0, 0, 0.5);
+}
+.draw .rack::before, .draw .rack::after {
+  content: ''; position: absolute; top: -5px; bottom: -5px; width: 12px;
+  background: linear-gradient(#d0aa62, var(--gold) 40%, #8f6c2f); box-shadow: 0 0 0 2px #140c08;
+}
+.draw .rack::before { left: -4px; }
+.draw .rack::after { right: -4px; }
+.draw .reel { position: relative; display: flex; flex-direction: column; gap: 5px; width: var(--pic); }
+.draw .reel.who { width: calc(var(--pic) * 1.22); }
+.draw .reel h4 { margin: 0; text-align: center; font: 800 clamp(9.5px, 1.7vmin, 12px)/1 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; color: #e9d6a8; white-space: nowrap; }
+.draw .win { position: relative; height: var(--cell); overflow: hidden; background: var(--tex, none), var(--paper-lit); box-shadow: 0 0 0 2px #140c08, 0 0 0 4px var(--gold); }
+/* the reel is a drum: darker towards the top and the bottom edge */
+.draw .reel.spun .win::after { content: ''; position: absolute; inset: 0; background: linear-gradient(rgba(28, 20, 12, 0.6), rgba(28, 20, 12, 0) 26%, rgba(28, 20, 12, 0) 74%, rgba(28, 20, 12, 0.6)); animation: draw-gone 0.3s ease-out var(--at, 99s) forwards; }
+.draw .strip { will-change: transform; }
+@keyframes reel {
+  0% { transform: translateY(0); animation-timing-function: cubic-bezier(0.14, 0.56, 0.22, 1); }
+  88% { transform: translateY(var(--over)); animation-timing-function: ease-in-out; }
+  100% { transform: translateY(var(--end)); }
+}
+.draw .cell { position: relative; height: var(--cell); display: flex; flex-direction: column; overflow: hidden; }
+.draw .reel.pic .cell { background: var(--ink); }
+.draw .reel.pic img { display: block; width: 100%; height: calc(var(--cell) - 24px); object-fit: cover; }
+.draw .reel.pic b { flex: 1; display: grid; place-items: center; padding: 1px 4px 0; font: 800 clamp(10.5px, 1.9vmin, 13.5px)/1 var(--serif); color: var(--paper); white-space: nowrap; overflow: hidden; }
+.draw .reel.pic .word { background: none; justify-content: center; }
+.draw .reel.pic .word b { flex: none; display: block; text-align: center; white-space: normal; font: 400 calc(var(--cell) * 0.24)/1.05 var(--brush); color: var(--ink); padding: 0 8px; }
+.draw .reel.who .cell { flex-direction: row; align-items: center; justify-content: center; gap: calc(var(--cell) * 0.09); padding: 0 calc(var(--cell) * 0.12); }
+.draw .reel.who .chip { flex: none; width: calc(var(--cell) * 0.11); height: calc(var(--cell) * 0.46); }
+.draw .reel.who b { font: 400 calc(var(--cell) * 0.31)/1.15 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0.1em 0.16em 0 0; }
+.draw .reel.side .cell { box-shadow: inset 0 calc(var(--cell) * -0.07) 0 var(--side); }
+
+/* the seal that lands on a reel once it has stopped */
+.draw .stamp {
+  position: absolute; right: -9px; top: 9px; width: 30px; height: 30px; display: grid; place-items: center; transform: rotate(9deg);
+  color: #fff1dc; background: var(--red-deep);
+  clip-path: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%);
+  animation: stamp 0.3s cubic-bezier(0.2, 1.5, 0.4, 1) var(--at, 0s) both;
+}
+.draw .stamp.ok { background: var(--tick) center / 18px no-repeat, var(--red-deep); }
+.draw .stamp.big { right: calc(var(--cell) * -0.13); top: calc(var(--cell) * -0.02); width: calc(var(--cell) * 0.46); height: calc(var(--cell) * 0.46); font: 400 calc(var(--cell) * 0.3)/1 'Yuji Syuku', var(--serif); background: var(--red); }
+.draw .stamp.dark { background: var(--ink); font-size: calc(var(--cell) * 0.26); }
+.draw .stamp.dark .ic { color: #ffb52e; }
+.draw .stamp.still, .draw.still .stamp { animation: none; }
+@keyframes stamp { from { opacity: 0; transform: scale(2.6) rotate(-16deg); } }
+
+/* team battle: the two sides under the rack */
+.draw .sides { display: flex; align-items: stretch; gap: 10px; max-width: 96vw; }
+.draw .sides > i { align-self: center; font: 400 clamp(17px, 3.4vmin, 26px)/1 var(--brush); color: #fff3e0; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6); }
+.draw .side { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 12px; padding: 5px 16px 4px 12px; color: #fff; background: var(--side); box-shadow: 0 0 0 2px #140c08; clip-path: polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%); }
+.draw .side b { font: 800 11px/1 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; }
+.draw .side span { font: 400 clamp(15px, 3vmin, 21px)/1.15 var(--brush); white-space: nowrap; }
+.draw .side .me { text-decoration: underline; text-underline-offset: 3px; }
+
+/* and the news, in brush letters */
+.draw .verdict {
+  margin: 0; padding: 2px 30px 4px; font: 400 clamp(24px, 5.6vmin, 46px)/1.1 var(--brush); color: #fff3e0; white-space: nowrap; transform: rotate(-2deg);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.65), 0 0 16px rgba(0, 0, 0, 0.55);
+  animation: verdict 0.3s cubic-bezier(0.2, 1.4, 0.4, 1) var(--at, 0s) both;
+}
+.draw.mine .verdict { background: var(--stroke-red) center / 100% 100% no-repeat; text-shadow: none; }
+.draw .verdict.still, .draw.still .verdict { animation: none; }
+@keyframes verdict { from { opacity: 0; transform: scale(1.5) rotate(-2deg); } }
+
+/* a phone held upright: arena and style side by side, the names underneath */
+@media (orientation: portrait) and (max-width: 640px) {
+  .draw { --cell: clamp(84px, 27vw, 150px); }
+  .draw .rack { flex-wrap: wrap; justify-content: center; max-width: 96vw; }
+  .draw .reel.who { width: calc(var(--pic) * 2 + clamp(8px, 2vmin, 20px)); }
+  .draw .reel.who .win { height: calc(var(--cell) * 0.78); }
+  .draw .reel.who .cell { height: calc(var(--cell) * 0.78); }
+  .draw .head { flex-wrap: wrap; justify-content: center; white-space: normal; text-align: center; max-width: 92vw; }
+  .draw .sides { flex-direction: column; gap: 5px; }
+  .draw .sides > i { display: none; }
+}
+@media (max-height: 420px) {
+  .draw .board { gap: 5px; }
+  .draw .head { padding: 3px 16px 2px; }
+  .draw .verdict { font-size: 24px; }
+}

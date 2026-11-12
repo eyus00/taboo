@@ -4,6 +4,7 @@
 
 import { arenaById } from '/shared/arenas.js';
 import { Renderer } from './renderer.js';
+import { THEME_MAP } from './themes/index.js';
 
 const cache = new Map();
 const painters = new Map();
@@ -76,6 +77,22 @@ export function styleStill(themeId, w = 240, h = 135) {
     cache.set(key, shoot(SHOWCASE, themeId, w, h, { phase: 'playing', it: 0, names: false, boxes: [0, 1], players }));
   }
   return cache.get(key);
+}
+
+// Small pictures for the draw before a round. These hand back what the menus
+// have already painted; with `make` they paint one that is missing - an arena
+// in the house style, or a style that has been loaded (never a guess).
+export function arenaThumb(arenaId, prefer = [], make = false) {
+  for (const themeId of prefer) {
+    const hit = cache.get(`${arenaId}/${themeId}/240`);
+    if (hit) return hit;
+  }
+  for (const [key, url] of cache) if (key.startsWith(`${arenaId}/`) && key.endsWith('/240')) return url;
+  return make ? scenePreview(arenaId, 'ink', 240, 135) : null;
+}
+
+export function styleThumb(themeId, make = false) {
+  return cache.get(`still/${themeId}/240`) || (make && THEME_MAP[themeId] ? styleStill(themeId) : null);
 }
 
 // Fonts arrived after a picture was painted: start over.

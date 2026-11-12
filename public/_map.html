@@ -1,0 +1,219 @@
+<!doctype html>
+<!-- Developer tool: a schematic of an arena.  /_map.html?arena=hills&nav=1&scale=0.7
+     nav=1 draws the bots' route map on top; nav=2 only the launcher / trampoline / updraft / portal routes. -->
+<meta charset="utf-8" />
+<title>Arena map</title>
+<style>
+  body { margin: 0; background: #14161c; color: #cfd3dc; font: 13px/1.3 system-ui, sans-serif; }
+  #bar { padding: 6px 10px; }
+  #bar a { color: #8ab4ff; margin-right: 10px; text-decoration: none; }
+  #bar a.on { color: #fff; font-weight: 700; }
+  canvas { display: block; }
+</style>
+<div id="bar"></div>
+<canvas id="c"></canvas>
+<script type="module">
+  import { ARENAS, arenaById, TILE } from '/shared/arenas.js';
+  import { buildNav } from '/shared/nav.js';
+
+  const q = new URLSearchParams(location.search);
+  const arena = arenaById(q.get('arena') || ARENAS[0].id);
+  const showNav = Number(q.get('nav') || 0);
+  const k = Number(q.get('scale') || 0.7);
+  const bar = document.getElementById('bar');
+  bar.innerHTML =
+    ARENAS.map((a) => `<a class="${a === arena ? 'on' : ''}" href="?arena=${a.id}&nav=${showNav}&scale=${k}">${a.name}</a>`).join('') +
+    ` | <a href="?arena=${arena.id}&nav=${(showNav + 1) % 3}&scale=${k}">routes: ${['off', 'all', 'shortcuts'][showNav]}</a>` +
+    ` <b>${arena.name}</b> - ${arena.blurb} (${arena.w / TILE} x ${arena.h / TILE} tiles)`;
+
+  const M = 22; // margin for the row / column numbers
+  const cv = document.getElementById('c');
+  cv.width = Math.round(arena.w * k) + M * 2;
+  cv.height = Math.round(arena.h * k) + M * 2;
+  const g = cv.getContext('2d');
+  g.translate(M, M);
+  g.scale(k, k);
+  g.fillStyle = '#f4f1e8';
+  g.fillRect(0, 0, arena.w, arena.h);
+
+  // grid, numbered every 4 tiles
+  g.lineWidth = 1;
+  for (let c = 0; c <= arena.w / TILE; c++) {
+    g.strokeStyle = c % 4 ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.16)';
+    g.beginPath(); g.moveTo(c * TILE, 0); g.lineTo(c * TILE, arena.h); g.stroke();
+  }
+  for (let r = 0; r <= arena.h / TILE; r++) {
+    g.strokeStyle = r % 4 ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.16)';
+    g.beginPath(); g.moveTo(0, r * TILE); g.lineTo(arena.w, r * TILE); g.stroke();
+  }
+  g.fillStyle = '#9aa3b5';
+  g.font = `${11 / k}px system-ui`;
+  g.textAlign = 'center';
+  for (let c = 0; c < arena.w / TILE; c += 2) { g.fillText(c, c * TILE + TILE / 2, -5 / k); g.fillText(c, c * TILE + TILE / 2, arena.h + 14 / k); }
+  g.textAlign = 'right';
+  for (let r = 0; r < arena.h / TILE; r += 2) g.fillText(r, -4 / k, r * TILE + TILE * 0.7);
+  g.textAlign = 'left';
+  for (let r = 0; r < arena.h / TILE; r += 2) g.fillText(r, arena.w + 4 / k, r * TILE + TILE * 0.7);
+
+  // updrafts
+  for (const z of arena.lifts) {
+    g.fillStyle = 'rgba(80,170,255,0.22)';
+    g.fillRect(z.x, z.y, z.w, z.h);
+    g.strokeStyle = 'rgba(40,120,220,0.7)';
+    g.lineWidth = 2;
+    for (let y = z.y + z.h - 14; y > z.y + 10; y -= 46) {
+      g.beginPath(); g.moveTo(z.x + z.w / 2 - 12, y); g.lineTo(z.x + z.w / 2, y - 14); g.lineTo(z.x + z.w / 2 + 12, y); g.stroke();
+    }
+  }
+  // platforms
+  for (const p of arena.platforms) {
+    if (p.oneway) {
+      g.fillStyle = '#8a5a2b';
+      g.fillRect(p.x, p.y, p.w, p.h);
+    } else {
+      g.fillStyle = '#4a5160';
+      g.fillRect(p.x, p.y, p.w, p.h);
+      g.strokeStyle = '#2b303b';
+      g.lineWidth = 2;
+      g.strokeRect(p.x + 1, p.y + 1, p.w - 2, p.h - 2);
+    }
+  }
+  // slopes
+  g.lineCap = 'round';
+  for (const r of arena.ramps) {
+    g.strokeStyle = '#b5651d';
+    g.lineWidth = 9;
+    g.beginPath(); g.moveTo(r.x0, r.y0 + 5); g.lineTo(r.x1, r.y1 + 5); g.stroke();
+  }
+  // thorns
+  for (const z of arena.spikes) {
+    g.fillStyle = '#d2222d';
+    const n = Math.max(1, Math.round(z.w / 13));
+    for (let i = 0; i < n; i++) {
+      const x = z.x + (z.w * i) / n;
+      g.beginPath(); g.moveTo(x, z.y + z.h); g.lineTo(x + z.w / n / 2, z.y - 4); g.lineTo(x + z.w / n, z.y + z.h); g.fill();
+    }
+  }
+  // trampolines and launchers
+  for (const t of arena.tramps) {
+    g.fillStyle = t.vx ? '#e67e00' : '#1ea34a';
+    g.fillRect(t.x, t.y, t.w, t.h);
+    g.strokeStyle = g.fillStyle;
+    g.lineWidth = 4;
+    const dx = t.vx ? Math.sign(t.vx) * 46 : 0;
+    const dy = t.vx ? -52 : -70;
+    g.beginPath(); g.moveTo(t.cx, t.y - 4); g.lineTo(t.cx + dx, t.y + dy); g.stroke();
+    const ang = Math.atan2(dy, dx);
+    g.beginPath();
+    g.moveTo(t.cx + dx, t.y + dy);
+    g.lineTo(t.cx + dx - 16 * Math.cos(ang - 0.45), t.y + dy - 16 * Math.sin(ang - 0.45));
+    g.moveTo(t.cx + dx, t.y + dy);
+    g.lineTo(t.cx + dx - 16 * Math.cos(ang + 0.45), t.y + dy - 16 * Math.sin(ang + 0.45));
+    g.stroke();
+  }
+  // portals: same letter, same colour; a droppable pair gets a dashed flight line
+  const hues = ['#8e44ad', '#0e8f8f', '#c0397b', '#3b6fd1'];
+  arena.portals.forEach((p, i) => {
+    const col = hues[p.pair % hues.length];
+    if (p.to > i) {
+      const d = arena.portals[p.to];
+      g.strokeStyle = col;
+      g.globalAlpha = 0.35;
+      g.lineWidth = 3;
+      g.setLineDash(p.drop ? [14, 10] : []);
+      const lift = Math.max(170, Math.hypot(d.cx - p.cx, d.cy - p.cy) * 0.36);
+      const top = Math.max(40, Math.min(p.cy, d.cy) - lift);
+      g.beginPath(); g.moveTo(p.cx, p.cy); g.quadraticCurveTo((p.cx + d.cx) / 2, 2 * top - (p.cy + d.cy) / 2, d.cx, d.cy); g.stroke();
+      g.setLineDash([]);
+      g.globalAlpha = 1;
+    }
+    g.fillStyle = col;
+    g.beginPath(); g.ellipse(p.cx, p.cy, p.w / 2, p.h / 2, 0, 0, 7); g.fill();
+    g.fillStyle = '#fff';
+    g.font = 'bold 26px system-ui';
+    g.textAlign = 'center';
+    g.fillText(String.fromCharCode(65 + p.pair) + (p.drop ? '↓' : ''), p.cx, p.cy + 9);
+  });
+  // lucky-box spots
+  for (const b of arena.pickups) {
+    g.fillStyle = '#f1c40f';
+    g.strokeStyle = '#7a6200';
+    g.lineWidth = 2;
+    g.fillRect(b.x - 11, b.y - 11, 22, 22);
+    g.strokeRect(b.x - 11, b.y - 11, 22, 22);
+    g.fillStyle = '#7a6200';
+    g.font = 'bold 18px system-ui';
+    g.textAlign = 'center';
+    g.fillText('?', b.x, b.y + 6);
+  }
+  // starts, respawn points, bases
+  arena.spawns.forEach(([x, y], i) => {
+    g.fillStyle = i % 2 ? '#3f7fe2' : '#e2543f';
+    g.beginPath(); g.arc(x + 16, y + 20, 15, 0, 7); g.fill();
+    g.fillStyle = '#fff';
+    g.font = 'bold 20px system-ui';
+    g.textAlign = 'center';
+    g.fillText(i + 1, x + 16, y + 27);
+  });
+  if (arena.respawns !== arena.spawns) {
+    for (const [x, y] of arena.respawns) {
+      g.strokeStyle = '#555';
+      g.lineWidth = 3;
+      g.beginPath(); g.arc(x + 16, y + 20, 13, 0, 7); g.stroke();
+      g.fillStyle = '#555';
+      g.font = 'bold 18px system-ui';
+      g.textAlign = 'center';
+      g.fillText('r', x + 16, y + 26);
+    }
+  }
+  arena.bases.forEach(([x, y], t) => {
+    g.strokeStyle = '#222';
+    g.lineWidth = 4;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - 74); g.stroke();
+    g.fillStyle = t ? '#3f7fe2' : '#e2543f';
+    g.beginPath(); g.moveTo(x, y - 74); g.lineTo(x + 34 * (t ? -1 : 1), y - 60); g.lineTo(x, y - 46); g.fill();
+  });
+
+  if (showNav) {
+    const t0 = performance.now();
+    const nav = buildNav(arena);
+    const ms = performance.now() - t0;
+    bar.innerHTML += ` | route map: ${nav.stats.surfaces} surfaces, ${nav.stats.edges} moves, built in ${ms.toFixed(0)} ms`;
+    const colors = { walk: '#888', hop: '#1f77b4', up: '#17a2b8', drop: '#9467bd', fall: '#7f7f7f', pad: '#ff7f0e', lift: '#2ca02c', portal: '#d62728' };
+    for (const s of nav.surfaces) {
+      g.strokeStyle = s.id % 2 ? '#00c2a8' : '#ff3fa4';
+      g.lineWidth = 3;
+      g.beginPath(); g.moveTo(s.x0, nav.heightAt(s, s.x0) - 3); g.lineTo(s.x1, nav.heightAt(s, s.x1) - 3); g.stroke();
+      if (showNav === 1) {
+        g.fillStyle = '#000';
+        g.font = '13px system-ui';
+        g.textAlign = 'center';
+        g.fillText(s.id, (s.x0 + s.x1) / 2, s.y - 8);
+      }
+    }
+    for (const s of nav.surfaces) {
+      for (const e of s.edges) {
+        if (e.type === 'walk') continue;
+        if (showNav === 2 && !(e.type === 'pad' || e.type === 'lift' || e.type === 'portal')) continue;
+        const b = nav.surfaces[e.to];
+        const x0 = e.x ?? e.xs[e.xs.length >> 1];
+        const y0 = nav.heightAt(s, Math.max(s.x0, Math.min(s.x1, x0)));
+        const x1 = e.land ?? Math.max(b.x0, Math.min(b.x1, x0));
+        const y1 = nav.heightAt(b, Math.max(b.x0, Math.min(b.x1, x1)));
+        g.strokeStyle = colors[e.type];
+        g.globalAlpha = 0.55;
+        g.lineWidth = e.type === 'pad' || e.type === 'lift' || e.type === 'portal' ? 2.5 : 1.5;
+        g.beginPath();
+        g.moveTo(x0, y0 - 6);
+        const bend = e.type === 'drop' || e.type === 'fall' ? 0 : Math.min(140, 30 + Math.abs(x1 - x0) * 0.25);
+        g.quadraticCurveTo((x0 + x1) / 2, Math.min(y0, y1) - bend, x1, y1 - 6);
+        g.stroke();
+        g.globalAlpha = 0.9;
+        g.fillStyle = colors[e.type];
+        g.beginPath(); g.arc(x1, y1 - 6, 4, 0, 7); g.fill();
+        g.globalAlpha = 1;
+      }
+    }
+  }
+  document.title = 'ready';
+</script>
