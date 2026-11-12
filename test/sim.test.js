@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, MOVE_SPEED, IMMUNE_TICKS, STUN_TICKS, RESPAWN_TICKS,
   SPEED_BUFF_MUL, TOUCH, AIR_JUMPS, twistById, IN_USE, ITEM_KINDS, BOX_FIRST_TICKS, ITEM_ARM_TICKS, STORM_SPEED, IT_SPEED_MUL,
-  BLAST_RADIUS, BOMB_FUSE_TICKS, BOMB_MIN_FUSE, BOMB_POINTS, BOMB_REST_TICKS, FLAG_POINTS, LAUNCH_VX, LAUNCH_VY,
+  BLAST_RADIUS, BOMB_FUSE_TICKS, BOMB_MIN_FUSE, BOMB_POINTS, BOMB_REST_TICKS, FLAG_LOCK_TICKS, FLAG_POINTS, LAUNCH_VX, LAUNCH_VY,
 } from '../shared/config.js';
 import { ARENAS } from '../shared/arenas.js';
 import { makeState, stepPlayer, packState, unpackState, STATE_LEN } from '../shared/physics.js';
@@ -244,6 +244,23 @@ test('slopes: walk up and down without bouncing, jump up through, hold down to p
   run(r, IN_RIGHT | IN_DOWN, 60);
   assert.equal(r.y, floorY, 'passed underneath');
   assert.ok(r.x > 1600);
+});
+
+test('steep slopes: a runner always climbs from the low end, even with a speed boost, and never slips underneath', () => {
+  for (const slope of [1, 1.5, 2, 2.5]) {
+    for (const speed of [1, 1.35, 1.6]) {
+      const hill = { ...box, platforms: [box.platforms[0]], ramps: [{ x0: 1500, y0: 720, x1: 1700, y1: 720 - 200 * slope }], lifts: [], portals: [], tramps: [], spikes: [] };
+      for (let off = 0; off < 40; off++) {
+        const p = makeState(1200 + off, floorY);
+        let top = p.y;
+        for (let i = 0; i < 120; i++) {
+          stepPlayer(p, IN_RIGHT, hill, false, { grav: 1, speed });
+          top = Math.min(top, p.y);
+        }
+        assert.ok(top < floorY - 150, `slope ${slope}, speed x${speed}, start ${off}: went underneath`);
+      }
+    }
+  }
 });
 
 test('updrafts carry you up without any input and give your air jump back', () => {
@@ -515,9 +532,12 @@ test('team battle: the bomb only sticks to enemies and blows up for points; flag
   sim.step([]);
   assert.equal(sim.flags[0].carrier, -1);
   assert.deepEqual(sim.score, [BOMB_POINTS, FLAG_POINTS], 'captured');
-  // ... and again, but this time a defender touches the carrier
+  // ... and again, but this time a defender touches the carrier.
+  // A flag that has just come home cannot be taken again for a moment.
   p[3].s.x = box.bases[0][0] - PW / 2;
   sim.step([]);
+  assert.equal(sim.flags[0].carrier, -1, 'not straight away');
+  for (let i = 0; i < FLAG_LOCK_TICKS; i++) sim.step([]);
   assert.equal(sim.flags[0].carrier, 3);
   p[3].s.x = 1000;
   p[1].s.x = 1000 + PW;
@@ -528,7 +548,7 @@ test('team battle: the bomb only sticks to enemies and blows up for points; flag
   park();
   sim.it = 3;
   p[3].s.x = box.bases[0][0] - PW / 2;
-  sim.step([]);
+  for (let i = 0; i <= FLAG_LOCK_TICKS; i++) sim.step([]);
   assert.equal(sim.flags[0].carrier, -1);
   const res = standings(sim, ['A', 'B', 'C', 'D'], 'team');
   assert.equal(res.win, 1);
@@ -782,7 +802,8 @@ test('bots play every arena with 2, 4 and 6: tags keep happening, nobody stands 
     }
   }
   console.log(`      ${log.join('; ')}`);
-  assert.ok(falls / minutes < 0.05, `${falls} pit falls in ${minutes} bot-minutes`); // fewer than one per 20 minutes of play, per bot
+  // (over many more seeds than this it comes to about one fall per 500 minutes of play, per bot)
+  assert.ok(falls / minutes < 0.02, `${falls} pit falls in ${minutes} bot-minutes`);
 });
 
 test('bots play team battles: the bomb is passed or goes off, flags are stolen and brought home, nobody stands about', () => {
@@ -813,7 +834,7 @@ test('bots play team battles: the bomb is passed or goes off, flags are stolen a
   console.log(`      ${log.join('; ')}`);
   // flags do get brought home, if not in every match (a keeper who stays put is hard to beat)
   assert.ok(captures >= 20, `only ${captures} flags brought home in ${ARENAS.length * 3} team matches`);
-  assert.ok(falls / minutes < 0.05, `${falls} pit falls in ${minutes} bot-minutes`);
+  assert.ok(falls / minutes < 0.02, `${falls} pit falls in ${minutes} bot-minutes`);
 });
 
 console.log(`sim: ${passed} tests passed`);

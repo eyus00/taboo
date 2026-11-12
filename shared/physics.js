@@ -317,7 +317,10 @@ function onRamps(p, arena, prevCx, prevFeet, wasGround, vy0, down) {
       // standing on something flat: walk into the low end of a slope to go up it.
       // Walking the other way, or holding down, passes underneath instead.
       const uphill = r.y1 < r.y0 ? 1 : -1;
-      ok = !down && p.vx * uphill > 0 && sy <= feet + EPS && feet - sy <= STEP;
+      // (a steep slope rises more than one small step per tick at a run, more
+      // still with a speed boost, so allow for the ground covered this tick)
+      const rise = (Math.abs(cx - prevCx) * Math.abs(r.y1 - r.y0)) / (r.x1 - r.x0) + 2;
+      ok = !down && p.vx * uphill > 0 && sy <= feet + EPS && feet - sy <= Math.max(STEP, rise);
     } else if (wasGround && vy0 >= 0 && Math.abs(prevFeet - sy) <= STICK) {
       ok = true; // walking along it, uphill or downhill
     } else {

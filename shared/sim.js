@@ -37,6 +37,7 @@ import {
   BOMB_POINTS,
   FLAG_POINTS,
   FLAG_R,
+  FLAG_LOCK_TICKS,
   SAFE_BONUS,
 } from './config.js';
 import { makeState, stepPlayer } from './physics.js';
@@ -87,7 +88,7 @@ export class Sim {
   setTeams(teams) {
     this.teams = teams;
     for (const p of this.players) if (p) p.team = teams[p.slot] ?? 0;
-    this.flags = this.arena.bases.map(([x, y]) => ({ home: [x, y], x, y: y - PH, carrier: -1 }));
+    this.flags = this.arena.bases.map(([x, y]) => ({ home: [x, y], x, y: y - PH, carrier: -1, lock: 0 }));
   }
 
   // Remove a player (disconnect). If they were "it", someone else gets it.
@@ -383,6 +384,7 @@ export class Sim {
     f.carrier = -1;
     f.x = f.home[0];
     f.y = f.home[1] - PH;
+    f.lock = FLAG_LOCK_TICKS;
   }
 
   // If this player is carrying a flag, it goes back to its base.
@@ -399,6 +401,7 @@ export class Sim {
     this.flags.forEach((f, team) => {
       const near = (o, x, y) => Math.abs(o.s.x + PW / 2 - x) < FLAG_R && Math.abs(o.s.y + PH - y) < FLAG_R + 14;
       if (f.carrier < 0) {
+        if (f.lock > 0) return void f.lock--; // just sent home: hands off for a moment
         // at home: an enemy with free hands (not the bomb carrier) takes it
         for (const o of this.players) {
           if (!o || o.team === team || o.slot === this.it || o.s.dead > 0 || o.s.orb > 0 || o.s.stun > 0) continue;

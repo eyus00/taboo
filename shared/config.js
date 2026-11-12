@@ -117,6 +117,7 @@ export const BOMB_STUN_TICKS = 80;
 export const BOMB_POINTS = 2;
 export const FLAG_POINTS = 3;
 export const FLAG_R = 34; // how close you have to be to a flag or a base
+export const FLAG_LOCK_TICKS = 75; // a flag that was just sent home cannot be taken again straight away
 export const TEAM_NAMES = ['Sun', 'Moon'];
 export const TEAM_COLORS = ['#e2543f', '#3f7fe2'];
 // colour slots handed out by team, so one side is warm and the other cool

@@ -117,4 +117,4 @@ Start the server (`PORT=3000 node server.js`) and open
 `/_theme.html?theme=<id>&arena=hills` - four bots play a match in your style.
 Add `&zoom=1.6&fx=1000&fy=900` for a close-up of a world point, `&names=0` to
 hide names, `&seed=3` for a different match. Arenas: hills, canyon, pagoda,
-zigzag, dojo.
+zigzag, dojo, bramble.

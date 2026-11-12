@@ -51,6 +51,14 @@ export function makeBot(seed = 1) {
 }
 
 const navOf = (arena) => (arena.nav ||= buildNav(arena));
+
+// The route map of an arena is worked out the first time a bot thinks in it,
+// which takes a moment (a tenth of a second or so; a few tenths the very first
+// time in a fresh page). Call this when the arena is chosen - during the draw
+// or the countdown - to get that out of the way before the round starts.
+export function prepareBots(arena) {
+  navOf(arena);
+}
 const dirBits = (d) => (d < 0 ? IN_LEFT : d > 0 ? IN_RIGHT : 0);
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const NEAR = 13; // close enough to where we wanted to stand

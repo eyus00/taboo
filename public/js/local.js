@@ -3,7 +3,7 @@
 
 import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, MAX_PLAYERS, ITEM_LOCK_TICKS, TEAM_SLOTS } from '/shared/config.js';
 import { Sim, standings, makeTeams } from '/shared/sim.js';
-import { makeBot, botThink } from '/shared/bots.js';
+import { makeBot, botThink, prepareBots } from '/shared/bots.js';
 
 const BOT_NAMES = ['Zap', 'Mox', 'Juno', 'Blip', 'Rook', 'Fizz', 'Pip', 'Nori', 'Kiko', 'Taro'];
 
@@ -44,6 +44,7 @@ export class LocalGame {
       }
     }
     if (this.teams) this.sim.setTeams(this.teams);
+    prepareBots(this.arena); // work out the bots' route map now, not on the first tick of the round
     this.startIt = slots[Math.floor(Math.random() * slots.length)]; // drawn now, so the draw can be shown
 
     this.phase = 'countdown';
