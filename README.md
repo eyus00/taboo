@@ -50,7 +50,19 @@ Any host that runs a long-lived Node process with WebSockets works the same way 
 | Drop through a thin ledge or slope, fall faster | &darr; or S | small button |
 | Pause menu | Esc | menu button |
 
-Menus: up / down move between things, left / right change a choice (rules, arena cards, style cards), Enter chooses, Esc goes back. On the title screen 1 / 2 / 3 pick an entry; on the join screen just type the four digits.
+Everything can be done without a mouse, and every screen shows its keys (on phones the cues are hidden):
+
+| Where | Keys |
+|---|---|
+| Any menu | &uarr; / &darr; move, &larr; / &rarr; change the choice you are on, Enter choose, Esc back |
+| Anywhere | M sound on / off, F full screen |
+| Title screen | 1 create a room, 2 join, 3 practice, H how to play, N change name |
+| Join | type the four digits, Backspace deletes, Enter joins |
+| Match setup | A next arena, S next style (Shift goes back), G game, R rules or rounds, L round length, P power-ups, B bots, Enter start, C copy the invite link |
+| In a match | Esc pause menu; there: Esc resume, H how to play, Q leave |
+| Results | Enter play again, Esc back |
+
+Keys that would throw you out of a game (Esc in a room, Q in the pause menu, Esc to end a tournament) have to be pressed twice.
 
 - "It" tags by touching another player. Grazing counts, and the server also accepts a touch against where the target was on the tagger's own screen, so lag does not rob you of a tag.
 - The tagged player is frozen for 0.4 s so the tagger can get away, and the tagger cannot be tagged back for 1 s (they flash while protected). "It" runs slightly faster than everyone else.

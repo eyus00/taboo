@@ -42,6 +42,9 @@ const cleanName = (raw) =>
 const pickRandom = (list) => list[Math.floor(Math.random() * list.length)];
 const INK_COLORS = ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12']; // the house style's red, blue, green, yellow
 const isTouch = matchMedia('(pointer: coarse)').matches;
+// Key cues are shown wherever there is a keyboard: always on a computer, and
+// on a tablet from the moment someone presses a real key.
+document.body.classList.toggle('no-kbd', isTouch);
 
 // on touch screens the view can scroll a little past the floor, so the buttons never cover you
 const renderer = new Renderer($('stage'), { padBottom: isTouch ? 104 : 0 });
@@ -140,9 +143,55 @@ function moveFocus(dir) {
   (group ? next.querySelector('input:checked') || next.querySelector('input') : next).focus();
 }
 
+// A button label with its key beside it.
+function setLabel(btn, text, key) {
+  btn.textContent = text;
+  if (key) btn.append(' ', el('kbd', '', key));
+}
+
+// A row of key cues: [[keys, what they do], ...]
+function setLegend(box, items) {
+  box.textContent = '';
+  for (const [keys, text] of items) {
+    const s = el('span');
+    for (const k of keys) s.append(el('kbd', '', k));
+    s.append(text);
+    box.append(s);
+  }
+}
+
+// Things that would throw you out of a game need the key twice.
+let armed = '';
+let armedAt = 0;
+function twice(what, message) {
+  const now = performance.now();
+  if (armed === what && now - armedAt < 2500) {
+    armed = '';
+    return true;
+  }
+  armed = what;
+  armedAt = now;
+  toast(message);
+  return false;
+}
+
+function toggleSound(say) {
+  sfx.toggle();
+  paintSound();
+  sfx.play('click');
+  if (say) toast(`Sound ${sfx.muted ? 'off' : 'on'}`);
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else document.documentElement.requestFullscreen?.().catch(() => {});
+}
+
 function toast(text) {
+  const box = $('toasts');
+  while (box.children.length > 1) box.firstChild.remove(); // never more than two at once
   const t = el('div', '', text);
-  $('toasts').append(t);
+  box.append(t);
   setTimeout(() => t.remove(), 3000);
 }
 
@@ -245,16 +294,10 @@ $('btn-practice').addEventListener('click', () => {
 $('btn-help').addEventListener('click', () => openHelp());
 const soundLabel = () => `Sound: ${sfx.muted ? 'off' : 'on'}`;
 function paintSound() {
-  $('btn-sound').textContent = soundLabel();
+  $('sound-label').textContent = soundLabel();
   $('pause-sound').textContent = soundLabel();
 }
-for (const id of ['btn-sound', 'btn-pause-sound']) {
-  $(id).addEventListener('click', () => {
-    sfx.toggle();
-    paintSound();
-    sfx.play('click');
-  });
-}
+for (const id of ['btn-sound', 'btn-pause-sound']) $(id).addEventListener('click', () => toggleSound(false));
 paintSound();
 
 function openHelp() {
@@ -326,14 +369,14 @@ addEventListener('paste', (e) => {
 // Lobby (an online room) / practice setup
 // ---------------------------------------------------------------------------
 const OPTIONS = [
-  { key: 'arena', type: 'cards', box: 'arena-cards', values: [...ARENAS.map((a) => [a.id, a.name]), ['random', 'Random']] },
-  { key: 'theme', type: 'cards', box: 'style-cards', values: [...THEMES.map((t) => [t.id, t.name]), ['random', 'Random']] },
-  { key: 'game', label: 'Game', only: 'online', type: 'seg', values: [['quick', 'Quick match'], ['cup', 'Tournament']] },
-  { key: 'mode', label: 'Rules', type: 'seg', values: MODES.map((m) => [m.id, m.name]), show: (s) => s.game !== 'cup', hint: (s) => MODES.find((m) => m.id === s.mode)?.blurb },
-  { key: 'rounds', label: 'Rounds', only: 'online', type: 'seg', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup', hint: () => 'Points every round. The leader starts as it. The last round counts double.' },
-  { key: 'bots', label: 'Bots', only: 'practice', type: 'seg', values: [[1, '1'], [2, '2'], [3, '3']] },
-  { key: 'duration', label: 'Round length', type: 'seg', values: DURATIONS.map((d) => [d, `${d} s`]) },
-  { key: 'powerups', label: 'Power-ups', type: 'seg', values: [[true, 'On'], [false, 'Off']] },
+  { key: 'arena', hot: 'a', type: 'cards', box: 'arena-cards', values: [...ARENAS.map((a) => [a.id, a.name]), ['random', 'Random']] },
+  { key: 'theme', hot: 's', type: 'cards', box: 'style-cards', values: [...THEMES.map((t) => [t.id, t.name]), ['random', 'Random']] },
+  { key: 'game', hot: 'g', label: 'Game', only: 'online', type: 'seg', values: [['quick', 'Quick match'], ['cup', 'Tournament']] },
+  { key: 'mode', hot: 'r', label: 'Rules', type: 'seg', values: MODES.map((m) => [m.id, m.name]), show: (s) => s.game !== 'cup', hint: (s) => MODES.find((m) => m.id === s.mode)?.blurb },
+  { key: 'rounds', hot: 'r', label: 'Rounds', only: 'online', type: 'seg', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup', hint: () => 'Points every round. The leader starts as it. The last round counts double.' },
+  { key: 'bots', hot: 'b', label: 'Bots', only: 'practice', type: 'seg', values: [[1, '1'], [2, '2'], [3, '3']] },
+  { key: 'duration', hot: 'l', label: 'Round length', type: 'seg', values: DURATIONS.map((d) => [d, `${d} s`]) },
+  { key: 'powerups', hot: 'p', label: 'Power-ups', type: 'seg', values: [[true, 'On'], [false, 'Off']] },
 ];
 const settings = () => (kind === 'practice' ? practice : room.settings);
 const locked = () => kind === 'online' && !amHost();
@@ -385,7 +428,9 @@ function buildOptions() {
     }
     const row = el('div', 'opt');
     row.dataset.key = o.key;
-    row.append(el('span', 'lab', o.label));
+    const lab = el('span', 'lab', o.label);
+    lab.append(el('kbd', '', o.hot.toUpperCase()));
+    row.append(lab);
     const seg = el('div', 'seg');
     seg.setAttribute('role', 'radiogroup');
     seg.setAttribute('aria-label', o.label);
@@ -420,6 +465,20 @@ function syncOptions() {
   const styleName = s.theme === 'random' ? 'random style' : THEMES.find((t) => t.id === s.theme).name;
   $('preview-cap').textContent = `${arenaName} - ${styleName}`;
   paintCards();
+}
+
+// A letter key steps one setting to its next value (Shift: previous) and puts
+// the focus there, so the arrow keys carry on from it.
+function hotOption(letter, back) {
+  if (locked()) return false;
+  const s = settings();
+  const o = OPTIONS.find((x) => x.hot === letter && (!x.only || x.only === kind) && (!x.show || x.show(s)));
+  if (!o) return false;
+  const i = o.values.findIndex(([v]) => v === s[o.key]);
+  changeSetting({ [o.key]: o.values[(i + (back ? -1 : 1) + o.values.length) % o.values.length][0] });
+  $('s-lobby').querySelector(`input[name="opt-${o.key}"]:checked`)?.focus();
+  sfx.play('click');
+  return true;
 }
 
 // Paint the pictures one at a time between frames, so the screen never stalls:
@@ -482,7 +541,7 @@ function renderLobby() {
     const enough = room.players.length >= MIN_PLAYERS;
     start.hidden = !amHost();
     start.disabled = !enough;
-    start.textContent = room.settings.game === 'cup' ? 'Start tournament' : 'Start match';
+    setLabel(start, room.settings.game === 'cup' ? 'Start tournament' : 'Start match', 'Enter');
     $('lobby-note').textContent = enough ? '' : 'Share the code with your friends - you need at least 2 players.';
     $('start-note').textContent = amHost() ? '' : `Waiting for ${host ? host.name : 'the host'} to start...`;
   } else {
@@ -491,8 +550,14 @@ function renderLobby() {
     $('start-note').textContent = '';
     start.hidden = false;
     start.disabled = false;
-    start.textContent = 'Start';
+    setLabel(start, 'Start', 'Enter');
   }
+  setLegend(
+    $('lobby-legend'),
+    locked()
+      ? [[['Esc', 'Esc'], 'leave the room'], [['C'], 'copy the invite link']]
+      : [[['\u2191', '\u2193'], 'move'], [['\u2190', '\u2192'], 'choose'], [['Enter'], 'start'], [online ? ['Esc', 'Esc'] : ['Esc'], online ? 'leave the room' : 'back']],
+  );
   start.toggleAttribute('data-autofocus', !start.hidden);
   syncOptions();
 }
@@ -508,7 +573,8 @@ $('btn-start').addEventListener('click', () => {
   if (kind === 'practice') startPractice();
   else socket.emit('start');
 });
-$('btn-copy').addEventListener('click', async () => {
+async function copyInvite() {
+  if (!room) return;
   const link = `${location.origin}/?room=${room.code}`;
   try {
     await navigator.clipboard.writeText(link);
@@ -516,7 +582,8 @@ $('btn-copy').addEventListener('click', async () => {
   } catch {
     toast(link);
   }
-});
+}
+$('btn-copy').addEventListener('click', copyInvite);
 
 // ---------------------------------------------------------------------------
 // A match on screen
@@ -722,8 +789,7 @@ $('btn-pause').addEventListener('click', openPause);
 $('btn-resume').addEventListener('click', closePause);
 $('btn-pause-help').addEventListener('click', openHelp);
 $('btn-pause-full').addEventListener('click', () => {
-  if (document.fullscreenElement) document.exitFullscreen?.();
-  else document.documentElement.requestFullscreen?.().catch(() => {});
+  toggleFullscreen();
   closePause();
 });
 $('btn-quit').addEventListener('click', leaveRoom);
@@ -825,15 +891,15 @@ function renderResultButtons() {
   const again = $('btn-res-again');
   const between = res.cup && !res.cup.final;
   if (kind === 'practice') {
-    back.textContent = 'Menu';
-    again.textContent = 'Play again';
+    setLabel(back, 'Change setup', 'Esc');
+    setLabel(again, 'Play again', 'Enter');
     again.hidden = false;
     $('res-note').textContent = '';
   } else {
     const host = amHost();
-    back.textContent = host ? (between ? 'End tournament' : 'Back to lobby') : 'Leave';
+    setLabel(back, host ? (between ? 'End tournament' : 'Back to lobby') : 'Leave', host && !between ? 'Esc' : 'Esc Esc');
     again.hidden = !host || between;
-    again.textContent = res.cup ? 'New tournament' : 'Play again';
+    setLabel(again, res.cup ? 'New tournament' : 'Play again', 'Enter');
     again.disabled = !room || room.players.length < MIN_PLAYERS;
     if (!between) {
       const h = room?.players.find((p) => p.id === room.hostId);
@@ -849,7 +915,7 @@ $('btn-res-again').addEventListener('click', () => {
   if (kind === 'practice') startPractice();
   else socket.emit('start');
 });
-$('btn-res-back').addEventListener('click', () => {
+function resultsBack() {
   clearInterval(nextTimer);
   if (kind === 'practice') {
     stopLoop();
@@ -857,7 +923,8 @@ $('btn-res-back').addEventListener('click', () => {
     openLobby();
   } else if (amHost()) socket.emit('lobby');
   else leaveRoom();
-});
+}
+$('btn-res-back').addEventListener('click', resultsBack);
 
 // ---------------------------------------------------------------------------
 // Server events
@@ -913,38 +980,80 @@ socket.on('q', (ack) => typeof ack === 'function' && ack()); // the server timin
 function goBack() {
   if (overlay === 'help') closeHelp();
   else if (overlay === 'pause') closePause();
-  else if (overlay === 'results') return;
-  else if (screen === 'game') openPause();
-  else if (screen === 'join' || (screen === 'lobby' && kind === 'practice')) toHome();
-  else if (screen === 'name' && myName) toHome();
+  else if (overlay === 'results') {
+    // straight back when it only changes screens; twice when it would leave a game
+    const safe = kind === 'practice' || (amHost() && !(lastResults?.cup && !lastResults.cup.final));
+    if (safe || twice('results', `Press Esc again to ${amHost() ? 'end the tournament' : 'leave the room'}`)) resultsBack();
+  } else if (screen === 'game') openPause();
+  else if (screen === 'join') toHome();
+  else if (screen === 'lobby') {
+    if (kind === 'practice') toHome();
+    else if (twice('leave', 'Press Esc again to leave the room')) leaveRoom();
+  } else if (screen === 'name' && myName) toHome();
+}
+
+// One place for every shortcut. Returns true when the key was used.
+function shortcut(key, e) {
+  const top = overlay || screen;
+  const onButton = document.activeElement?.tagName === 'BUTTON';
+  const typing = document.activeElement?.tagName === 'INPUT' && document.activeElement.type === 'text';
+  if (typing) return false; // letters belong to the name being typed
+
+  // anywhere: sound and full screen
+  if (key === 'm') return toggleSound(true), true;
+  if (key === 'f') return toggleFullscreen(), true;
+  if (top === 'game') return false; // everything else belongs to the match
+
+  if (top === 'home') {
+    if (/^[123]$/.test(key)) return [$('btn-create'), $('btn-join'), $('btn-practice')][Number(key) - 1].click(), true;
+    if (key === 'h') return openHelp(), true;
+    if (key === 'n') return askName(), true;
+  } else if (top === 'join') {
+    if (/^\d$/.test(key)) return setCode(code + key), true;
+    if (key === 'backspace') return setCode(code.slice(0, -1)), true;
+    if (key === 'enter' && !onButton) {
+      codeTried = '';
+      return submitCode(), true;
+    }
+  } else if (top === 'lobby') {
+    if (key === 'enter' && !onButton) {
+      if (!$('btn-start').hidden && !$('btn-start').disabled) $('btn-start').click();
+      return true;
+    }
+    if (key === 'c' && kind === 'online') return copyInvite(), true;
+    if (key === 'h') return openHelp(), true;
+    if (/^[a-z]$/.test(key)) return hotOption(key, e.shiftKey);
+  } else if (top === 'pause') {
+    if (key === 'h') return openHelp(), true;
+    if (key === 'q') {
+      if (twice('quit', 'Press Q again to leave the match')) leaveRoom();
+      return true;
+    }
+  } else if (top === 'results') {
+    if (key === 'enter' && !onButton) {
+      const again = $('btn-res-again');
+      if (!again.hidden && !again.disabled) again.click();
+      return true;
+    }
+    if (key === 'arrowleft' || key === 'arrowright') return moveFocus(key === 'arrowright' ? 1 : -1), true;
+  } else if (top === 'help') {
+    // read the scroll with the arrow keys
+    const step = { arrowdown: 70, arrowup: -70, pagedown: 400, pageup: -400, ' ': 400 }[key];
+    if (step) return $('s-help').scrollBy({ top: step }), true;
+  }
+  if (key === 'arrowdown' || key === 'arrowup') return moveFocus(key === 'arrowdown' ? 1 : -1), true;
+  return false;
 }
 
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const key = e.key;
-  if (key === 'Escape') {
+  // a real keyboard is here: show the key cues (matters on tablets)
+  if (/^(Arrow|Escape|Tab)/.test(e.key)) document.body.classList.remove('no-kbd');
+  if (e.key === 'Escape') {
     e.preventDefault();
     return goBack();
   }
-  const top = overlay || screen;
-  if (top === 'game') return; // the match has the keyboard
-  if (top === 'join') {
-    if (/^\d$/.test(key)) setCode(code + key);
-    else if (key === 'Backspace') setCode(code.slice(0, -1));
-    else if (key === 'Enter' && document.activeElement?.tagName !== 'BUTTON') {
-      codeTried = '';
-      submitCode();
-    } else return;
-    return e.preventDefault();
-  }
-  if (top === 'home' && /^[123]$/.test(key)) {
-    e.preventDefault();
-    return [$('btn-create'), $('btn-join'), $('btn-practice')][Number(key) - 1].click();
-  }
-  if (key === 'ArrowDown' || key === 'ArrowUp') {
-    e.preventDefault();
-    moveFocus(key === 'ArrowDown' ? 1 : -1);
-  }
+  if (shortcut(e.key.toLowerCase(), e)) e.preventDefault();
 });
 
 let resizeTimer = 0;

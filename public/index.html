@@ -42,6 +42,7 @@
           <div id="round-label"></div>
         </div>
         <button id="btn-pause" class="hud-btn" aria-label="Menu (Esc)"><svg class="ic"><use href="#i-menu" /></svg></button>
+        <kbd class="hud-key">Esc</kbd>
         <div id="buffs"></div>
         <div id="banner" role="status"></div>
         <div id="count" aria-hidden="true"></div>
@@ -70,7 +71,7 @@
           <label class="lead" for="name">Sign your name, challenger.</label>
           <input id="name" type="text" maxlength="12" placeholder="your name" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="go" data-autofocus />
           <p class="error" id="name-error" role="alert"></p>
-          <button class="btn primary" id="btn-name" type="submit">Enter the dojo</button>
+          <button class="btn primary" id="btn-name" type="submit">Enter the dojo <kbd>Enter</kbd></button>
         </form>
       </section>
 
@@ -89,11 +90,12 @@
           </nav>
           <p class="error" id="home-error" role="alert"></p>
           <div class="foot">
-            <button class="link" id="btn-rename">Playing as <b id="home-name"></b> - change</button>
-            <button class="link" id="btn-help">How to play</button>
-            <button class="link" id="btn-sound"></button>
+            <button class="link" id="btn-rename"><kbd>N</kbd>Playing as <b id="home-name"></b> - change</button>
+            <button class="link" id="btn-help"><kbd>H</kbd>How to play</button>
+            <button class="link" id="btn-sound"><kbd>M</kbd><span id="sound-label"></span></button>
           </div>
           <p class="conn" id="conn"></p>
+          <p class="legend"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd>move</span><span><kbd>Enter</kbd>choose</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>jump straight in</span></p>
         </div>
       </section>
 
@@ -115,6 +117,7 @@
             <button data-d="0">0</button>
             <button data-d="go" class="go" id="btn-join-go" disabled>Join</button>
           </div>
+          <p class="legend"><span><kbd>0</kbd>-<kbd>9</kbd>type the code</span><span><kbd>&#9003;</kbd>delete</span><span><kbd>Enter</kbd>join</span><span><kbd>Esc</kbd>back</span></p>
         </div>
       </section>
 
@@ -125,7 +128,7 @@
             <button class="icon-btn" id="btn-leave" aria-label="Leave"><svg class="ic"><use href="#i-back" /></svg></button>
             <h2 id="lobby-title">Room</h2>
             <div class="code" id="lobby-code" aria-label="Room code"></div>
-            <button class="link" id="btn-copy">Copy invite link</button>
+            <button class="link" id="btn-copy"><kbd>C</kbd>Copy invite link</button>
           </header>
           <div class="lobby">
             <div class="col who">
@@ -135,9 +138,9 @@
               <figure class="preview"><img id="preview" alt="" /><figcaption id="preview-cap"></figcaption></figure>
             </div>
             <div class="col picks">
-              <h3>Arena</h3>
+              <h3>Arena <kbd>A</kbd></h3>
               <div class="cards arenas" id="arena-cards" role="radiogroup" aria-label="Arena"></div>
-              <h3>Style</h3>
+              <h3>Style <kbd>S</kbd></h3>
               <div class="cards styles" id="style-cards" role="radiogroup" aria-label="Art style"></div>
             </div>
             <div class="col rules">
@@ -147,6 +150,7 @@
               <button class="btn primary big" id="btn-start">Start</button>
             </div>
           </div>
+          <p class="legend" id="lobby-legend"></p>
         </div>
       </section>
 
@@ -162,6 +166,7 @@
             <button class="btn" id="btn-res-back"></button>
             <button class="btn primary" id="btn-res-again"></button>
           </footer>
+          <p class="legend"><span><kbd>&larr;</kbd><kbd>&rarr;</kbd>move</span><span><kbd>Enter</kbd>choose</span></p>
         </div>
       </section>
 
@@ -172,11 +177,12 @@
           <p class="note" id="pause-note"></p>
           <nav class="menu">
             <button class="entry plain" id="btn-resume" data-autofocus><span><b>Resume</b></span><kbd>Esc</kbd></button>
-            <button class="entry plain" id="btn-pause-sound"><span><b id="pause-sound"></b></span></button>
-            <button class="entry plain" id="btn-pause-full"><span><b>Full screen</b></span></button>
-            <button class="entry plain" id="btn-pause-help"><span><b>How to play</b></span></button>
-            <button class="entry plain danger" id="btn-quit"><span><b>Leave match</b></span></button>
+            <button class="entry plain" id="btn-pause-sound"><span><b id="pause-sound"></b></span><kbd>M</kbd></button>
+            <button class="entry plain" id="btn-pause-full"><span><b>Full screen</b></span><kbd>F</kbd></button>
+            <button class="entry plain" id="btn-pause-help"><span><b>How to play</b></span><kbd>H</kbd></button>
+            <button class="entry plain danger" id="btn-quit"><span><b>Leave match</b></span><kbd>Q</kbd></button>
           </nav>
+          <p class="legend"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd>move</span><span><kbd>Enter</kbd>choose</span></p>
         </div>
       </section>
 
@@ -186,10 +192,12 @@
           <header class="bar">
             <button class="icon-btn" id="btn-help-back" aria-label="Back (Esc)" data-autofocus><svg class="ic"><use href="#i-back" /></svg></button>
             <h2>How to play</h2>
+            <kbd>Esc</kbd>
           </header>
           <p>One player is <b class="it">it</b>. Touch someone to pass it on. In <b>Hot Potato</b>, whoever is it when the clock hits zero loses. In <b>Least Time</b>, the player who spent the least time as it wins.</p>
           <h3>Controls</h3>
-          <ul class="keys">
+          <p class="touch-only">Left thumb strip: run (slide to change direction). Big button: jump - press again in the air for a second jump. Small button: drop through thin ledges and slopes, fall faster.</p>
+          <ul class="keys kbd-only">
             <li><span><kbd>&larr;</kbd><kbd>&rarr;</kbd> or <kbd>A</kbd><kbd>D</kbd></span> Run</li>
             <li><span><kbd>&uarr;</kbd> <kbd>W</kbd> or <kbd>Space</kbd></span> Jump - press again in the air for a second jump</li>
             <li><span><kbd>&darr;</kbd> or <kbd>S</kbd></span> Drop through thin ledges and slopes, fall faster</li>
@@ -207,6 +215,18 @@
             <li><svg class="ic" style="color: #2b9a4c"><use href="#i-jump" /></svg><b>Spring</b> Jump higher for 7 s</li>
             <li><svg class="ic" style="color: #2f7fd6"><use href="#i-shield" /></svg><b>Ward</b> Blocks one tag</li>
             <li><svg class="ic" style="color: #2fa3c4"><use href="#i-freeze" /></svg><b>Frost</b> Freezes the other side for a moment</li>
+          </ul>
+          <h3 class="kbd-only">Keyboard shortcuts</h3>
+          <ul class="keys short kbd-only">
+            <li><span><kbd>&uarr;</kbd><kbd>&darr;</kbd></span> Move through any menu</li>
+            <li><span><kbd>&larr;</kbd><kbd>&rarr;</kbd></span> Change the choice you are on (rules, arena, style)</li>
+            <li><span><kbd>Enter</kbd></span> Choose - in a room it starts the match</li>
+            <li><span><kbd>Esc</kbd></span> Back - during a match it opens the pause menu</li>
+            <li><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></span> Title screen: create, join, practice</li>
+            <li><span><kbd>A</kbd> <kbd>S</kbd></span> Match setup: next arena, next style (with Shift: previous)</li>
+            <li><span><kbd>G</kbd><kbd>R</kbd><kbd>L</kbd><kbd>P</kbd><kbd>B</kbd></span> Match setup: game, rules or rounds, length, power-ups, bots</li>
+            <li><span><kbd>C</kbd></span> In a room: copy the invite link</li>
+            <li><span><kbd>M</kbd> <kbd>F</kbd></span> Anywhere: sound on or off, full screen</li>
           </ul>
           <h3>Tournament</h3>
           <ul class="plain">
