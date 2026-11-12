@@ -17,7 +17,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const server = spawn(process.execPath, ['server.js'], {
   cwd: root,
-  env: { ...process.env, PORT: String(PORT), TAG_TEST_DURATION: String(SHORT), TAG_TEST_BREAK: String(BREAK) },
+  env: { ...process.env, PORT: String(PORT), TAG_TEST_DURATION: String(SHORT), TAG_TEST_BREAK: String(BREAK), TAG_TEST_INTRO: '300' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 await new Promise((resolve) => server.stdout.on('data', (d) => String(d).includes('running') && resolve()));
@@ -255,6 +255,9 @@ try {
     await until(() => a.room.phase === 'lobby', 'back to lobby');
     a.socket.emit('settings', { game: 'cup', rounds: 3, arena: 'random' });
     await until(() => a.room.settings.game === 'cup' && a.room.settings.arena === 'random', 'cup settings');
+    assert.equal(a.room.settings.mode, 'team', 'a tournament is played in teams unless the host chooses otherwise');
+    a.socket.emit('settings', { mode: 'time' }); // this test is about the free-for-all points
+    await until(() => a.room.settings.mode === 'time', 'free-for-all tournament');
     for (const p of [a, b, c]) p.ends.length = 0;
     const winsBefore = a.room.players.map((p) => p.wins);
     a.socket.emit('start');
@@ -307,6 +310,40 @@ try {
     assert.equal(after, winsBefore[a.room.players.findIndex((p) => p.slot === champ.slot)] + 1, 'the cup counts as a win');
     await sleep(BREAK + 400);
     assert.equal(a.room.phase, 'results', 'no fourth round');
+  });
+
+  await test('team battle: two sides in warm and cool colours, a bomb, flags, and a team result', async () => {
+    a.socket.emit('lobby');
+    await until(() => a.room.phase === 'lobby', 'back to lobby');
+    a.socket.emit('settings', { game: 'quick', mode: 'team', arena: 'dojo', duration: SHORT });
+    await until(() => a.room.settings.mode === 'team' && a.room.settings.game === 'quick', 'team settings');
+    for (const p of [a, b, c]) p.ends.length = 0;
+    a.socket.emit('start');
+    await until(() => a.round && a.round.mode === 'team' && a.go === null && a.round.teams, 'team round info');
+    const slots = a.round.players.map((p) => p.slot);
+    const sides = [0, 1].map((t) => slots.filter((sl) => a.round.teams[sl] === t));
+    assert.deepEqual(sides.map((x) => x.length).sort(), [1, 2], 'three players: two against one');
+    for (const sl of slots) {
+      const warm = [0, 3, 5].includes(a.round.cols[sl]);
+      assert.equal(warm, a.round.teams[sl] === 0, 'one side wears warm colours, the other cool ones');
+    }
+    assert.ok(slots.includes(a.round.it), 'who carries the first bomb is known before GO');
+    await until(() => a.go !== null && c.go !== null, 'go', 9000);
+    assert.equal(a.go, a.round.it);
+    await until(() => a.snap && a.snap[1] === 1 && a.snap[8], 'team snapshot');
+    assert.equal(a.snap[8].length, 9, 'scores, fuse and both flags');
+    assert.ok(a.snap[8][2] > 0, 'the fuse is burning');
+    assert.ok(Array.isArray(a.snap[5]) && Array.isArray(a.snap[7]), 'boxes and puddles are lists');
+    assert.equal(a.snap[4][0].length, 10, 'every player entry says what item they hold');
+    startChasing([a, b, c]);
+    await until(() => a.ends.length === 1, 'round end', (SHORT + 5) * 1000);
+    clearInterval(chase);
+    const e = a.end;
+    assert.equal(e.mode, 'team');
+    assert.equal(e.team.score.length, 2);
+    const win = e.team.score[0] === e.team.score[1] ? -1 : e.team.score[0] > e.team.score[1] ? 0 : 1;
+    assert.equal(e.team.win, win);
+    assert.deepEqual(e.winners.slice().sort(), e.rows.filter((r) => win < 0 || r.team === win).map((r) => r.slot).sort());
   });
 
   await test('a player leaving a 2-player match ends it; whoever stayed wins', async () => {

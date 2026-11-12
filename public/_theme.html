@@ -29,7 +29,8 @@
   const q = new URLSearchParams(location.search);
   const arena = arenaById(q.get('arena') || 'hills');
   const zoom = Number(q.get('zoom')) || 0;
-  const opts = zoom ? { zoom, focus: { x: Number(q.get('fx')) || arena.w / 2, y: Number(q.get('fy')) || arena.h / 2 } } : {};
+  // the whole arena unless a close-up is asked for (in the game itself the view follows your player)
+  const opts = zoom ? { zoom, focus: { x: Number(q.get('fx')) || arena.w / 2, y: Number(q.get('fy')) || arena.h / 2 } } : { whole: q.get('follow') !== '1' };
   const R = new Renderer(document.getElementById('stage'), opts);
   await document.fonts.ready;
   for (const f of document.fonts) f.load().catch(() => {});
@@ -51,7 +52,7 @@
   }
   sim.twist = { grav: 1, speed: 1, items: 3 };
   sim.start();
-  sim.nextPickup = 20;
+  sim.nextBox = 20;
   R.onEvent = () => {};
 
   const freeze = Number(q.get('freeze')) || 0;
@@ -81,6 +82,8 @@
           if (e.type === 'tag') R.tagFx(e.from, e.to);
           else if (e.type === 'block') R.blockFx(e.from, e.to);
           else if (e.type === 'pick') R.pickFx(e.slot, e.kind);
+          else if (e.type === 'use') R.itemFx(e, ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'goo'][e.kind]);
+          else if (e.type === 'slip') R.slipFx(e);
         }
         sim.events.length = 0;
       }
@@ -89,8 +92,9 @@
       phase: 'playing',
       it: sim.it,
       names: q.get('names') !== '0',
-      pickups: sim.pickups,
-      players: sim.active().map((p) => ({ slot: p.slot, name: names[p.slot], x: p.s.x, y: p.s.y, vx: p.s.vx, vy: p.s.vy, ground: p.s.ground, face: p.s.face, immune: p.immune, stun: p.s.stun, frz: p.s.frz, dead: p.s.dead, orb: p.s.orb, spd: p.s.spd, jmp: p.s.jmp, shd: p.s.shd, itTicks: p.itTicks, local: p.slot === 0 })),
+      boxes: sim.boxes,
+      goo: sim.goo.map((p) => [p.x, p.y]),
+      players: sim.active().map((p) => ({ slot: p.slot, name: names[p.slot], x: p.s.x, y: p.s.y, vx: p.s.vx, vy: p.s.vy, ground: p.s.ground, face: p.s.face, immune: p.immune, stun: p.s.stun, frz: p.s.frz, dead: p.s.dead, orb: p.s.orb, spd: p.s.spd, jmp: p.s.jmp, shd: p.s.shd, slw: p.s.slw, item: p.item, arm: p.arm, itTicks: p.itTicks, local: p.slot === 0 })),
     };
     const t0 = performance.now();
     R.draw(view, now);

@@ -5,7 +5,7 @@
 // and then follows the route there one hop at a time, pressing the same
 // buttons a person would.
 
-import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN } from './config.js';
+import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS } from './config.js';
 import { buildNav, surfaceAt, surfaceNear } from './nav.js';
 
 function rng(seed) {
@@ -113,10 +113,32 @@ export function botThink(sim, slot, mem) {
     bits |= IN_JUMP;
     mem.think = 0;
   }
+  // holding an item: set it off when it would do some good
+  if (me.item && me.arm === 0 && !sim.locked() && !(mem.pressed & IN_USE) && wantsToUse(sim, me, mem)) bits |= IN_USE;
   // a jump only counts when the button goes down, so never hold it across a landing
   if (s.ground && mem.pressed & IN_JUMP) bits &= ~IN_JUMP;
   mem.pressed = bits;
   return bits;
+}
+
+// Is now a good moment for the item in hand?
+function wantsToUse(sim, me, mem) {
+  if (mem.rnd() > 0.06) return false; // a human-ish delay, not the very first tick
+  const kind = ITEM_KINDS[me.item - 1];
+  const s = me.s;
+  let nearest = Infinity;
+  for (const o of sim.targets(me)) nearest = Math.min(nearest, Math.hypot(o.s.x - s.x, o.s.y - s.y));
+  if (me.slot === sim.it) {
+    // chasing: anything that slows them down or speeds us up, once someone is in reach
+    if (kind === 'swap') return nearest > 500;
+    if (kind === 'goo') return nearest < 200;
+    return nearest < (kind === 'blast' ? 600 : 480);
+  }
+  const it = sim.players[sim.it];
+  const danger = it && sim.enemies(me, it) ? Math.hypot(it.s.x - s.x, it.s.y - s.y) : Infinity;
+  if (kind === 'swap') return danger < 200; // let someone else stand here
+  if (kind === 'goo') return danger < 260;
+  return danger < (kind === 'storm' || kind === 'blast' ? 420 : 300);
 }
 
 // ----------------------------------------------------------------------------
@@ -244,11 +266,11 @@ function wander(sim, me, mem, nav) {
   mem.roaming = true;
   const it = sim.players[sim.it];
   // a power-up lying around is worth the trip
-  if (sim.pickups.length && rnd() < 0.7) {
+  if (sim.boxes.length && !me.item && rnd() < 0.75) {
     let best = null;
     let bestD = Infinity;
-    for (const pk of sim.pickups) {
-      const pt = sim.arena.pickups[pk.point];
+    for (const point of sim.boxes) {
+      const pt = sim.arena.pickups[point];
       const d = Math.hypot(pt.x - s.x, pt.y - s.y);
       const danger = it && it.slot !== me.slot ? Math.hypot(pt.x - it.s.x, pt.y - it.s.y) : 9999;
       if (d < bestD && danger > 260) {

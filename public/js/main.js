@@ -2,13 +2,9 @@
 // display, results. One screen is visible at a time; every screen can be
 // driven with the keyboard (arrows + Enter, Esc to go back).
 
-import { MODES, DURATIONS, DEFAULT_DURATION, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, PICKUP_TYPES, TICK_RATE, PLAYER_COLORS } from '/shared/config.js';
-import { ARENAS, ARENA_IDS, arenaById } from '/shared/arenas.js';
-import { Renderer } from './renderer.js';
-import { Input } from './input.js';
-import { Sfx } from './audio.js';
-import { NetGame } from './net.js';
-import { LocalGame } from './local.js';
+import { MODES, DURATIONS, DEFAULT_DURATION, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS } from '/shared/config.js';
+import { ARENAS, arenaById } from '/shared/arenas.js';
+import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
 import { loadTheme } from './themes/index.js';
 
@@ -39,19 +35,25 @@ const cleanName = (raw) =>
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, NAME_MAX);
-const pickRandom = (list) => list[Math.floor(Math.random() * list.length)];
 const INK_COLORS = ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12', '#7a4a9e', '#d9689a']; // the house style's six player colours
 const isTouch = matchMedia('(pointer: coarse)').matches;
 // Key cues are shown wherever there is a keyboard: always on a computer, and
 // on a tablet from the moment someone presses a real key.
 document.body.classList.toggle('no-kbd', isTouch);
 
-// on touch screens the view can scroll a little past the floor, so the buttons never cover you
-const renderer = new Renderer($('stage'), { padBottom: isTouch ? 104 : 0 });
-const input = new Input();
-const sfx = new Sfx();
 const socket = io({ tryAllTransports: true });
-const net = new NetGame(socket, input, onGameEvent);
+// The match itself (renderer, heads-up display, game events) lives in play.js.
+play.init({
+  socket,
+  isTouch,
+  onStart() {
+    kind = play.kind;
+    show('game');
+  },
+  onEnd: (res) => showResults(res),
+  onPause: () => openPause(),
+});
+const { renderer, input, sfx, net } = play;
 
 let myName = cleanName(store.get('tag.name'));
 let screen = ''; // name | home | join | lobby | game
@@ -59,8 +61,6 @@ let overlay = ''; // '' | results | pause | help
 let helpFrom = '';
 let kind = 'online'; // what the lobby screen is showing: online | practice
 let room = null; // latest room state from the server
-let game = null; // the match on screen: `net` or a LocalGame
-let running = false;
 let afterName = null;
 let lastResults = null;
 let nextTimer = 0;
@@ -105,7 +105,7 @@ function show(name) {
   $('game').hidden = name !== 'game';
   document.body.classList.toggle('in-game', name === 'game');
   setOverlay('');
-  if (name !== 'game') stopLoop();
+  if (name !== 'game') play.stop();
 }
 
 function setOverlay(name) {
@@ -197,7 +197,7 @@ function toast(text) {
 
 function toHome(message = '') {
   room = null;
-  game = null;
+  play.game = null;
   $('home-name').textContent = myName;
   $('home-error').textContent = message;
   show('home');
@@ -277,7 +277,7 @@ socket.on('connect_error', () => setConn('bad', 'Waking up the server - free hos
 socket.on('disconnect', () => {
   setConn('bad', 'Reconnecting...');
   if (room) {
-    stopLoop();
+    play.stop();
     toHome('Lost the connection to the server.');
   }
 });
@@ -564,13 +564,13 @@ function renderLobby() {
 
 function leaveRoom() {
   if (kind === 'online' && room) socket.emit('leave');
-  stopLoop();
+  play.stop();
   toHome();
 }
 $('btn-leave').addEventListener('click', leaveRoom);
 $('btn-start').addEventListener('click', () => {
   sfx.play('click');
-  if (kind === 'practice') startPractice();
+  if (kind === 'practice') play.practice(practice, myName);
   else socket.emit('start');
 });
 async function copyInvite() {
@@ -586,9 +586,8 @@ async function copyInvite() {
 $('btn-copy').addEventListener('click', copyInvite);
 
 // ---------------------------------------------------------------------------
-// A match on screen
+// Fonts: pictures painted before they arrive have to be painted again
 // ---------------------------------------------------------------------------
-const hud = { sec: -1, count: 0, pills: [], buffs: '', label: '' };
 const fonts = Promise.all(['Kaushan Script', 'Shippori Mincho', 'Cormorant Garamond', 'Orbitron', 'Rajdhani', 'Creepster', 'Special Elite', 'Permanent Marker', 'Patrick Hand', 'Press Start 2P'].map((f) => document.fonts.load(`16px "${f}"`).catch(() => {})));
 let fontsIn = false;
 fonts.then(() => {
@@ -601,176 +600,6 @@ fonts.then(() => {
   }
 });
 
-function beginMatch(g, arena, themeId, info) {
-  game = g;
-  sfx.setTheme(themeId);
-  show('game');
-  renderer.setScene(arena, themeId);
-  $('game').style.background = renderer.theme.letterbox;
-  // reset the heads-up display
-  hud.sec = -1;
-  hud.count = 0;
-  hud.buffs = '';
-  hud.pills = [];
-  $('pills').textContent = '';
-  $('buffs').textContent = '';
-  $('count').textContent = '';
-  $('banner').className = '';
-  const mode = MODES.find((m) => m.id === info.mode)?.name || '';
-  let label = kind === 'practice' ? `Practice - ${mode}` : mode;
-  let hint = '';
-  if (info.cup) {
-    label = info.cup.double ? 'Final round - double points' : `Round ${info.cup.round} of ${info.cup.rounds}`;
-    if (info.twist && info.twist.id !== 'none') {
-      label += ` - ${info.twist.name}`;
-      hint = `Twist: ${info.twist.name} - ${info.twist.blurb.toLowerCase()}. `;
-    }
-    if (info.cup.leader >= 0) hint += `${nameOf(info.cup.leader)} leads, so starts as it.`;
-  }
-  // the first few matches on a keyboard start with a reminder of the keys
-  const played = Number(store.get('tag.played', '0')) || 0;
-  if (!hint && !isTouch && played < 3) hint = 'Arrows or A / D to run - Up, W or Space to jump, again in the air for a second jump - Down to drop';
-  store.set('tag.played', String(played + 1));
-  $('round-label').textContent = label;
-  hud.hint = hint;
-  $('touch').hidden = !isTouch;
-  document.body.classList.toggle('touch-on', isTouch);
-  startLoop();
-}
-
-const nameOf = (slot) => game?.names?.[slot] || `Player ${slot + 1}`;
-
-async function startPractice() {
-  const s = practice;
-  const arena = arenaById(s.arena === 'random' ? pickRandom(ARENA_IDS) : s.arena);
-  const themeId = s.theme === 'random' ? pickRandom(THEMES).id : s.theme;
-  await loadTheme(themeId);
-  kind = 'practice';
-  const g = new LocalGame({ arena, mode: s.mode, duration: s.duration, powerups: s.powerups, name: myName, bots: s.bots, input, onEvent: onGameEvent });
-  beginMatch(g, arena, themeId, { mode: s.mode, cup: null, twist: null });
-}
-
-function startLoop() {
-  if (running) return;
-  running = true;
-  requestAnimationFrame(frame);
-}
-function stopLoop() {
-  running = false;
-}
-
-let hudAt = 0;
-function frame(now) {
-  if (!running || !game) return (running = false);
-  requestAnimationFrame(frame);
-  const view = game.update(now);
-  if (!view) return;
-  renderer.draw(view, now);
-  if (now - hudAt > 100) {
-    hudAt = now;
-    updateHud(view);
-  }
-}
-
-function updateHud(view) {
-  const sec = view.phase === 'countdown' ? view.duration : Math.ceil(view.timeLeft);
-  if (sec !== hud.sec) {
-    hud.sec = sec;
-    $('timer').textContent = String(sec);
-    $('timer').classList.toggle('low', view.phase === 'playing' && sec <= 10);
-  }
-  // one pill per player: colour, name, seconds spent as it
-  const seen = new Array(MAX_PLAYERS).fill(false);
-  for (const p of view.players) {
-    seen[p.slot] = true;
-    let pill = hud.pills[p.slot];
-    if (!pill) {
-      const li = el('li');
-      const chip = el('i', 'chip');
-      chip.style.background = renderer.theme.colors[p.slot];
-      const val = el('span', 'val');
-      li.append(chip, el('span', 'nm', p.name), val);
-      li.classList.toggle('me', !!p.local);
-      $('pills').append(li);
-      pill = hud.pills[p.slot] = { li, val, text: '', it: false };
-    }
-    const text = `${Math.floor((p.itTicks || 0) / TICK_RATE)}s`;
-    if (text !== pill.text) pill.val.textContent = pill.text = text;
-    const it = view.it === p.slot;
-    if (it !== pill.it) pill.li.classList.toggle('it', (pill.it = it));
-  }
-  hud.pills.forEach((pill, slot) => pill && pill.li.classList.toggle('gone', !seen[slot]));
-  $('pills').classList.toggle('many', view.players.length > 4); // five or six: two columns
-  // the power-ups you are carrying
-  const m = view.me;
-  const buffs = m ? [m.spd > 0 && ['speed', m.spd], m.jmp > 0 && ['jump', m.jmp], m.shd > 0 && ['shield', m.shd]].filter(Boolean) : [];
-  const sig = buffs.map(([k, t]) => `${k}${Math.ceil(t / TICK_RATE)}`).join();
-  if (sig !== hud.buffs) {
-    hud.buffs = sig;
-    const box = $('buffs');
-    box.textContent = '';
-    for (const [k, t] of buffs) {
-      const d = el('div');
-      d.innerHTML = `<svg class="ic"><use href="#i-${k}" /></svg>`;
-      d.append(`${Math.ceil(t / TICK_RATE)}s`);
-      box.append(d);
-    }
-  }
-  if (view.phase === 'countdown') {
-    const n = Math.min(3, Math.max(1, Math.ceil((view.countdownMs || 0) / 1000)));
-    if (n !== hud.count) {
-      hud.count = n;
-      pop(String(n));
-    }
-  }
-  const hint = view.spectating ? 'Watching - you play in the next round' : view.phase === 'countdown' ? hud.hint : '';
-  if (hint !== hud.label) $('hint').textContent = hud.label = hint;
-}
-
-function pop(text) {
-  const c = $('count');
-  c.textContent = text;
-  c.classList.remove('pop');
-  void c.offsetWidth;
-  c.classList.add('pop');
-}
-
-function banner(text, red) {
-  const b = $('banner');
-  b.textContent = text;
-  b.className = '';
-  void b.offsetWidth;
-  b.className = red ? 'show red' : 'show';
-}
-
-function onGameEvent(type, a, b) {
-  const mySlot = game === net ? net.mySlot : 0;
-  if (type === 'tag') {
-    renderer.tagFx(a, b);
-    sfx.play(b === mySlot ? 'tagged' : 'tag');
-    if (b === mySlot) banner("You're it!", true);
-    else if (a === mySlot) banner(`You tagged ${nameOf(b)}!`);
-    else banner(`${nameOf(b)} is it`);
-  } else if (type === 'block') {
-    renderer.blockFx(a, b);
-    sfx.play('block');
-  } else if (type === 'pick') {
-    renderer.pickFx(a, b);
-    sfx.play(PICKUP_TYPES[b] === 'freeze' ? 'freeze' : 'pick', a === mySlot ? 1 : 0.5);
-  } else if (type === 'count') sfx.play('count');
-  else if (type === 'go') {
-    sfx.play('go');
-    hud.count = 0;
-    pop('GO!');
-    setTimeout(() => $('count').textContent === 'GO!' && ($('count').textContent = ''), 900);
-    banner(a === mySlot ? "You're it - catch someone!" : `${nameOf(a)} is it - run!`, a === mySlot);
-    renderer.shake(4);
-  } else if (type === 'tick') sfx.play('tick');
-  else if (type === 'end') showResults(a);
-}
-
-renderer.onEvent = (type, pv) => sfx.play(type, pv.local ? 1 : 0.35);
-
 // ---------------------------------------------------------------------------
 // Pause menu
 // ---------------------------------------------------------------------------
@@ -778,15 +607,13 @@ function openPause() {
   if (screen !== 'game' || overlay) return;
   $('pause-note').textContent = kind === 'practice' ? 'The match is on hold.' : `Room ${room?.code || ''} - the match carries on without you.`;
   $('btn-pause-full').hidden = !document.documentElement.requestFullscreen;
-  if (kind === 'practice') stopLoop(); // really pause: nobody else is waiting
+  play.hold(true); // practice really pauses; an online match carries on behind the menu
   setOverlay('pause');
 }
 function closePause() {
   setOverlay('');
-  if (game && game !== net) game.lastNow = null;
-  startLoop();
+  play.hold(false);
 }
-$('btn-pause').addEventListener('click', openPause);
 $('btn-resume').addEventListener('click', closePause);
 $('btn-pause-help').addEventListener('click', openHelp);
 $('btn-pause-full').addEventListener('click', () => {
@@ -804,7 +631,7 @@ const list = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} an
 function showResults(res) {
   lastResults = res;
   clearInterval(nextTimer);
-  const mySlot = game === net ? net.mySlot : 0;
+  const mySlot = play.mySlot();
   const cup = res.cup;
   const iWon = res.winners.includes(mySlot);
   const nameOf = (slot) => (res.rows.find((r) => r.slot === slot) || cup?.table.find((r) => r.slot === slot))?.name || `Player ${slot + 1}`;
@@ -846,7 +673,6 @@ function showResults(res) {
   const head = el('tr');
   for (const h of cup ? ['', 'Player', 'As it', 'Round', 'Total'] : ['', 'Player', 'As it', 'Tags']) head.append(el('th', '', h));
   table.append(head);
-  const colors = renderer.theme?.colors || PLAYER_COLORS;
   const rows = cup ? cup.table.map((t) => ({ ...t, row: res.rows.find((r) => r.slot === t.slot) })) : res.rows.map((r) => ({ slot: r.slot, name: r.name, row: r }));
   rows.forEach((r, i) => {
     const tr = el('tr');
@@ -854,7 +680,7 @@ function showResults(res) {
     if (r.slot === mySlot) tr.classList.add('me');
     const who = el('td', 'who');
     const chip = el('i', 'chip');
-    chip.style.background = colors[r.slot];
+    chip.style.background = play.colorOf(r.slot);
     who.append(chip, r.name);
     // a seal for the winner, and one for whoever was it at the end
     const mark = (glyph, word, dark) => {
@@ -913,13 +739,13 @@ function renderResultButtons() {
 
 $('btn-res-again').addEventListener('click', () => {
   sfx.play('click');
-  if (kind === 'practice') startPractice();
+  if (kind === 'practice') play.practice(practice, myName);
   else socket.emit('start');
 });
 function resultsBack() {
   clearInterval(nextTimer);
   if (kind === 'practice') {
-    stopLoop();
+    play.stop();
     kind = 'practice';
     openLobby();
   } else if (amHost()) socket.emit('lobby');
@@ -946,30 +772,20 @@ socket.on('room', (r) => {
 socket.on('round', (msg) => {
   if (!room) return;
   clearInterval(nextTimer);
-  const arena = arenaById(msg.arena);
   const mine = me();
   const mySlot = mine && msg.players.some((p) => p.slot === mine.slot) ? mine.slot : -1;
-  net.onRound(msg, arena, mySlot);
   net.code = room.code;
   kind = 'online';
-  game = net; // snapshots count from now, even while the art style is still loading
-  loadTheme(msg.theme).then(() => {
-    if (net.round === msg && room) beginMatch(net, arena, msg.theme, { mode: msg.mode, cup: msg.cup, twist: net.twist });
-  });
+  play.round(msg, mySlot);
 });
-socket.on('s', (m) => game === net && net.onSnap(m));
-socket.on('go', (it) => game === net && net.onGo(it));
-socket.on('tag', (from, to) => game === net && onGameEvent('tag', from, to));
-socket.on('block', (from, to) => game === net && onGameEvent('block', from, to));
-socket.on('pick', (slot, k) => game === net && onGameEvent('pick', slot, k));
 socket.on('end', (res) => {
   if (!room) return;
-  if (game !== net) {
+  if (play.game !== net) {
     // joined while the scoreboard was up: nothing to show behind it yet
-    game = net;
+    play.game = net;
     show('game');
   }
-  net.onEnd();
+  play.finish();
   showResults(res);
 });
 socket.on('toast', (text) => toast(String(text)));
@@ -1066,8 +882,6 @@ addEventListener('resize', () => {
   }, 150);
 });
 
-input.bindTouch($('touch'));
-
 // ---------------------------------------------------------------------------
 // Go
 // ---------------------------------------------------------------------------
@@ -1078,4 +892,4 @@ if (myName) start();
 else askName(start);
 
 // Handy for debugging from the browser console (and used by the automated checks).
-window.__tag = { renderer, net, socket, input, get game() { return game; }, get screen() { return overlay || screen; }, get room() { return room; }, fontsReady: () => fontsIn };
+window.__tag = { renderer, net, socket, input, get game() { return play.game; }, play, get screen() { return overlay || screen; }, get room() { return room; }, fontsReady: () => fontsIn };

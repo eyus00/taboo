@@ -94,7 +94,7 @@ export function fitText(ctx, text, maxWidth) {
 // ---------------------------------------------------------------------------
 // Power-up icons, shared by every art style so they are always recognisable.
 // ---------------------------------------------------------------------------
-export const KIND_COLORS = { speed: '#ffb020', jump: '#3ecf6e', shield: '#4aa3ff', freeze: '#8fe6ff' };
+export const KIND_COLORS = { speed: '#ffb020', jump: '#3ecf6e', shield: '#4aa3ff', freeze: '#8fe6ff', blast: '#ff6b3d', swap: '#c77dff', storm: '#ffe14d', goo: '#7ed957', box: '#ffc83d' };
 
 // Draws the icon for a power-up centred on (cx, cy), fitting a circle of radius r.
 export function drawIcon(g, kind, cx, cy, r, color) {
@@ -136,7 +136,7 @@ export function drawIcon(g, kind, cx, cy, r, color) {
     g.lineTo(-r * 0.82, -r * 0.62);
     g.closePath();
     g.fill();
-  } else {
+  } else if (kind === 'freeze') {
     // snowflake
     g.lineWidth = r * 0.26;
     g.beginPath();
@@ -146,6 +146,59 @@ export function drawIcon(g, kind, cx, cy, r, color) {
       g.lineTo(-Math.cos(a) * r, -Math.sin(a) * r);
     }
     g.stroke();
+  } else if (kind === 'blast') {
+    // starburst
+    g.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = (i * Math.PI) / 8;
+      const q = i % 2 ? r * 0.5 : r;
+      g.lineTo(Math.cos(a) * q, Math.sin(a) * q);
+    }
+    g.closePath();
+    g.fill();
+  } else if (kind === 'swap') {
+    // two arrows passing each other
+    g.lineWidth = r * 0.3;
+    g.beginPath();
+    g.moveTo(-r * 0.8, -r * 0.35);
+    g.lineTo(r * 0.8, -r * 0.35);
+    g.lineTo(r * 0.35, -r * 0.8);
+    g.moveTo(r * 0.8, r * 0.35);
+    g.lineTo(-r * 0.8, r * 0.35);
+    g.lineTo(-r * 0.35, r * 0.8);
+    g.stroke();
+  } else if (kind === 'storm') {
+    // cloud with a bolt
+    g.beginPath();
+    g.arc(-r * 0.35, -r * 0.25, r * 0.42, 0, 6.283);
+    g.arc(r * 0.25, -r * 0.4, r * 0.5, 0, 6.283);
+    g.arc(r * 0.6, -r * 0.1, r * 0.32, 0, 6.283);
+    g.fill();
+    g.lineWidth = r * 0.26;
+    g.beginPath();
+    g.moveTo(r * 0.1, r * 0.1);
+    g.lineTo(-r * 0.3, r * 0.55);
+    g.lineTo(r * 0.15, r * 0.55);
+    g.lineTo(-r * 0.15, r);
+    g.stroke();
+  } else if (kind === 'goo') {
+    // a drop
+    g.beginPath();
+    g.moveTo(0, -r);
+    g.quadraticCurveTo(r * 0.9, r * 0.1, r * 0.62, r * 0.5);
+    g.arc(0, r * 0.38, r * 0.63, 0.19, Math.PI - 0.19);
+    g.quadraticCurveTo(-r * 0.9, r * 0.1, 0, -r);
+    g.fill();
+  } else {
+    // a lucky box: a question mark
+    g.lineWidth = r * 0.34;
+    g.beginPath();
+    g.arc(0, -r * 0.4, r * 0.48, Math.PI * 1.05, Math.PI * 0.42);
+    g.lineTo(0, r * 0.32);
+    g.stroke();
+    g.beginPath();
+    g.arc(0, r * 0.8, r * 0.2, 0, 6.283);
+    g.fill();
   }
   g.restore();
 }

@@ -1,14 +1,14 @@
 // A match that runs entirely in the browser: practice against bots.
 // Same rules code as the server, so it plays exactly like an online match.
 
-import { TICK_MS, TICK_RATE, COUNTDOWN_MS, MAX_PLAYERS } from '/shared/config.js';
-import { Sim, standings } from '/shared/sim.js';
+import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, MAX_PLAYERS, ITEM_LOCK_TICKS, TEAM_SLOTS } from '/shared/config.js';
+import { Sim, standings, makeTeams } from '/shared/sim.js';
 import { makeBot, botThink } from '/shared/bots.js';
 
 const BOT_NAMES = ['Zap', 'Mox', 'Juno', 'Blip', 'Rook', 'Fizz', 'Pip', 'Nori', 'Kiko', 'Taro'];
 
 export class LocalGame {
-  // opts: { arena, mode, duration, powerups, name, bots, input, onEvent }
+  // opts: { arena, mode, duration, powerups, name, bots, input, onEvent, intro }
   constructor(opts) {
     this.arena = opts.arena;
     this.mode = opts.mode || 'potato';
@@ -20,19 +20,34 @@ export class LocalGame {
     this.names = [opts.name];
     this.bots = new Array(MAX_PLAYERS).fill(null);
     this.human = 0;
+    this.twist = this.sim.twist;
 
-    const spawns = [...Array(MAX_PLAYERS).keys()].sort(() => Math.random() - 0.5);
-    this.sim.add(0, spawns[0]);
     const pool = BOT_NAMES.filter((n) => n.toLowerCase() !== String(opts.name).toLowerCase()).sort(() => Math.random() - 0.5);
     const count = Math.max(1, Math.min(MAX_PLAYERS - 1, opts.bots || 3));
-    for (let slot = 1; slot <= count; slot++) {
-      this.names[slot] = pool[slot - 1];
-      this.sim.add(slot, spawns[slot]);
-      this.bots[slot] = makeBot(Math.floor(Math.random() * 1e6) + slot);
+    const slots = [...Array(count + 1).keys()];
+    // team battle: two sides, each starting on its own half, one in warm colours and one in cool
+    this.teams = null;
+    this.cols = null;
+    if (this.mode === 'team') {
+      this.teams = new Array(MAX_PLAYERS).fill(-1);
+      this.cols = new Array(MAX_PLAYERS).fill(0);
+      makeTeams(slots).forEach((list, t) => list.forEach((slot, i) => ((this.teams[slot] = t), (this.cols[slot] = TEAM_SLOTS[t][i % 3]))));
     }
+    const order = [...this.arena.spawns.keys()].sort(() => Math.random() - 0.5);
+    const half = [order.filter((i) => this.arena.spawns[i][0] < this.arena.w / 2), order.filter((i) => this.arena.spawns[i][0] >= this.arena.w / 2)];
+    for (const slot of slots) {
+      const spot = this.teams && half[this.teams[slot]].length ? half[this.teams[slot]].shift() : order[slot];
+      this.sim.add(slot, spot);
+      if (slot > 0) {
+        this.names[slot] = pool[slot - 1];
+        this.bots[slot] = makeBot(Math.floor(Math.random() * 1e6) + slot);
+      }
+    }
+    if (this.teams) this.sim.setTeams(this.teams);
+    this.startIt = slots[Math.floor(Math.random() * slots.length)]; // drawn now, so the draw can be shown
 
     this.phase = 'countdown';
-    this.countdownMs = COUNTDOWN_MS;
+    this.countdownMs = (opts.intro ?? INTRO_MS) + COUNTDOWN_MS;
     this.goTime = null;
     this.endTick = 0;
     this.acc = 0;
@@ -40,6 +55,25 @@ export class LocalGame {
     this.lastCount = 4;
     this.lastSecond = -1;
     this.prev = new Array(MAX_PLAYERS).fill(null);
+  }
+
+  // What this round is, in the same shape the server announces an online round.
+  info() {
+    return {
+      mode: this.mode,
+      duration: this.duration,
+      twist: 'none',
+      cup: null,
+      it: this.startIt,
+      teams: this.teams,
+      cols: this.cols,
+      countdown: this.countdownMs,
+      players: this.names.map((name, slot) => ({ slot, name })),
+    };
+  }
+
+  teamOf(slot) {
+    return this.teams ? this.teams[slot] : -1;
   }
 
   update(now) {
@@ -50,15 +84,16 @@ export class LocalGame {
     if (this.phase === 'countdown') {
       this.countdownMs -= dt;
       const n = Math.ceil(this.countdownMs / 1000);
-      if (n !== this.lastCount && n >= 1) {
+      if (n !== this.lastCount && n >= 1 && n <= 3) {
         this.lastCount = n;
         this.onEvent('count', n);
       }
       if (this.countdownMs <= 0) {
         this.phase = 'playing';
         this.goTime = now;
-        sim.start();
+        sim.start(this.startIt);
         this.endTick = sim.tick + this.duration * TICK_RATE;
+        sim.endsAt = this.endTick;
         this.onEvent('go', sim.it);
       }
     }
@@ -80,18 +115,20 @@ export class LocalGame {
           if (e.type === 'tag') this.onEvent('tag', e.from, e.to);
           else if (e.type === 'block') this.onEvent('block', e.from, e.to);
           else if (e.type === 'pick') this.onEvent('pick', e.slot, e.kind);
+          else if (e.type !== 'spawn') this.onEvent(e.type, e); // items going off, the bomb, flags
         }
         sim.events.length = 0;
         if (this.phase === 'playing' && sim.tick >= this.endTick) {
           this.phase = 'over';
-          const { rows, winners, loser } = standings(sim, this.names, this.mode);
+          const { rows, winners, loser, score, win } = standings(sim, this.names, this.mode);
           this.onEvent('end', {
             reason: 'time',
             mode: this.mode,
             winners,
             loser,
             cup: null,
-            rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: 0 })),
+            team: this.teams ? { score, win, total: null } : null,
+            rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: 0, team: r.team })),
           });
           break;
         }
@@ -110,6 +147,8 @@ export class LocalGame {
       players.push({
         slot: p.slot,
         name: this.names[p.slot],
+        col: this.cols ? this.cols[p.slot] : p.slot,
+        team: p.team,
         x: smooth ? pr.x + (s.x - pr.x) * a : s.x,
         y: smooth ? pr.y + (s.y - pr.y) * a : s.y,
         vx: s.vx,
@@ -120,11 +159,15 @@ export class LocalGame {
         stun: s.stun,
         frz: s.frz,
         orb: s.orb,
+        canDrop: s.orb > 0 && !!this.arena.portals[s.pi]?.drop, // this portal lets you let go mid-flight
         spd: s.spd,
         jmp: s.jmp,
         shd: s.shd,
+        slw: s.slw,
         dead: s.dead,
         itTicks: p.itTicks,
+        item: p.item,
+        arm: p.arm,
         local: p.slot === 0,
       });
     }
@@ -136,7 +179,7 @@ export class LocalGame {
         this.lastSecond = sec;
       }
     }
-    const me = sim.players[0].s;
+    const me = sim.players[0];
     return {
       phase: this.phase,
       mode: this.mode,
@@ -149,8 +192,10 @@ export class LocalGame {
       duration: this.duration,
       it: this.phase === 'countdown' ? -1 : sim.it,
       players,
-      pickups: sim.pickups,
-      me: this.phase === 'playing' ? { spd: me.spd, jmp: me.jmp, shd: me.shd } : null,
+      boxes: sim.boxes,
+      goo: sim.goo.map((g) => [g.x, g.y]),
+      team: sim.teams ? { score: sim.score, fuse: sim.fuse, flags: sim.flags } : null,
+      me: this.phase === 'playing' ? { spd: me.s.spd, jmp: me.s.jmp, shd: me.s.shd, slw: me.s.slw, item: me.item, arm: me.arm, locked: this.endTick - sim.tick <= ITEM_LOCK_TICKS } : null,
       code: null,
       ping: null,
       spectating: false,

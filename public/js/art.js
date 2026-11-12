@@ -26,7 +26,7 @@ function shoot(arena, themeId, w, h, view) {
 }
 
 // Stands in for "random arena": just the style's backdrop.
-const EMPTY = { id: 'none', w: 2000, h: 1120, platforms: [], ramps: [], tramps: [], lifts: [], portals: [], pickups: [], spawns: [], respawns: [] };
+const EMPTY = { id: 'none', w: 2000, h: 1120, platforms: [], ramps: [], tramps: [], spikes: [], bases: [], lifts: [], portals: [], pickups: [], spawns: [], respawns: [] };
 
 // A whole arena painted in a style, exactly as it looks in the game.
 export function scenePreview(arenaId, themeId, w = 480, h = 270) {
@@ -34,7 +34,7 @@ export function scenePreview(arenaId, themeId, w = 480, h = 270) {
   if (!cache.has(key)) {
     const arena = arenaId === 'random' ? EMPTY : arenaById(arenaId);
     const players = arena.spawns.map(([x, y], slot) => still(slot, x, y, { face: x < arena.w / 2 ? 1 : -1 }));
-    cache.set(key, shoot(arena, themeId, w, h, { phase: 'playing', it: 0, names: false, pickups: [], players }));
+    cache.set(key, shoot(arena, themeId, w, h, { phase: 'playing', it: 0, names: false, boxes: [], players }));
   }
   return cache.get(key);
 }
@@ -53,6 +53,8 @@ const SHOWCASE = {
   ramps: [{ x0: 252, y0: 230, x1: 372, y1: 140 }],
   tramps: [{ x: 176, y: 214, w: 68, h: 16, cx: 210 }],
   lifts: [],
+  spikes: [],
+  bases: [],
   portals: [
     { x: 30, y: 46, w: 44, h: 76, cx: 52, cy: 84, to: 1, pair: 0 },
     { x: 420, y: 64, w: 44, h: 76, cx: 442, cy: 102, to: 0, pair: 0 },
@@ -71,7 +73,7 @@ export function styleStill(themeId, w = 240, h = 135) {
       still(2, 296, 157, { vx: 250 }),
       still(3, 398, 100, { face: -1 }),
     ];
-    cache.set(key, shoot(SHOWCASE, themeId, w, h, { phase: 'playing', it: 0, names: false, pickups: [{ point: 0, type: 0 }, { point: 1, type: 2 }], players }));
+    cache.set(key, shoot(SHOWCASE, themeId, w, h, { phase: 'playing', it: 0, names: false, boxes: [0, 1], players }));
   }
   return cache.get(key);
 }

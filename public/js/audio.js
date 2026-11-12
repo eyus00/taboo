@@ -112,6 +112,25 @@ export class Sfx {
       case 'freeze':
         [1800, 1500, 2100].forEach((f, i) => this.tone(f, f * 0.8, 0.16, 0.08 * vol, 'sine', i * 0.04));
         break;
+      case 'blast': // a shockwave
+        this.noise(0.45, 0.55 * vol, 900);
+        this.tone(160, 40, 0.5, 0.3 * vol, 'sine');
+        break;
+      case 'boom': // the bomb
+        this.noise(0.6, 0.7, 600);
+        this.tone(120, 30, 0.7, 0.35, 'sine');
+        break;
+      case 'storm':
+        this.noise(0.5, 0.4 * vol, 4000);
+        this.tone(90, 60, 0.6, 0.2 * vol, 'sawtooth');
+        break;
+      case 'swap':
+        this.tone(300, 1200, 0.16, 0.12 * vol, 'sine');
+        this.tone(1200, 300, 0.16, 0.12 * vol, 'sine', 0.1);
+        break;
+      case 'goo':
+        this.tone(220, 90, 0.2, 0.16 * vol, 'sine');
+        break;
       case 'tag':
         this.noise(0.18, 0.5, 2400);
         this.tone(900, 140, 0.28, 0.25);

@@ -43,9 +43,18 @@ export const TRAMP_V = 1800; // trampoline launch: ~530 px
 export const LIFT_V = 560; // updraft: the speed it carries you up at
 export const LIFT_RATE = 0.14; // how quickly you settle to that speed (per tick)
 export const LIFT_GRIP = 0.86; // per tick: sideways drift dies quickly inside the column, so letting go rides it
-export const ORB_SPEED = 28; // px per tick while flying between portals
-export const ORB_MIN_TICKS = 16;
-export const ORB_MAX_TICKS = 50;
+export const ORB_SPEED = 26; // px per tick while flying between portals
+export const ORB_MIN_TICKS = 22;
+export const ORB_MAX_TICKS = 70;
+export const ORB_ARC = 0.36; // the flight arcs up over the map: height as a share of the distance...
+export const ORB_ARC_MIN = 170; // ...and at least this high
+export const ORB_DROP_FROM = 0.15; // some portals let you press jump to drop out early,
+export const ORB_DROP_TO = 0.85; // anywhere in this stretch of the flight
+export const LAUNCH_VX = 780; // launchers fling you sideways as well as up
+export const LAUNCH_VY = 1250;
+export const SPIKE_STUN_TICKS = 34; // thorns: a short stun and a bounce off them
+export const SPIKE_BOUNCE = 520;
+export const SPIKE_COOLDOWN = 80; // ticks before thorns can hurt you again
 export const EPS = 0.5; // collision tolerance in px
 
 // --- Tag rules ----------------------------------------------------------------
@@ -55,26 +64,63 @@ export const STUN_TICKS = 24; // 0.4 s freeze for the newly tagged player
 export const BLOCK_STUN_TICKS = 36; // "it" is knocked back when a shield blocks the tag
 export const RESPAWN_TICKS = 30;
 export const COUNTDOWN_MS = 3000;
+export const INTRO_MS = 4200; // before the countdown: the draw for arena, style and who is it
 
-// --- Power-ups ------------------------------------------------------------------
-export const PICKUP_TYPES = ['speed', 'jump', 'shield', 'freeze'];
-export const PICKUP_INFO = {
-  speed: { name: 'Swift', blurb: 'Run faster for 6 s' },
-  jump: { name: 'Spring', blurb: 'Jump higher for 7 s' },
-  shield: { name: 'Ward', blurb: 'Blocks one tag (8 s)' },
-  freeze: { name: 'Frost', blurb: 'Freezes the other side' },
+// --- Lucky boxes and the items inside them --------------------------------------
+// Boxes appear around the arena. Touch one (with empty hands) and you get a
+// random item to keep; press USE to set it off whenever you like. Nothing can
+// be used in the last seconds of a round, so nobody can sit on one for the buzzer.
+export const ITEM_KINDS = ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'goo'];
+export const ITEM_INFO = {
+  speed: { name: 'Swift', blurb: 'Run much faster for 6 s' },
+  jump: { name: 'Spring', blurb: 'Jump much higher for 7 s' },
+  shield: { name: 'Ward', blurb: 'Blocks the next tag' },
+  freeze: { name: 'Frost', blurb: 'Freezes the other side solid' },
+  blast: { name: 'Blast', blurb: 'A shockwave hurls everyone nearby away and stuns them' },
+  swap: { name: 'Swap', blurb: 'Trade places with another player' },
+  storm: { name: 'Storm', blurb: 'Everyone else moves in slow motion' },
+  goo: { name: 'Goo', blurb: 'Drop a puddle - whoever steps in it slips' },
 };
-export const PICKUP_R = 20; // pick-up radius around the item
-export const PICKUP_FIRST_TICKS = 180; // first item 3 s after GO
-export const PICKUP_EVERY_TICKS = 390; // then one every 6.5 s
-export const PICKUP_MAX = 3; // at most this many lying around (one more in a crowd of 5 or 6)
-export const SPEED_BUFF_MUL = 1.35;
-export const JUMP_BUFF_MUL = 1.2;
+export const PICKUP_TYPES = ITEM_KINDS; // older name, still used by the art styles
+export const PICKUP_INFO = ITEM_INFO;
+export const PICKUP_R = 22; // pick-up radius around a box
+export const BOX_FIRST_TICKS = 150; // first box 2.5 s after GO
+export const BOX_EVERY_TICKS = 270; // then one every 4.5 s
+export const BOX_MAX = 4; // at most this many lying around (one more in a crowd of 5 or 6)
+export const ITEM_ARM_TICKS = 50; // the draw takes a moment before the item can be used
+export const ITEM_LOCK_TICKS = 600; // no boxes, no items in the last 10 s of a round
+export const SPEED_BUFF_MUL = 1.4;
+export const JUMP_BUFF_MUL = 1.25;
 export const SPEED_BUFF_TICKS = 360;
 export const JUMP_BUFF_TICKS = 420;
 export const SHIELD_TICKS = 480;
 export const FREEZE_IT_TICKS = 110; // a runner freezes "it" for 1.8 s
-export const FREEZE_RUNNERS_TICKS = 70; // "it" freezes the runners for 1.2 s
+export const FREEZE_RUNNERS_TICKS = 75; // "it" freezes the runners for 1.25 s
+export const BLAST_RADIUS = 780; // about the whole screen
+export const BLAST_STUN_TICKS = 50;
+export const BLAST_KICK = 900;
+export const STORM_TICKS = 210; // 3.5 s of slow motion for everyone else
+export const STORM_SPEED = 0.55;
+export const GOO_TICKS = 780; // a puddle lasts 13 s
+export const GOO_MAX = 5;
+export const GOO_STUN_TICKS = 42;
+
+// --- Team battle: the bomb and the flags ----------------------------------------
+// Two teams. One bomb is in play: whoever carries it must stick it on an ENEMY
+// by touching them. When the fuse runs out it blows up on its carrier and the
+// other team scores. Each team also has a flag: grab the enemy's and carry it
+// home for points - but any enemy who touches you sends it back.
+export const BOMB_FUSE_TICKS = 14 * 60;
+export const BOMB_MIN_FUSE = 150; // a fresh carrier always gets at least 2.5 s
+export const BOMB_REST_TICKS = 110; // pause between an explosion and the next bomb
+export const BOMB_STUN_TICKS = 80;
+export const BOMB_POINTS = 2;
+export const FLAG_POINTS = 3;
+export const FLAG_R = 34; // how close you have to be to a flag or a base
+export const TEAM_NAMES = ['Sun', 'Moon'];
+export const TEAM_COLORS = ['#e2543f', '#3f7fe2'];
+// colour slots handed out by team, so one side is warm and the other cool
+export const TEAM_SLOTS = [[0, 3, 5], [1, 2, 4]];
 
 // --- Rooms and games --------------------------------------------------------------
 export const MAX_PLAYERS = 6;
@@ -86,6 +132,7 @@ export const DEFAULT_DURATION = 60;
 export const MODES = [
   { id: 'potato', name: 'Hot Potato', blurb: 'Whoever is it when time runs out loses.' },
   { id: 'time', name: 'Least Time', blurb: 'Least total time as it wins.' },
+  { id: 'team', name: 'Team Bomb', blurb: 'Two teams. Stick the bomb on an enemy before it blows; steal their flag.' },
 ];
 export const MODE_IDS = MODES.map((m) => m.id);
 
@@ -115,7 +162,8 @@ export const IN_LEFT = 1;
 export const IN_RIGHT = 2;
 export const IN_JUMP = 4;
 export const IN_DOWN = 8;
-export const IN_MASK = 15;
+export const IN_USE = 16; // set off the item you are holding
+export const IN_MASK = 31;
 
 // Join-order colours: red, blue, green, yellow, purple, pink
 export const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#ff79b0'];

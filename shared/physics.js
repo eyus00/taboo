@@ -37,6 +37,14 @@ import {
   ORB_SPEED,
   ORB_MIN_TICKS,
   ORB_MAX_TICKS,
+  ORB_ARC,
+  ORB_ARC_MIN,
+  ORB_DROP_FROM,
+  ORB_DROP_TO,
+  SPIKE_STUN_TICKS,
+  SPIKE_BOUNCE,
+  SPIKE_COOLDOWN,
+  STORM_SPEED,
   EPS,
   RESPAWN_TICKS,
   SPEED_BUFF_MUL,
@@ -81,6 +89,8 @@ export function makeState(x, y) {
     spd: 0, // ticks of Swift left
     jmp: 0, // ticks of Spring left
     shd: 0, // ticks of Ward left
+    slw: 0, // ticks of slow motion left (someone used Storm)
+    hz: 0, // ticks until thorns can hurt us again
     w: PW,
     h: PH,
   };
@@ -111,9 +121,11 @@ export function packState(s) {
     s.shd,
     s.ox,
     s.oy,
+    s.slw,
+    s.hz,
   ];
 }
-export const STATE_LEN = 22;
+export const STATE_LEN = 24;
 
 export function unpackState(a) {
   const s = makeState(a[0], a[1]);
@@ -141,6 +153,8 @@ export function unpackState(a) {
   s.shd = a[19];
   s.ox = a[20];
   s.oy = a[21];
+  s.slw = a[22];
+  s.hz = a[23];
   return s;
 }
 
@@ -154,6 +168,7 @@ export const PF_SPEED = 32;
 export const PF_JUMP = 64;
 export const PF_SHIELD = 128;
 export const PF_DEAD = 256;
+export const PF_SLOW = 512;
 
 export function publicFlags(s) {
   return (
@@ -165,8 +180,31 @@ export function publicFlags(s) {
     (s.spd > 0 ? PF_SPEED : 0) |
     (s.jmp > 0 ? PF_JUMP : 0) |
     (s.shd > 0 ? PF_SHIELD : 0) |
-    (s.dead > 0 ? PF_DEAD : 0)
+    (s.dead > 0 ? PF_DEAD : 0) |
+    (s.slw > 0 ? PF_SLOW : 0)
   );
+}
+
+// Where an orb is, a fraction e of the way from where it entered (ox, oy) to
+// portal d: a curve whose top is well above both ends.
+function orbPoint(p, d, e) {
+  const lift = Math.max(ORB_ARC_MIN, Math.hypot(d.cx - p.ox, d.cy - p.oy) * ORB_ARC);
+  const top = Math.max(PH, Math.min(p.oy, d.cy) - lift);
+  const cy = 2 * top - (p.oy + d.cy) / 2; // control point that puts the middle of the curve at `top`
+  const u = 1 - e;
+  p.x = q(u * u * p.ox + 2 * u * e * ((p.ox + d.cx) / 2) + e * e * d.cx - PW / 2);
+  p.y = q(Math.max(0, u * u * p.oy + 2 * u * e * cy + e * e * d.cy - PH / 2)); // never above the top of the map
+}
+
+// Is the player's box clear of solid blocks and inside the arena?
+function isFree(p, arena) {
+  if (p.x < 0 || p.x > arena.w - PW || p.y < 0 || p.y > arena.h - PH) return false;
+  const plats = arena.platforms;
+  for (let i = 0; i < plats.length; i++) {
+    const s = plats[i];
+    if (!s.oneway && p.x + PW > s.x && p.x < s.x + s.w && p.y + PH > s.y && p.y < s.y + s.h) return false;
+  }
+  return true;
 }
 
 // Move a value towards a target by at most `step`.
@@ -321,28 +359,39 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
   if (p.spd > 0) p.spd--;
   if (p.jmp > 0) p.jmp--;
   if (p.shd > 0) p.shd--;
+  if (p.slw > 0) p.slw--;
+  if (p.hz > 0) p.hz--;
   if (p.drop > 0) p.drop--;
 
-  // Flying between portals: no control, straight to the partner.
+  // Flying between portals: an arc up over the map, no steering. Some portals
+  // let you press jump to drop out wherever you happen to be.
   if (p.orb > 0) {
+    const pressed = bits & ~p.pb;
     p.orb--;
     p.pb = bits;
     const a = arena.portals[p.pi];
     const d = arena.portals[a.to];
+    p.vx = 0;
+    p.vy = 0;
     if (p.orb === 0) {
       p.x = d.cx - PW / 2;
       p.y = d.y + d.h - PH - 1;
       p.tp = 1; // the exit will not take us again until we step out of it
       p.air = AIR_JUMPS;
       p.ground = false;
-    } else {
-      const f = 1 - p.orb / p.ot;
-      const e = f * f * (3 - 2 * f); // ease in and out
-      p.x = q(p.ox + (d.cx - p.ox) * e - PW / 2);
-      p.y = q(p.oy + (d.cy - p.oy) * e - PH / 2);
+      return;
     }
-    p.vx = 0;
-    p.vy = 0;
+    const f = 1 - p.orb / p.ot;
+    const e = f * f * (3 - 2 * f); // ease in and out
+    orbPoint(p, d, e);
+    if (a.drop && pressed & IN_JUMP && f > ORB_DROP_FROM && f < ORB_DROP_TO && isFree(p, arena)) {
+      p.orb = 0; // let go: fall from here with a little of the flight's drift
+      p.vx = d.cx > p.ox ? 200 : -200;
+      p.air = AIR_JUMPS;
+      p.ground = false;
+      p.coyote = 0;
+      p.tp = 0;
+    }
     return;
   }
 
@@ -360,8 +409,9 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
   if (b & IN_RIGHT) dir += 1;
   if (dir !== 0) p.face = dir;
 
-  const speed = MOVE_SPEED * twist.speed * (isIt ? IT_SPEED_MUL : 1) * (p.spd > 0 ? SPEED_BUFF_MUL : 1);
-  const jumpMul = p.jmp > 0 ? JUMP_BUFF_MUL : 1;
+  const slow = p.slw > 0 ? STORM_SPEED : 1;
+  const speed = MOVE_SPEED * twist.speed * (isIt ? IT_SPEED_MUL : 1) * (p.spd > 0 ? SPEED_BUFF_MUL : 1) * slow;
+  const jumpMul = (p.jmp > 0 ? JUMP_BUFF_MUL : 1) * (p.slw > 0 ? 0.85 : 1);
 
   // inside an updraft?
   let lifted = false;
@@ -383,6 +433,8 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
   } else if (dir === 0) {
     p.vx *= lifted ? LIFT_GRIP : AIR_KEEP; // an updraft holds on to you when you let go
     if (Math.abs(p.vx) < 4) p.vx = 0;
+  } else if (p.vx * dir > speed) {
+    p.vx *= AIR_KEEP; // flung faster than you can run (a launcher): holding on keeps the momentum
   } else {
     p.vx = approach(p.vx, target, (p.vx * dir < 0 ? AIR_TURN : AIR_ACCEL) * DT);
   }
@@ -441,12 +493,30 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
       const t = tr[i];
       if (p.x + PW - t.x < 8 || t.x + t.w - p.x < 8) continue;
       if (p.y + PH < t.y || p.y > t.y + t.h) continue;
-      p.vy = -TRAMP_V;
+      p.vy = -(t.vy || TRAMP_V);
+      if (t.vx) p.vx = t.vx; // a launcher: up and across
       p.ground = false;
       p.gk = 0;
       p.coyote = 0;
       p.air = AIR_JUMPS;
       p.nc = true;
+      break;
+    }
+  }
+
+  // thorns: a sting, a short stun, and you are thrown back off them
+  if (p.hz === 0) {
+    const sp = arena.spikes;
+    for (let i = 0; i < sp.length; i++) {
+      const z = sp[i];
+      if (p.x + PW - z.x < 6 || z.x + z.w - p.x < 6 || p.y + PH < z.y || p.y > z.y + z.h) continue;
+      p.stun = SPIKE_STUN_TICKS;
+      p.hz = SPIKE_COOLDOWN;
+      p.vy = -SPIKE_BOUNCE;
+      p.vx = p.x + PW / 2 < z.x + z.w / 2 ? -240 : 240;
+      p.ground = false;
+      p.gk = 0;
+      p.coyote = 0;
       break;
     }
   }
@@ -470,7 +540,7 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
     if (p.tp === 0) {
       const d = po[a.to];
       const dist = Math.hypot(d.cx - a.cx, d.cy - a.cy);
-      p.ot = Math.max(ORB_MIN_TICKS, Math.min(ORB_MAX_TICKS, Math.round(dist / ORB_SPEED)));
+      p.ot = Math.max(ORB_MIN_TICKS, Math.min(ORB_MAX_TICKS, Math.round((dist * 1.2) / ORB_SPEED)));
       p.orb = p.ot;
       p.pi = i;
       p.ox = q(p.x + PW / 2);

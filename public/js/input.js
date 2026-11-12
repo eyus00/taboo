@@ -1,8 +1,8 @@
 // Keyboard + on-screen touch controls -> one small bitmask per tick.
-// Four actions only: left, right, jump (again in the air: double jump) and
-// down (drop through thin ledges and slopes, fall faster).
+// Five actions: left, right, jump (again in the air: double jump), down (drop
+// through thin ledges and slopes, fall faster) and use (the item in your hands).
 
-import { IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN } from '/shared/config.js';
+import { IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE } from '/shared/config.js';
 
 const KEYS = {
   ArrowLeft: IN_LEFT,
@@ -14,6 +14,10 @@ const KEYS = {
   Space: IN_JUMP,
   ArrowDown: IN_DOWN,
   KeyS: IN_DOWN,
+  KeyE: IN_USE, // set off the item you are holding
+  KeyX: IN_USE,
+  ShiftLeft: IN_USE,
+  ShiftRight: IN_USE,
 };
 
 export class Input {

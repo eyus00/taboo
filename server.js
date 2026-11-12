@@ -17,6 +17,8 @@ import {
   TICK_MS,
   SNAP_EVERY,
   COUNTDOWN_MS,
+  INTRO_MS,
+  TEAM_SLOTS,
   MAX_PLAYERS,
   MIN_PLAYERS,
   NAME_MAX,
@@ -34,7 +36,7 @@ import {
   IN_MASK,
 } from './shared/config.js';
 import { ARENA_IDS, arenaById } from './shared/arenas.js';
-import { Sim, standings, cupPoints } from './shared/sim.js';
+import { Sim, standings, cupPoints, makeTeams } from './shared/sim.js';
 import { packState, publicFlags } from './shared/physics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -43,6 +45,7 @@ const PORT = process.env.PORT || 3000;
 // The automated tests play very short rounds with short breaks; nothing else can ask for them.
 const TEST_DURATION = Number(process.env.TAG_TEST_DURATION) || 0;
 const BREAK_MS = Number(process.env.TAG_TEST_BREAK) || CUP_BREAK_MS;
+const DRAW_MS = Number(process.env.TAG_TEST_INTRO) || INTRO_MS;
 
 // Other players are drawn this many ticks in the past on every screen
 // (see INTERP_TICKS in public/js/net.js). Used for lag-compensated tagging.
@@ -143,6 +146,10 @@ function roundInfo(room) {
     mode: g.mode,
     duration: g.duration,
     twist: g.twist,
+    it: g.startIt, // who starts as it (or carries the first bomb)
+    random: { arena: room.settings.arena === 'random', theme: room.settings.theme === 'random' }, // what was left to chance
+    teams: g.teams, // team battle: team (0 or 1) of each slot; otherwise null
+    cols: g.cols, // which player colour each slot is drawn in this round
     cup: g.cup, // null, or { round, rounds, double, leader }
     playing: g.state === 'playing',
     countdown: Math.max(0, g.goAt - Date.now()),
@@ -197,7 +204,7 @@ function leaveRoom(socket) {
 // Rounds
 // ---------------------------------------------------------------------------
 function startCup(room) {
-  room.cup = { round: 0, rounds: room.settings.rounds, arenas: [], lastTwist: '' };
+  room.cup = { round: 0, rounds: room.settings.rounds, arenas: [], lastTwist: '', team: new Map(), teamPts: [0, 0] };
   for (const p of room.players.values()) {
     p.pts = 0;
     p.itMs = 0;
@@ -250,26 +257,64 @@ function startRound(room) {
   }
   sim.twist = twistById(twist);
 
-  const spawns = shuffled([...Array(MAX_PLAYERS).keys()]);
+  // Team battle: two sides. In a tournament the sides stay together from round
+  // to round (newcomers join the smaller one); a quick match draws them afresh.
+  const everyone = [...room.players.values()];
+  const mode = s.mode;
+  let teams = null;
+  let cols = null;
+  if (mode === 'team') {
+    const side = cup ? cup.team : new Map();
+    const size = (t) => everyone.filter((p) => side.get(p.id) === t).length;
+    for (const p of shuffled(everyone)) if (!side.has(p.id)) side.set(p.id, size(0) <= size(1) ? 0 : 1);
+    if (!size(0) || !size(1) || Math.abs(size(0) - size(1)) > 1) {
+      // people left and one side is empty or lopsided: draw again
+      makeTeams(everyone.map((p) => p.id)).forEach((ids, t) => ids.forEach((id) => side.set(id, t)));
+    }
+    teams = new Array(MAX_PLAYERS).fill(-1);
+    cols = new Array(MAX_PLAYERS).fill(0);
+    const seen = [0, 0];
+    for (const p of everyone) {
+      const t = side.get(p.id);
+      teams[p.slot] = t;
+      cols[p.slot] = TEAM_SLOTS[t][seen[t]++ % 3]; // one side in warm colours, the other in cool ones
+    }
+  }
+
+  // start positions: shuffled; in a team battle each side starts on its own half
+  const arena = sim.arena;
+  const order = shuffled([...arena.spawns.keys()]);
+  const half = [order.filter((i) => arena.spawns[i][0] < arena.w / 2), order.filter((i) => arena.spawns[i][0] >= arena.w / 2)];
   const net = new Array(MAX_PLAYERS).fill(null);
   let i = 0;
-  for (const p of room.players.values()) {
+  for (const p of everyone) {
     p.playing = true;
-    sim.add(p.slot, spawns[i++]);
+    const spot = teams && half[teams[p.slot]].length ? half[teams[p.slot]].shift() : order[i];
+    i++;
+    sim.add(p.slot, spot);
     net[p.slot] = { q: [], recv: 0, lastSeq: 0, budget: 0, idle: 0, win: 0, spare: Infinity, late: 0, trimmed: 0, skipped: 0, id: p.id };
   }
+  if (teams) {
+    sim.setTeams(teams);
+    startIt = -1; // the leader rule is for free-for-all tournaments
+    if (info) info.leader = -1;
+  }
+  // who is it (or carries the first bomb) is drawn now, so every screen can show the draw
+  if (startIt < 0) startIt = pick(everyone.map((p) => p.slot));
   room.game = {
     sim,
     net,
     arenaId,
     themeId,
-    mode: s.mode,
+    mode,
     duration: s.duration,
     twist,
     cup: info,
     startIt,
+    teams,
+    cols,
     state: 'countdown',
-    goAt: Date.now() + COUNTDOWN_MS + 500, // a beat for everyone to load the arena
+    goAt: Date.now() + DRAW_MS + COUNTDOWN_MS + 500, // the draw, then 3-2-1
     endTick: 0,
   };
   room.phase = 'countdown';
@@ -291,15 +336,16 @@ function finishRound(room, reason) {
   for (const p of room.players.values()) names[p.slot] = p.name;
   const cup = room.cup;
   const forfeit = reason === 'forfeit';
-  let { rows, winners, loser } = standings(g.sim, names, cup ? 'time' : g.mode);
-  if (cup) loser = g.sim.it;
+  const team = g.mode === 'team';
+  let { rows, winners, loser, score, win } = standings(g.sim, names, team ? 'team' : cup ? 'time' : g.mode);
+  if (cup && !team) loser = g.sim.it;
   if (forfeit) {
     // everyone else left: whoever stayed wins, whatever the clock says
     winners = rows.map((r) => r.slot);
     loser = -1;
   }
   const bySlot = new Map([...room.players.values()].map((p) => [p.slot, p]));
-  const gained = cup && !forfeit ? cupPoints(g.sim, g.cup.double) : {};
+  const gained = cup && !team && !forfeit ? cupPoints(g.sim, g.cup.double) : {};
   for (const p of room.players.values()) {
     if (!p.playing) continue;
     if (cup) {
@@ -311,24 +357,41 @@ function finishRound(room, reason) {
 
   const out = {
     reason, // 'time' | 'forfeit'
-    mode: cup ? 'cup' : g.mode,
+    mode: team ? 'team' : cup ? 'cup' : g.mode,
     winners, // slots
     loser, // slot of whoever was "it" at the end, or -1
-    rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: gained[r.slot] || 0 })),
+    rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: gained[r.slot] || 0, team: r.team })),
+    team: team ? { score, win, total: null } : null, // team battle: this round's score, who won it (-1: a draw)
     cup: null,
   };
   if (cup) {
     const final = cup.round >= cup.rounds || forfeit || room.players.size < MIN_PLAYERS;
-    // the table: most points first, less time as it breaks ties
-    const table = [...room.players.values()]
-      .sort((a, b) => b.pts - a.pts || a.itMs - b.itMs || a.slot - b.slot)
-      .map((p) => ({ slot: p.slot, name: p.name, pts: p.pts, ms: p.itMs, gained: gained[p.slot] || 0 }));
+    let table = [];
+    if (team) {
+      // the last round counts double here too
+      const k = g.cup.double ? 2 : 1;
+      cup.teamPts[0] += score[0] * k;
+      cup.teamPts[1] += score[1] * k;
+      out.team.total = cup.teamPts.slice();
+      if (final) {
+        const [a, b] = cup.teamPts;
+        const best = a === b ? -1 : a > b ? 0 : 1;
+        out.team.win = best;
+        out.winners = rows.filter((r) => best < 0 || r.team === best).map((r) => r.slot);
+      }
+    } else {
+      // the table: most points first, less time as it breaks ties
+      table = [...room.players.values()]
+        .sort((a, b) => b.pts - a.pts || a.itMs - b.itMs || a.slot - b.slot)
+        .map((p) => ({ slot: p.slot, name: p.name, pts: p.pts, ms: p.itMs, gained: gained[p.slot] || 0 }));
+      if (final) {
+        const best = table[0];
+        out.winners = table.filter((r) => r.pts === best.pts && r.ms === best.ms).map((r) => r.slot);
+      }
+    }
     out.cup = { round: cup.round, rounds: cup.rounds, double: g.cup.double, final, next: final ? 0 : BREAK_MS, table };
     if (final) {
-      const best = table[0];
-      const champs = table.filter((r) => r.pts === best.pts && r.ms === best.ms).map((r) => r.slot);
-      out.winners = champs;
-      for (const slot of champs) bySlot.get(slot).wins++;
+      for (const slot of out.winners) if (bySlot.has(slot)) bySlot.get(slot).wins++;
       room.cup = null;
     } else {
       room.nextAt = Date.now() + BREAK_MS;
@@ -356,6 +419,7 @@ function flushEvents(room) {
     if (e.type === 'tag') io.to(room.code).emit('tag', e.from, e.to);
     else if (e.type === 'block') io.to(room.code).emit('block', e.from, e.to);
     else if (e.type === 'pick') io.to(room.code).emit('pick', e.slot, e.kind, e.point);
+    else if (e.type !== 'spawn') io.to(room.code).emit('ev', e); // items going off, the bomb, flags
   }
   sim.events.length = 0;
 }
@@ -430,6 +494,7 @@ function tickRoom(room) {
       room.phase = 'playing';
       sim.start(g.startIt);
       g.endTick = sim.tick + g.duration * TICK_RATE;
+      sim.endsAt = g.endTick; // items lock shortly before this
       io.to(room.code).emit('go', sim.it);
       emitRoom(room);
     }
@@ -455,10 +520,12 @@ function tickRoom(room) {
 }
 
 // Snapshot, one per player because each also gets their own full state:
-//   [tick, playing, itSlot, ticksLeft | msToGo, players[], pickups[], mine]
-//   player: [slot, x, y, vx, vy, flags, immune, itTicks, tags]
-//   pickup: point * 4 + type
+//   [tick, playing, itSlot, ticksLeft | msToGo, players[], boxes[], mine, goo[], team]
+//   player: [slot, x, y, vx, vy, flags, immune, itTicks, tags, item]   (item: 0 or kind + 1, +16 while it is being drawn)
+//   boxes:  indices of the box spots that have a box
 //   mine:   [ackSeq, ...packState(mine)] or 0 for spectators
+//   goo:    [x, y] of every puddle
+//   team:   0, or [score0, score1, fuse, flag0 x, y, carrier, flag1 x, y, carrier]
 function sendSnapshot(room) {
   const g = room.game;
   const sim = g.sim;
@@ -466,16 +533,21 @@ function sendSnapshot(room) {
   for (const pl of sim.players) {
     if (!pl) continue;
     const s = pl.s;
-    ps.push([pl.slot, s.x, s.y, s.vx, s.vy, publicFlags(s), pl.immune, pl.itTicks, pl.tags]);
+    ps.push([pl.slot, s.x, s.y, s.vx, s.vy, publicFlags(s), pl.immune, pl.itTicks, pl.tags, pl.item + (pl.arm > 0 ? 16 : 0)]);
   }
-  const pk = sim.pickups.map((k) => k.point * 4 + k.type);
   const playing = g.state === 'playing';
   const left = playing ? g.endTick - sim.tick : Math.max(0, g.goAt - Date.now());
-  const head = [sim.tick, playing ? 1 : 0, sim.it, left, ps, pk];
+  const goo = sim.goo.map((p) => [Math.round(p.x), Math.round(p.y)]);
+  let team = 0;
+  if (sim.teams) {
+    const [a, b] = sim.flags;
+    team = [sim.score[0], sim.score[1], Math.max(0, sim.fuse), Math.round(a.x), Math.round(a.y), a.carrier, Math.round(b.x), Math.round(b.y), b.carrier];
+  }
+  const head = [sim.tick, playing ? 1 : 0, sim.it, left, ps, sim.boxes];
   for (const p of room.players.values()) {
     const pl = p.playing ? sim.players[p.slot] : null;
     const mine = pl ? [g.net[p.slot].lastSeq, ...packState(pl.s)] : 0;
-    io.to(p.id).volatile.emit('s', [...head, mine]);
+    io.to(p.id).volatile.emit('s', [...head, mine, goo, team]);
   }
 }
 
@@ -601,7 +673,11 @@ io.on('connection', (socket) => {
     const room = rooms.get(socket.data.code);
     if (!room || room.hostId !== socket.id || room.game || room.cup) return;
     const s = room.settings;
-    if (msg?.game === 'quick' || msg?.game === 'cup') s.game = msg.game;
+    if (msg?.game === 'quick' || msg?.game === 'cup') {
+      // a tournament is a team affair unless the host says otherwise
+      if (msg.game === 'cup' && s.game !== 'cup' && msg.mode === undefined) s.mode = 'team';
+      s.game = msg.game;
+    }
     if (CUP_ROUNDS.includes(msg?.rounds)) s.rounds = msg.rounds;
     if (MODE_IDS.includes(msg?.mode)) s.mode = msg.mode;
     if (msg?.arena === 'random' || ARENA_IDS.includes(msg?.arena)) s.arena = msg.arena;

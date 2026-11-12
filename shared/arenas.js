@@ -3,20 +3,23 @@
 //
 //   #  solid block: land on top, bump into the sides, bonk your head underneath
 //   =  thin ledge: jump up through it, land on it, hold DOWN to drop through
-//   ^  trampoline (sits on the tile below it)
+//   ^  trampoline (sits on the tile below it)      < >  launcher: flings you up and to that side
+//   x  thorns (on the tile below): a sting and a short stun
 //   u  updraft: a column of rising air that carries you up
 //   A/a B/b C/c  portal pairs: step into one and fly to its partner as an orb
 //   *  a place where power-ups can appear
 //   1-6  player start positions      r  where you come back after falling in a pit
+//   7 8  the two team bases (flag stands) for team battles; left and right ends if left out
 //   .  air
 //
+// "drop" lists the portal letters you can let go from mid-flight (press jump).
 // Slopes are listed separately as "ramps": [col, row, col, row] from one end to
 // the other, in tiles. They behave like thin ledges that happen to be tilted.
 // A player's centre line rides the slope, so where a slope meets the side of a
 // solid block it has to end 0.4 tiles (half a player) clear of it.
 // The left and right edges of the map are walls.
 
-import { PW, PH, MAX_PLAYERS } from './config.js';
+import { PW, PH, MAX_PLAYERS, LAUNCH_VX, LAUNCH_VY } from './config.js';
 
 export const TILE = 40;
 export const LEDGE_H = 14;
@@ -214,6 +217,8 @@ function parse(def) {
   const at = (r, c) => (r >= 0 && r < R && c >= 0 && c < C ? rows[r][c] : '.');
   const platforms = [];
   const tramps = [];
+  const spikes = [];
+  const bases = [];
   const lifts = [];
   const portals = [];
   const pickups = [];
@@ -254,13 +259,23 @@ function parse(def) {
     if (rows[r].length !== C) throw new Error(def.id + ': row ' + r + ' has the wrong length');
     for (let c = 0; c < C; c++) {
       const ch = rows[r][c];
-      if (ch === '=' || ch === '^') {
+      if (ch === '=' || ch === '^' || ch === '<' || ch === '>' || ch === 'x') {
         const c0 = c;
         while (at(r, c + 1) === ch) c++;
         const x = c0 * TILE;
         const w = (c - c0 + 1) * TILE;
         if (ch === '=') platforms.push({ x, y: r * TILE, w, h: LEDGE_H, oneway: true, ground: false });
-        else tramps.push({ x: x + 6, y: (r + 1) * TILE - TRAMP_H, w: w - 12, h: TRAMP_H, cx: x + w / 2 });
+        else if (ch === 'x') spikes.push({ x: x + 3, y: (r + 1) * TILE - 16, w: w - 6, h: 16 });
+        else {
+          const pad = { x: x + 6, y: (r + 1) * TILE - TRAMP_H, w: w - 12, h: TRAMP_H, cx: x + w / 2, vx: 0, vy: 0 };
+          if (ch !== '^') {
+            pad.vx = ch === '>' ? LAUNCH_VX : -LAUNCH_VX;
+            pad.vy = LAUNCH_VY;
+          }
+          tramps.push(pad);
+        }
+      } else if (ch === '7' || ch === '8') {
+        bases[ch === '7' ? 0 : 1] = [c * TILE + TILE / 2, (r + 1) * TILE];
       } else if (ch === '*') {
         pickups.push({ x: c * TILE + TILE / 2, y: r * TILE + 18 });
       } else if (ch >= '1' && ch <= '6') {
@@ -272,7 +287,7 @@ function parse(def) {
         const bottom = (r + 1) * TILE;
         const k = ch.toUpperCase();
         (letters[k] ||= []).push(portals.length);
-        portals.push({ x: cx - PORTAL_W / 2, y: bottom - PORTAL_H, w: PORTAL_W, h: PORTAL_H, cx, cy: bottom - PORTAL_H / 2, to: -1, pair: 0 });
+        portals.push({ x: cx - PORTAL_W / 2, y: bottom - PORTAL_H, w: PORTAL_W, h: PORTAL_H, cx, cy: bottom - PORTAL_H / 2, to: -1, pair: 0, drop: (def.drop || '').toUpperCase().includes(k) });
       }
     }
   }
@@ -293,6 +308,12 @@ function parse(def) {
     return a.x0 < a.x1 ? a : { x0: a.x1, y0: a.y1, x1: a.x0, y1: a.y0 };
   });
 
+  // team bases: where each side's flag stands (feet position). By default the
+  // start positions nearest the left and right walls.
+  const byX = spawns.slice().sort((a, b) => a[0] - b[0]);
+  if (!bases[0]) bases[0] = [byX[0][0] + PW / 2, byX[0][1] + PH];
+  if (!bases[1]) bases[1] = [byX[byX.length - 1][0] + PW / 2, byX[byX.length - 1][1] + PH];
+
   return {
     id: def.id,
     name: def.name,
@@ -302,6 +323,8 @@ function parse(def) {
     platforms,
     ramps,
     tramps,
+    spikes,
+    bases,
     lifts,
     portals,
     pickups,
