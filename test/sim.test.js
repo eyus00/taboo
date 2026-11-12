@@ -436,6 +436,32 @@ test('the leader can be made to start as it; twists change the round', () => {
   assert.equal(frenzy.pickups.length, 1, 'items arrive sooner in a frenzy');
 });
 
+test('six players: everyone gets their own start, any of them can tag or be tagged, and all six score', () => {
+  for (const arena of ARENAS) {
+    assert.equal(arena.spawns.length, 6, `${arena.id} has six start positions`);
+    assert.equal(new Set(arena.spawns.map((s) => s.join())).size, 6, `${arena.id}: no two players start on the same spot`);
+  }
+  const sim = new Sim(box);
+  for (let i = 0; i < 6; i++) sim.add(i).itTicks = [300, 100, 500, 200, 600, 400][i];
+  assert.equal(sim.active().length, 6);
+  // slot 5 (the sixth player) is it and touches slot 4
+  const a = sim.players[5].s;
+  const b = sim.players[4].s;
+  a.x = 2400;
+  b.x = 2400 + PW;
+  a.y = b.y = floorY;
+  sim.it = 5;
+  sim.step([]);
+  assert.equal(sim.it, 4, 'the sixth player tagged the fifth');
+  assert.equal(sim.players[5].tags, 1);
+  // tournament points: 5 down to 0 for least time as it, +1 for everyone but whoever is it
+  sim.it = 4;
+  assert.deepEqual(cupPoints(sim), { 0: 4, 1: 6, 2: 2, 3: 5, 4: 0, 5: 3 });
+  const names = ['A', 'B', 'C', 'D', 'E', 'F'];
+  assert.deepEqual(standings(sim, names, 'potato').winners.sort(), [0, 1, 2, 3, 5]);
+  assert.equal(standings(sim, names, 'time').winners[0], 1);
+});
+
 test('if "it" leaves, someone else becomes it', () => {
   const sim = new Sim(box);
   sim.add(0);
@@ -463,7 +489,7 @@ test('every arena: spawns stand on something, every surface can reach every othe
 
 test('bots play every arena: tags keep happening, nobody gets stuck, everyone gets chased', () => {
   for (const arena of ARENAS) {
-    for (const n of [2, 4]) {
+    for (const n of [2, 4, 6]) {
       let seed = 99 + n;
       const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
       const sim = new Sim(arena, rnd);
@@ -476,9 +502,9 @@ test('bots play every arena: tags keep happening, nobody gets stuck, everyone ge
       let tags = 0;
       let gap = 0;
       let worst = 0;
-      const tagged = [0, 0, 0, 0];
+      const tagged = new Array(n).fill(0);
       for (let t = 0; t < 60 * 120; t++) {
-        sim.step([0, 1, 2, 3].map((i) => (sim.players[i] ? botThink(sim, i, mem[i]) : 0)));
+        sim.step(mem.map((m, i) => (sim.players[i] ? botThink(sim, i, m) : 0)));
         gap++;
         for (const e of sim.events) {
           if (e.type !== 'tag') continue;

@@ -1,11 +1,11 @@
 // A match that runs entirely in the browser: practice against bots.
 // Same rules code as the server, so it plays exactly like an online match.
 
-import { TICK_MS, TICK_RATE, COUNTDOWN_MS } from '/shared/config.js';
+import { TICK_MS, TICK_RATE, COUNTDOWN_MS, MAX_PLAYERS } from '/shared/config.js';
 import { Sim, standings } from '/shared/sim.js';
 import { makeBot, botThink } from '/shared/bots.js';
 
-const BOT_NAMES = ['Zap', 'Mox', 'Juno', 'Blip', 'Rook', 'Fizz', 'Pip', 'Nori'];
+const BOT_NAMES = ['Zap', 'Mox', 'Juno', 'Blip', 'Rook', 'Fizz', 'Pip', 'Nori', 'Kiko', 'Taro'];
 
 export class LocalGame {
   // opts: { arena, mode, duration, powerups, name, bots, input, onEvent }
@@ -18,13 +18,13 @@ export class LocalGame {
     this.sim = new Sim(this.arena);
     this.sim.powerups = opts.powerups !== false;
     this.names = [opts.name];
-    this.bots = [null, null, null, null];
+    this.bots = new Array(MAX_PLAYERS).fill(null);
     this.human = 0;
 
-    const spawns = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+    const spawns = [...Array(MAX_PLAYERS).keys()].sort(() => Math.random() - 0.5);
     this.sim.add(0, spawns[0]);
     const pool = BOT_NAMES.filter((n) => n.toLowerCase() !== String(opts.name).toLowerCase()).sort(() => Math.random() - 0.5);
-    const count = Math.max(1, Math.min(3, opts.bots || 3));
+    const count = Math.max(1, Math.min(MAX_PLAYERS - 1, opts.bots || 3));
     for (let slot = 1; slot <= count; slot++) {
       this.names[slot] = pool[slot - 1];
       this.sim.add(slot, spawns[slot]);
@@ -39,7 +39,7 @@ export class LocalGame {
     this.lastNow = null;
     this.lastCount = 4;
     this.lastSecond = -1;
-    this.prev = [null, null, null, null];
+    this.prev = new Array(MAX_PLAYERS).fill(null);
   }
 
   update(now) {
@@ -70,10 +70,10 @@ export class LocalGame {
         this.acc -= TICK_MS;
         steps++;
         for (const p of sim.players) if (p) this.prev[p.slot] = { x: p.s.x, y: p.s.y, dead: p.s.dead };
-        const inputs = [0, 0, 0, 0];
+        const inputs = new Array(MAX_PLAYERS).fill(0);
         if (this.phase === 'playing') {
           inputs[0] = this.input ? this.input.bits() : 0;
-          for (let s = 1; s < 4; s++) if (this.bots[s]) inputs[s] = botThink(sim, s, this.bots[s]);
+          for (let s = 1; s < MAX_PLAYERS; s++) if (this.bots[s]) inputs[s] = botThink(sim, s, this.bots[s]);
         }
         sim.step(inputs);
         for (const e of sim.events) {

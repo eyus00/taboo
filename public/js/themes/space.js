@@ -17,7 +17,7 @@ const AMBER = '#ffb62e'; // jump pads and hazard paint
 const ALERT = '#ff4a3d'; // whoever is it
 const SPACE = '#070a1d';
 const LIFT = '#8fe9ff'; // ion stream in the updraft columns
-const COLORS = ['#ff5747', '#3f9dff', '#3fd97f', '#ffd23f']; // red, blue, green, yellow
+const COLORS = ['#ff5747', '#3f9dff', '#3fd97f', '#ffd23f', '#a57bff', '#ff7ac4']; // red, blue, green, yellow, purple, pink
 
 // the planet whose horizon fills the bottom of the picture
 const PX = 300;
@@ -1159,7 +1159,7 @@ export default {
       limb: darken(color, 0.14),
     }));
 
-    return { bg, shade, snap, suits, itGlow, flare, puff, dust, padGlow, spark, beacons, masts, stars, rndLive, artT: null, twinkles: [], meteors: [], satY: null, satMask: null, trail: [0, 0, 0, 0] };
+    return { bg, shade, snap, suits, itGlow, flare, puff, dust, padGlow, spark, beacons, masts, stars, rndLive, artT: null, twinkles: [], meteors: [], satY: null, satMask: null, trail: COLORS.map(() => 0) };
   },
 
   back(g, sc) {

@@ -13,7 +13,7 @@ const BLOOD = '#b3121d';
 const EMBER = '#ff2a1f'; // whoever is "it" burns this colour
 const VOID = '#050607';
 const AIR = '#b4f2d6'; // updraft columns: cold breath from below
-const COLORS = ['#ff5d52', '#62adff', '#72f08f', '#ffe066'];
+const COLORS = ['#ff5d52', '#62adff', '#72f08f', '#ffe066', '#c59bff', '#ff9bd0'];
 const MOON = [598, 122];
 const SLAB = 14; // how thick ledges and slopes are
 const LIP = 16; // flat bit at a loose end of a slope (a player's centre rides the slope, so half of them hangs over)
@@ -518,7 +518,7 @@ export default {
       itWisp: bake(22, 22, (g) => light(g, 22, '#ff3b30', 0.55)),
       capGlow: sprite(64, 64, (g) => light(g, 64, '#ff2a2a', 0.5)),
       seen: COLORS.map(() => ({ x: 0, y: 0, t: -9 })), // where each spirit was last drawn
-      wispT: [0, 0, 0, 0],
+      wispT: COLORS.map(() => 0),
       nextBolt: null,
       boltAt: -9,
       flashed: -9,

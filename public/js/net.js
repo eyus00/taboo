@@ -9,7 +9,7 @@
 //   * everyone else is drawn slightly in the past, gliding between the last
 //     few snapshots, so 30 updates a second looks smooth at 60+ fps.
 
-import { TICK_MS, TICK_RATE, twistById } from '/shared/config.js';
+import { TICK_MS, TICK_RATE, MAX_PLAYERS, twistById } from '/shared/config.js';
 import { stepPlayer, unpackState, PF_GROUND, PF_FACE, PF_STUN, PF_FROZEN, PF_ORB, PF_SPEED, PF_JUMP, PF_SHIELD, PF_DEAD } from '/shared/physics.js';
 
 const INTERP_TICKS = 6; // draw other players ~100 ms behind the newest snapshot
@@ -30,7 +30,7 @@ export class NetGame {
   reset() {
     this.phase = 'idle'; // idle | countdown | playing | over
     this.names = [];
-    this.hist = [[], [], [], []];
+    this.hist = Array.from({ length: MAX_PLAYERS }, () => []);
     this.cur = null; // newest snapshot
     this.lastTick = -1;
     this.offset = null; // server tick minus local clock (in ticks)
@@ -96,7 +96,7 @@ export class NetGame {
     if (this.offset == null || Math.abs(sample - this.offset) > 15) this.offset = sample;
     else this.offset += (sample - this.offset) * 0.1;
 
-    const players = [null, null, null, null];
+    const players = new Array(MAX_PLAYERS).fill(null);
     for (const e of m[4]) {
       const f = e[5];
       const p = {
@@ -217,7 +217,7 @@ export class NetGame {
     let me = null;
     if (cur) {
       const rt = now / TICK_MS + this.offset - INTERP_TICKS;
-      for (let slot = 0; slot < 4; slot++) {
+      for (let slot = 0; slot < MAX_PLAYERS; slot++) {
         const latest = cur.players[slot];
         if (!latest) continue;
         const base = {

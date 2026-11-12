@@ -67,7 +67,7 @@ export const PICKUP_INFO = {
 export const PICKUP_R = 20; // pick-up radius around the item
 export const PICKUP_FIRST_TICKS = 180; // first item 3 s after GO
 export const PICKUP_EVERY_TICKS = 390; // then one every 6.5 s
-export const PICKUP_MAX = 3; // at most this many lying around
+export const PICKUP_MAX = 3; // at most this many lying around (one more in a crowd of 5 or 6)
 export const SPEED_BUFF_MUL = 1.35;
 export const JUMP_BUFF_MUL = 1.2;
 export const SPEED_BUFF_TICKS = 360;
@@ -77,7 +77,7 @@ export const FREEZE_IT_TICKS = 110; // a runner freezes "it" for 1.8 s
 export const FREEZE_RUNNERS_TICKS = 70; // "it" freezes the runners for 1.2 s
 
 // --- Rooms and games --------------------------------------------------------------
-export const MAX_PLAYERS = 4;
+export const MAX_PLAYERS = 6;
 export const MIN_PLAYERS = 2;
 export const NAME_MAX = 12;
 export const CODE_LEN = 4; // room codes are 4 digits
@@ -91,7 +91,7 @@ export const MODE_IDS = MODES.map((m) => m.id);
 
 // Tournament: several rounds, points every round, most points takes the cup.
 //  * Each round, players are ranked by time spent as it (least is best) and
-//    score N-1, N-2 ... 0 points for N players. Equal times share the better place.
+//    score N-1, N-2 ... 0 points for N players (so 5 down to 0 with six). Equal times share the better place.
 //  * Everyone who is NOT it when the buzzer sounds gets 1 more point.
 //  * From round 2 on, the current leader starts the round as it.
 //  * Every second round has a twist (see TWISTS). The last round counts double.
@@ -117,9 +117,9 @@ export const IN_JUMP = 4;
 export const IN_DOWN = 8;
 export const IN_MASK = 15;
 
-// Join-order colours: red, blue, green, yellow
-export const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f'];
-export const COLOR_NAMES = ['Red', 'Blue', 'Green', 'Yellow'];
+// Join-order colours: red, blue, green, yellow, purple, pink
+export const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#ff79b0'];
+export const COLOR_NAMES = ['Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Pink'];
 
 // Art styles (drawing code lives in public/js/themes). Ink is the house style.
 export const THEMES = [

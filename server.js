@@ -250,8 +250,8 @@ function startRound(room) {
   }
   sim.twist = twistById(twist);
 
-  const spawns = shuffled([0, 1, 2, 3]);
-  const net = [null, null, null, null];
+  const spawns = shuffled([...Array(MAX_PLAYERS).keys()]);
+  const net = new Array(MAX_PLAYERS).fill(null);
   let i = 0;
   for (const p of room.players.values()) {
     p.playing = true;
@@ -422,7 +422,7 @@ function tickRoom(room) {
 
   if (g.state === 'countdown') {
     // Players stand frozen on their spawn points until GO.
-    for (let slot = 0; slot < 4; slot++) sim.stepOne(slot, 0);
+    for (let slot = 0; slot < MAX_PLAYERS; slot++) sim.stepOne(slot, 0);
     sim.endTick();
     sim.events.length = 0;
     if (Date.now() >= g.goAt) {
@@ -434,7 +434,7 @@ function tickRoom(room) {
       emitRoom(room);
     }
   } else {
-    for (let slot = 0; slot < 4; slot++) {
+    for (let slot = 0; slot < MAX_PLAYERS; slot++) {
       if (!sim.players[slot]) continue;
       const n = g.net[slot];
       for (const bits of takeInputs(n)) sim.stepOne(slot, bits);
@@ -577,7 +577,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(code);
     if (!room) return ack({ error: code.length === CODE_LEN ? `No room ${code}. Check the code and try again.` : 'Room codes are 4 digits.' });
     if (room.players.has(socket.id)) return ack({ ok: true, id: socket.id, room: roomState(room) });
-    if (room.players.size >= MAX_PLAYERS) return ack({ error: 'That room is full (4 players max).' });
+    if (room.players.size >= MAX_PLAYERS) return ack({ error: `That room is full (${MAX_PLAYERS} players max).` });
     leaveRoom(socket);
     const player = addPlayer(room, socket, name);
     ack({ ok: true, id: socket.id, room: roomState(room) });

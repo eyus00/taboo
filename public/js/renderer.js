@@ -11,7 +11,7 @@
 // The whole arena is shown at once whenever the screen is big enough for the
 // characters to stay readable; on small screens the view follows your player.
 
-import { ART_W, ART_H, PW, PH, PICKUP_TYPES, PICKUP_INFO } from '/shared/config.js';
+import { ART_W, ART_H, PW, PH, MAX_PLAYERS, PICKUP_TYPES, PICKUP_INFO } from '/shared/config.js';
 import { LEDGE_H } from '/shared/arenas.js';
 import { THEME_MAP } from './themes/index.js';
 import { clamp, mulberry32, hashStr, hash1, rgba, rr, KIND_COLORS, PORTAL_COLORS } from './util.js';
@@ -55,7 +55,7 @@ export class Renderer {
     this.cam = { x: 0, y: 0, set: false };
     this.parts = [];
     this.anim = [];
-    this.last = [null, null, null, null];
+    this.last = new Array(MAX_PLAYERS).fill(null);
     this.labels = new Map();
     this.spr = null;
     this.trampT = [];
@@ -72,7 +72,7 @@ export class Renderer {
     this.theme = THEME_MAP[themeId] || THEME_MAP.ink;
     this.parts.length = 0;
     this.anim = [];
-    this.last = [null, null, null, null];
+    this.last = new Array(MAX_PLAYERS).fill(null);
     this.trampT = arena.tramps.map(() => -10);
     this.cam.set = false;
     this.gen++;
@@ -621,7 +621,7 @@ export class Renderer {
   updatePlayers(view, t, dt) {
     const th = this.theme;
     const out = [];
-    const seen = [false, false, false, false];
+    const seen = new Array(MAX_PLAYERS).fill(false);
     for (const p of view.players) {
       seen[p.slot] = true;
       let a = this.anim[p.slot];
@@ -736,7 +736,7 @@ export class Renderer {
       this.last[p.slot] = pv;
       out.push(pv);
     }
-    for (let i = 0; i < 4; i++) if (!seen[i]) this.last[i] = null;
+    for (let i = 0; i < MAX_PLAYERS; i++) if (!seen[i]) this.last[i] = null;
     // local player on top, whoever is "it" just below that
     out.sort((a, b) => (a.local ? 2 : a.isIt ? 1 : 0) - (b.local ? 2 : b.isIt ? 1 : 0));
     return out;

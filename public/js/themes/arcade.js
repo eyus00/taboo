@@ -319,7 +319,7 @@ function cell(g, ox, oy, face, x, y, w, h, color) {
 export default {
   id: 'arcade',
   pixel: U,
-  colors: ['#ff5964', '#4da6ff', '#5fe08a', '#ffd84d'],
+  colors: ['#ff5964', '#4da6ff', '#5fe08a', '#ffd84d', '#b98cff', '#ff8ad4'],
   letterbox: '#0b1030',
   lift: AIR,
   label: {

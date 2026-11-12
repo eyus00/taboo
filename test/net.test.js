@@ -326,12 +326,16 @@ try {
     assert.equal(a.end.loser, -1);
   });
 
-  await test('room is full at 4 players; host leaving hands the room over', async () => {
-    const extra = [client('Di'), client('Eve'), client('Flo'), client('Gus')];
-    assert.ok((await extra[0].call('join', { code, name: 'Di' })).ok);
-    assert.ok((await extra[1].call('join', { code, name: 'Eve' })).ok);
-    assert.ok((await extra[2].call('join', { code, name: 'Flo' })).ok);
-    assert.match((await extra[3].call('join', { code, name: 'Gus' })).error, /full/);
+  await test('room is full at 6 players; host leaving hands the room over', async () => {
+    const extra = ['Di', 'Eve', 'Flo', 'Gus', 'Hal', 'Ivy'].map((n) => client(n));
+    const slots = [a.me().slot];
+    for (const x of extra.slice(0, 5)) {
+      const res = await x.call('join', { code, name: x.name });
+      assert.ok(res.ok, `${x.name} joins`);
+      slots.push(res.room.players.find((p) => p.id === x.socket.id).slot);
+    }
+    assert.deepEqual(slots.slice().sort(), [0, 1, 2, 3, 4, 5], 'six players, six different colours');
+    assert.match((await extra[5].call('join', { code, name: 'Ivy' })).error, /full \(6 players max\)/);
     extra[0].room = { players: [] };
     extra[0].socket.on('room', (r) => (extra[0].room = r));
     a.stop();

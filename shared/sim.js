@@ -2,6 +2,7 @@
 // room; the browser uses the same class for practice mode and menu backdrops.
 
 import {
+  MAX_PLAYERS,
   PW,
   PH,
   TOUCH,
@@ -28,7 +29,7 @@ export class Sim {
   constructor(arena, rnd = Math.random) {
     this.arena = arena;
     this.rnd = rnd;
-    this.players = [null, null, null, null]; // indexed by slot (0-3)
+    this.players = new Array(MAX_PLAYERS).fill(null); // indexed by slot
     this.it = -1;
     this.tick = 0;
     this.events = []; // filled during a tick, drained by the owner
@@ -38,9 +39,9 @@ export class Sim {
     this.twist = { grav: 1, speed: 1, items: 1 }; // round modifier (see TWISTS in config.js)
     // Lag compensation: how many ticks in the past each player sees the others.
     // 0 everywhere for local play; the server fills it in from measured latency.
-    this.rewind = [0, 0, 0, 0];
-    this.hx = [0, 1, 2, 3].map(() => new Float32Array(HIST));
-    this.hy = [0, 1, 2, 3].map(() => new Float32Array(HIST));
+    this.rewind = new Array(MAX_PLAYERS).fill(0);
+    this.hx = this.rewind.map(() => new Float32Array(HIST));
+    this.hy = this.rewind.map(() => new Float32Array(HIST));
   }
 
   add(slot, spawnIndex = slot) {
@@ -160,7 +161,7 @@ export class Sim {
     // spawn
     if (!this.powerups || this.tick < this.nextPickup || !pts.length) return;
     this.nextPickup = this.tick + Math.round(PICKUP_EVERY_TICKS / this.twist.items);
-    if (this.pickups.length >= PICKUP_MAX + (this.twist.items > 1 ? 2 : 0)) return;
+    if (this.pickups.length >= PICKUP_MAX + (this.twist.items > 1 ? 2 : 0) + (this.active().length > 4 ? 1 : 0)) return;
     const free = [];
     for (let p = 0; p < pts.length; p++) {
       if (this.pickups.some((k) => k.point === p)) continue;
@@ -194,7 +195,7 @@ export class Sim {
 
   // Convenience for local play: one input per slot.
   step(inputs) {
-    for (let slot = 0; slot < 4; slot++) if (this.players[slot]) this.stepOne(slot, inputs[slot] | 0);
+    for (let slot = 0; slot < MAX_PLAYERS; slot++) if (this.players[slot]) this.stepOne(slot, inputs[slot] | 0);
     this.endTick();
   }
 }

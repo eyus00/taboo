@@ -217,9 +217,9 @@ input[type='text']:focus { border-bottom-color: var(--red); outline: none; }
 .lobby { display: grid; grid-template-columns: minmax(0, 290px) minmax(0, 1fr) minmax(0, 270px); gap: clamp(16px, 2.4vw, 32px); }
 .col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .players { display: flex; flex-direction: column; }
-.players li { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 3px 4px 3px 0; border-bottom: 1.5px solid var(--faint); }
+.players li { display: flex; align-items: center; gap: 10px; min-height: 37px; padding: 2px 4px 2px 0; border-bottom: 1.5px solid var(--faint); }
 .players .chip { width: 9px; align-self: stretch; margin: 5px 0; flex: none; }
-.players .nm { font: 400 23px/1.1 var(--brush); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-top: 2px; }
+.players .nm { font: 400 21px/1.1 var(--brush); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px 0 0; margin-right: -7px; } /* room for the brush letters' tails */
 .players .tag { font: 800 10px/1 var(--serif); letter-spacing: 0.1em; padding: 4px 5px 3px; background: var(--red); color: #fff1dc; transform: rotate(-4deg); flex: none; }
 .players .tag.you { background: none; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); transform: rotate(3deg); }
 .players .score { margin-left: auto; color: var(--soft); font-size: 13px; font-weight: 600; white-space: nowrap; }
@@ -326,6 +326,7 @@ body:not(.no-kbd) .touch-only { display: none; }
 /* heads-up display: slanted plaques that read on top of any art style */
 #hud { position: absolute; inset: 0; pointer-events: none; color: #fff; font-family: var(--ui); }
 #pills { position: absolute; left: max(10px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 4px; max-width: 38vw; }
+#pills.many { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, auto); gap: 4px 2px; }
 #pills li { display: flex; align-items: center; gap: 7px; padding: 3px 16px 3px 12px; background: var(--hud); font-size: 13px; line-height: 18px; width: max-content; max-width: 100%; clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); }
 #pills .chip { width: 11px; height: 11px; flex: none; transform: rotate(45deg); box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9); }
 #pills .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }

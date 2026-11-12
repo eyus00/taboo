@@ -40,7 +40,7 @@ const cleanName = (raw) =>
     .trim()
     .slice(0, NAME_MAX);
 const pickRandom = (list) => list[Math.floor(Math.random() * list.length)];
-const INK_COLORS = ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12']; // the house style's red, blue, green, yellow
+const INK_COLORS = ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12', '#7a4a9e', '#d9689a']; // the house style's six player colours
 const isTouch = matchMedia('(pointer: coarse)').matches;
 // Key cues are shown wherever there is a keyboard: always on a computer, and
 // on a tablet from the moment someone presses a real key.
@@ -374,7 +374,7 @@ const OPTIONS = [
   { key: 'game', hot: 'g', label: 'Game', only: 'online', type: 'seg', values: [['quick', 'Quick match'], ['cup', 'Tournament']] },
   { key: 'mode', hot: 'r', label: 'Rules', type: 'seg', values: MODES.map((m) => [m.id, m.name]), show: (s) => s.game !== 'cup', hint: (s) => MODES.find((m) => m.id === s.mode)?.blurb },
   { key: 'rounds', hot: 'r', label: 'Rounds', only: 'online', type: 'seg', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup', hint: () => 'Points every round. The leader starts as it. The last round counts double.' },
-  { key: 'bots', hot: 'b', label: 'Bots', only: 'practice', type: 'seg', values: [[1, '1'], [2, '2'], [3, '3']] },
+  { key: 'bots', hot: 'b', label: 'Bots', only: 'practice', type: 'seg', values: [1, 2, 3, 4, 5].map((n) => [n, String(n)]) },
   { key: 'duration', hot: 'l', label: 'Round length', type: 'seg', values: DURATIONS.map((d) => [d, `${d} s`]) },
   { key: 'powerups', hot: 'p', label: 'Power-ups', type: 'seg', values: [[true, 'On'], [false, 'Off']] },
 ];
@@ -680,7 +680,7 @@ function updateHud(view) {
     $('timer').classList.toggle('low', view.phase === 'playing' && sec <= 10);
   }
   // one pill per player: colour, name, seconds spent as it
-  const seen = [false, false, false, false];
+  const seen = new Array(MAX_PLAYERS).fill(false);
   for (const p of view.players) {
     seen[p.slot] = true;
     let pill = hud.pills[p.slot];
@@ -700,6 +700,7 @@ function updateHud(view) {
     if (it !== pill.it) pill.li.classList.toggle('it', (pill.it = it));
   }
   hud.pills.forEach((pill, slot) => pill && pill.li.classList.toggle('gone', !seen[slot]));
+  $('pills').classList.toggle('many', view.players.length > 4); // five or six: two columns
   // the power-ups you are carrying
   const m = view.me;
   const buffs = m ? [m.spd > 0 && ['speed', m.spd], m.jmp > 0 && ['jump', m.jmp], m.shd > 0 && ['shield', m.shd]].filter(Boolean) : [];

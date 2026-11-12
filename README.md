@@ -1,13 +1,13 @@
 # You're It!
 
-Real-time multiplayer tag for 2&ndash;4 players, in the browser. One player is "it"; touch someone and they are "it" instead. Everyone plays on their own device: one person creates a room, shares the 4-digit code (or the invite link), and friends join.
+Real-time multiplayer tag for 2&ndash;6 players, in the browser. One player is "it"; touch someone and they are "it" instead. Everyone plays on their own device: one person creates a room, shares the 4-digit code (or the invite link), and friends join.
 
 - **Quick match or tournament.** A quick match is one round: *Hot Potato* (whoever is it when the clock hits zero loses) or *Least Time* (every second as it counts against you). A tournament is 3, 5 or 7 rounds for points.
 - **The whole arena on one screen**, with small characters, on anything laptop-sized or bigger. On a phone the view follows you instead and leans towards whoever is it.
 - **Movement with weight**: you build up speed, skid when you turn round, and jump in a floaty arc. Four actions only &ndash; left, right, jump, down.
 - **Arenas with slopes, trampolines, updrafts and portals** (a portal turns you into a spark and flies you to its partner), plus power-ups.
 - **Seven art styles**: Ink & Sakura (the house style), Orbit, Xeno, Neon District, Nightmare, Sketchbook and Arcade.
-- **Practice against bots** without anyone else online.
+- **Practice against bots** (one to five of them) without anyone else online.
 - Menus drawn like a game, not a web page: brush lettering on hanging scrolls, with a picture card for every arena and every art style. They work with the keyboard alone; phones get on-screen controls and a built-in number pad for the room code.
 - No accounts, no database, no API keys. One small Node server.
 
@@ -84,7 +84,7 @@ Keys that would throw you out of a game (Esc in a room, Q in the pause menu, Esc
 
 ### Tournament rules
 
-- Each round, players are ranked by time spent as it &ndash; least is best &ndash; and score 3, 2, 1, 0 points (with four players; equal times share the better place).
+- Each round, players are ranked by time spent as it &ndash; least is best &ndash; and score one point for every player they beat: 5, 4, 3, 2, 1, 0 with six players, 3, 2, 1, 0 with four (equal times share the better place).
 - Everyone who is **not** it when the buzzer sounds gets 1 more point. So a tag in the last second matters even if your time is already the worst.
 - From round 2, the leader starts the round as it.
 - Every second round has a twist: *Moon Gravity* (everything floats), *Turbo* (everyone runs faster) or *Item Frenzy* (power-ups everywhere).

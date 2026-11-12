@@ -18,7 +18,7 @@ const THICK = 14; // how thick ledges and slopes are
 const LIP = 16; // slopes carry on flat this far past each end
 const BURST_W = 150; // the "TAG!" burst sprite
 const BURST_H = 104;
-const COLORS = ['#ee4b4b', '#3f8cf0', '#43b85c', '#f7c531']; // red, blue, green, yellow
+const COLORS = ['#ee4b4b', '#3f8cf0', '#43b85c', '#f7c531', '#9b6fd6', '#f07ab0']; // red, blue, green, yellow, purple, pink
 const BODY_W = 36; // a character's pre-drawn body: the 28 x 29 blob with room for its outline
 const BODY_H = 37;
 const BODY_PAD = 4;
@@ -543,7 +543,7 @@ export default {
         ),
       ),
     );
-    return { rnd, bursts, birds, bodies, px, dash: [0, 0, 0, 0] };
+    return { rnd, bursts, birds, bodies, px, dash: COLORS.map(() => 0) };
   },
 
   back(g, sc) {
