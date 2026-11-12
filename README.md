@@ -8,7 +8,7 @@ Real-time multiplayer tag for 2&ndash;4 players, in the browser. One player is "
 - **Arenas with slopes, trampolines, updrafts and portals** (a portal turns you into a spark and flies you to its partner), plus power-ups.
 - **Seven art styles**: Ink & Sakura (the house style), Orbit, Xeno, Neon District, Nightmare, Sketchbook and Arcade.
 - **Practice against bots** without anyone else online.
-- Every menu works with the keyboard alone. Phones get on-screen controls and a built-in number pad for the room code.
+- Menus drawn like a game, not a web page: brush lettering on hanging scrolls, with a picture card for every arena and every art style. They work with the keyboard alone; phones get on-screen controls and a built-in number pad for the room code.
 - No accounts, no database, no API keys. One small Node server.
 
 ## Run it on your computer
@@ -50,7 +50,7 @@ Any host that runs a long-lived Node process with WebSockets works the same way 
 | Drop through a thin ledge or slope, fall faster | &darr; or S | small button |
 | Pause menu | Esc | menu button |
 
-Menus: arrow keys move, Enter chooses, Esc goes back. On the home screen 1 / 2 / 3 pick an entry; on the join screen just type the four digits.
+Menus: up / down move between things, left / right change a choice (rules, arena cards, style cards), Enter chooses, Esc goes back. On the title screen 1 / 2 / 3 pick an entry; on the join screen just type the four digits.
 
 - "It" tags by touching another player. Grazing counts, and the server also accepts a touch against where the target was on the tagger's own screen, so lag does not rob you of a tag.
 - The tagged player is frozen for 0.4 s so the tagger can get away, and the tagger cannot be tagged back for 1 s (they flash while protected). "It" runs slightly faster than everyone else.
@@ -90,13 +90,13 @@ shared/              Code that runs on BOTH the server and the browser:
   arenas.js            the maps, drawn as text
   nav.js, bots.js      route map of each arena and the computer players that use it
 public/
-  index.html, css/     menus, lobby, heads-up display, results
+  index.html, css/     menus (hanging scrolls on an ink landscape), heads-up display, results
   js/main.js           screens, keyboard navigation and wiring
   js/net.js            online play: prediction, reconciliation, interpolation
   js/local.js          offline play against bots
   js/renderer.js       draws a match (see below)
   js/themes/*.js       one file per art style; README.md there describes how to write one
-  js/art.js            preview pictures for the lobby
+  js/art.js            menu pictures: the landscape behind the menus, arena and style cards
   js/audio.js          synthesised sound effects (no audio files)
   fonts/               self-hosted open-licence fonts
 test/                `npm test` - rules/physics checks and scripted online matches
