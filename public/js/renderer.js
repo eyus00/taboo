@@ -227,11 +227,15 @@ export class Renderer {
       g.save();
       if (th.ramp) th.ramp(g, r, i, rnd, A);
       else {
-        // by default a slope is the style's thin ledge, tilted
+        // By default a slope is the style's thin ledge, tilted. A loose end runs a
+        // little past the slope; an end that rests on a platform just meets it.
+        const rests = (x, y) => A.platforms.some((p) => Math.abs(p.y - y) < 3 && x > p.x - 24 && x < p.x + p.w + 24);
+        const capL = rests(r.x0, r.y0) ? 5 : CAP;
+        const capR = rests(r.x1, r.y1) ? 5 : CAP;
         const len = Math.hypot(r.x1 - r.x0, r.y1 - r.y0);
         g.translate(r.x0, r.y0);
         g.rotate(Math.atan2(r.y1 - r.y0, r.x1 - r.x0));
-        th.platform(g, { x: -CAP, y: 0, w: len + CAP * 2, h: LEDGE_H, oneway: true, ground: false, ramp: true }, 100 + i, rnd, A);
+        th.platform(g, { x: -capL, y: 0, w: len + capL + capR, h: LEDGE_H, oneway: true, ground: false, ramp: true }, 100 + i, rnd, A);
       }
       g.restore();
     });
@@ -306,11 +310,13 @@ export class Renderer {
       g.drawImage(s.c, Math.round((x + s.x0) / U) * U, Math.round((y + s.y0) / U) * U, s.w, s.h);
       return;
     }
-    // snap to whole pixels: sharper, and cheaper to draw
+    // snap to whole pixels, and at natural size draw the sprite pixel for pixel:
+    // then the browser can simply copy it instead of resampling
     const k = this.kf;
     const px = Math.round((x + s.x0 * scale) * k) / k;
     const py = Math.round((y + s.y0 * scale) * k) / k;
-    g.drawImage(s.c, px, py, s.w * scale, s.h * scale);
+    if (scale === 1) g.drawImage(s.c, px, py, s.c.width / k, s.c.height / k);
+    else g.drawImage(s.c, px, py, s.w * scale, s.h * scale);
   }
 
   buildSprites() {
