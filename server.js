@@ -174,7 +174,7 @@ function roundInfo(room) {
     twist: g.twist,
     it: g.startIt, // who starts as it (-1 in a team battle)
     bombs: g.teams ? g.sim.bombPlan : null, // team battle: who starts with a bomb
-    random: { arena: room.settings.arena === 'random', theme: room.settings.theme === 'random' }, // what was left to chance
+    random: g.random, // what was left to chance: { arena, theme }
     teams: g.teams, // team battle: team (0 or 1) of each slot; otherwise null
     cols: g.cols, // which player colour each slot is drawn in this round
     cup: g.cup, // null, or { round, rounds, double, leader }
@@ -187,6 +187,13 @@ function roundInfo(room) {
     ],
   };
 }
+
+// The stage plan: an arena and a style for every round a tournament can have
+// (a quick match is round 1). 'random' leaves it to the draw.
+const MAX_ROUNDS = Math.max(...CUP_ROUNDS);
+const okArena = (v) => v === 'random' || ARENA_IDS.includes(v);
+const okTheme = (v) => v === 'random' || THEME_IDS.includes(v);
+const newPlan = (arena, theme) => Array.from({ length: MAX_ROUNDS }, () => ({ arena, theme }));
 
 // How many players are on each side of a room.
 function sideSizes(room) {
@@ -274,7 +281,9 @@ function startRound(room) {
   room.nextTimer = null;
   const s = room.settings;
   const cup = room.cup;
-  let arenaId = s.arena;
+  // what this round is played on: the plan's entry for it (a quick match is round 1)
+  const stage = s.plan[cup ? Math.min(cup.round, MAX_ROUNDS - 1) : 0];
+  let arenaId = stage.arena;
   if (arenaId === 'random') {
     if (cup) {
       // a tournament visits every arena before repeating one
@@ -282,7 +291,8 @@ function startRound(room) {
       arenaId = cup.arenas.shift();
     } else arenaId = pick(ARENA_IDS, room.lastArena);
   }
-  const themeId = s.theme === 'random' ? pick(THEME_IDS, room.lastTheme) : s.theme;
+  const themeId = stage.theme === 'random' ? pick(THEME_IDS, room.lastTheme) : stage.theme;
+  const random = { arena: stage.arena === 'random', theme: stage.theme === 'random' }; // what was left to chance this round
   room.lastArena = arenaId;
   room.lastTheme = themeId;
 
@@ -386,6 +396,7 @@ function startRound(room) {
     startIt,
     teams,
     cols,
+    random,
     bots, // slot -> memory of each bot filling in
     names, // slot -> name of everyone who started this round (bots too)
     state: 'countdown',
@@ -715,7 +726,8 @@ io.on('connection', (socket) => {
       players: new Map(),
       phase: 'lobby',
       // open: anyone can find the room under "Public"; otherwise it takes the code
-      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true, open: msg?.open === true },
+      // arena / theme: what round 1 (and a quick match) is played on; plan: the same for every round of a tournament
+      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true, open: msg?.open === true, plan: newPlan('random', DEFAULT_THEME) },
       game: null,
       cup: null,
       nextTimer: null,
@@ -774,8 +786,17 @@ io.on('connection', (socket) => {
     }
     if (CUP_ROUNDS.includes(msg?.rounds)) s.rounds = msg.rounds;
     if (MODE_IDS.includes(msg?.mode)) s.mode = msg.mode;
-    if (msg?.arena === 'random' || ARENA_IDS.includes(msg?.arena)) s.arena = msg.arena;
-    if (msg?.theme === 'random' || THEME_IDS.includes(msg?.theme)) s.theme = msg.theme;
+    // an arena or a style for every round at once...
+    if (okArena(msg?.arena)) for (const st of s.plan) st.arena = msg.arena;
+    if (okTheme(msg?.theme)) for (const st of s.plan) st.theme = msg.theme;
+    // ...or for one round of a tournament: stage = { i: 0-based round, arena?, theme? }
+    const st = Number.isInteger(msg?.stage?.i) ? s.plan[msg.stage.i] : null;
+    if (st) {
+      if (okArena(msg.stage.arena)) st.arena = msg.stage.arena;
+      if (okTheme(msg.stage.theme)) st.theme = msg.stage.theme;
+    }
+    s.arena = s.plan[0].arena;
+    s.theme = s.plan[0].theme;
     if (DURATIONS.includes(msg?.duration) || (TEST_DURATION && msg?.duration === TEST_DURATION)) s.duration = msg.duration;
     if (typeof msg?.powerups === 'boolean') s.powerups = msg.powerups;
     if (typeof msg?.open === 'boolean') s.open = msg.open;
@@ -784,10 +805,14 @@ io.on('connection', (socket) => {
 
   // Team battle: pick your own side. Only in the lobby - once a match or a
   // tournament is on, the sides are locked.
-  socket.on('side', (t) => {
+  // (The host can also move someone else: pass their id.)
+  socket.on('side', (t, id) => {
     const room = rooms.get(socket.data.code);
-    const player = room?.players.get(socket.id);
-    if (!player || room.game || room.cup || (t !== 0 && t !== 1)) return;
+    if (!room || room.game || room.cup || (t !== 0 && t !== 1)) return;
+    const other = typeof id === 'string' && id !== socket.id;
+    if (other && room.hostId !== socket.id) return;
+    const player = room.players.get(other ? id : socket.id);
+    if (!player) return;
     player.side = t;
     emitRoom(room);
   });

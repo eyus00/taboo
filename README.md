@@ -61,8 +61,8 @@ Everything can be done without a mouse, and every screen shows its keys (on phon
 | Anywhere | M sound on / off, F full screen |
 | Title screen | 1 play, 2 practice, 3 your profile (your name), H how to play |
 | Play | C host a game, P public games, or type the four digits of a private code (the fourth joins) |
-| Match setup | A next arena, S next style (Shift goes back), G game, R rules or rounds, T sides, L round length, P lucky boxes, B bots, Enter start; in a room also C copy the invite link and V public or private |
-| In a match | Esc pause menu; there: Esc resume, H how to play, Q leave |
+| Match setup | G one match or a tournament, N how many rounds, R which game, A next arena, S next style (Shift goes back), T which round of a tournament the arena and style are for, L round length, P lucky boxes, B bots (practice), X change sides, Z shuffle the sides (host), Enter start; in a room also C copy the invite link and V public or private |
+| In a match | Esc pause menu; there: Esc resume, H how to play, M sound, F full screen, Q leave |
 | Results | Enter play again, Esc back |
 
 Keys that would throw you out of a game (Esc in a room, Q in the pause menu, Esc to end a tournament) have to be pressed twice.
@@ -74,7 +74,7 @@ Keys that would throw you out of a game (Esc in a room, Q in the pause menu, Esc
 - **Trampolines** launch you straight up; **launchers** (the pads with arrows) fling you up and across. **Updrafts** are columns of rising air: step in, let go and ride. **Thorns** sting: a short stun, and you are thrown back off them. There are few of them: a match gets a quarter of what an arena is drawn with, which in most arenas is none at all.
 - **Portals** come in coloured pairs: step into one and you fly to its partner as a spark, in an unhurried arc over the map (the view flies with you), safe from tags until you arrive. A portal with a small arrow badge lets you press jump to drop out wherever you are.
 - If you join while a round is running you watch it and play the next one.
-- The player who opened the room is the host (picks the game, style, arena and round length; starts it). If they leave, the next player becomes host.
+- The player who opened the room is the host (picks the game, style, arena and round length; starts it). If they leave, the next player becomes host. The room reads top to bottom in the order you decide things: what game, who is in it, where it is played, start.
 - A room starts **private**: only people with the code or the invite link get in. The host can switch it to **public**, and then it shows up under Play &rarr; Public for anyone to join until it is full.
 
 ### Lucky boxes
@@ -96,7 +96,7 @@ You hold one item at a time and choose when to use it. Items stop working (and b
 
 ### Team Bomb
 
-- Two teams, Sun (warm colours) and Moon (cool colours), up to 5 v 5. The sides belong to the room: the lobby shows who is on which, anyone can cross over (X), the host can shuffle (Z), and nothing is redrawn between rounds or matches. Once a match or a tournament is on, the sides are locked.
+- Two teams, Sun (warm colours) and Moon (cool colours), up to 5 v 5. The sides belong to the room: the lobby shows who is on which, anyone can cross over (X, or the arrow next to their name), the host can move anybody and shuffle (Z), and nothing is redrawn between rounds or matches. Once a match or a tournament is on, the sides are locked.
 - If one side is short, **bots fill in** for it: they play on the server like anyone else, and are marked BOT on the scoreboard.
 - You can tell friend from foe at a glance: every name sits on a plate in its side's colour (white edge: your side; dark edge: theirs; your own is white), everyone stands in a ring of their side's colour, and the list of players is one column a side.
 - **Bombs.** One for every two players (1 to 5), handed out at GO starting with a random player of each team. A carrier gets rid of theirs by touching an **enemy** whose hands are free; team mates are safe and nobody carries two. The bombs burn for the whole round and all go off when the clock stops: each one scores 10 for the team that is *not* holding it.
@@ -108,7 +108,8 @@ You hold one item at a time and choose when to use it. Items stop working (and b
 
 - **Teams** (the default): Team Bomb every round, the sides stay together, points add up, and the last round counts double.
 - **Free-for-all**: each round players are ranked by time spent as the oni &ndash; least is best &ndash; and score one point for every player they beat (9 down to 0 with ten players; equal times share the better place). Everyone who is **not** the oni at the buzzer gets 1 more. From round 2 the leader starts as the oni. A tie at the end is broken by less total time as the oni.
-- Every second round has a twist: *Moon Gravity*, *Turbo* or *Item Frenzy*. With "Random" arena a tournament visits a different arena every round.
+- Every second round has a twist: *Moon Gravity*, *Turbo* or *Item Frenzy*.
+- **Every round can have its own arena and style.** Above the pictures is a strip with one tile per round: pick a round (T, or click it) and the arena and style you choose are for that round only; pick *All* and they are for every round. A round left on Random gets a different arena from the round before.
 
 ## How it works
 

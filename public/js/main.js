@@ -13,6 +13,7 @@ import { botFill } from '/shared/sim.js';
 import { BOT_NAMES } from '/shared/bots.js';
 import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
+import * as art from './art.js'; // (also: playerPortrait, for the results)
 import { loadTheme } from './themes/index.js';
 import { draw } from './spinner.js';
 
@@ -191,15 +192,17 @@ function moveFocus(dir) {
   const root = topRoot();
   if (!root) return;
   // a group of choices (a row of rules, a grid of cards) counts as one stop; left / right move inside it
-  const stops = [...root.querySelectorAll('button, input[type="text"], .seg, .cards, .digits')].filter((e) => {
+  const stops = [...root.querySelectorAll('button, input[type="text"], .seg, .cards, .digits, .rounds')].filter((e) => {
     if (e.closest('.numpad') || e.closest('.locked') || e.closest('.demo')) return false;
+    if (e.classList.contains('slot')) return false; // (the rounds of a tournament are one stop: left and right move along them)
     return !e.disabled && e.offsetParent !== null;
   });
   if (!stops.length) return;
   const cur = stops.findIndex((s) => s === document.activeElement || s.contains(document.activeElement));
   const next = stops[cur < 0 ? (dir > 0 ? 0 : stops.length - 1) : (cur + dir + stops.length) % stops.length];
   const group = next.classList.contains('seg') || next.classList.contains('cards');
-  (group ? next.querySelector('input:checked') || next.querySelector('input') : next).focus();
+  if (next.classList.contains('rounds')) (next.querySelector('[aria-checked="true"]') || next.querySelector('button'))?.focus();
+  else (group ? next.querySelector('input:checked') || next.querySelector('input') : next).focus();
 }
 
 // A button label with its key beside it.
@@ -321,7 +324,7 @@ function openProfile(again) {
   field.disabled = !!room;
   $('btn-profile-save').hidden = !!room;
   $('profile-error').textContent = '';
-  $('profile-note').textContent = room ? `You are in room ${room.code}. Leave the room to change your name.` : 'This is how the others see you: in the room, above your head, on the scoreboard.';
+  $('profile-note').textContent = room ? `You are in room ${room.code}. Leave the room to change your name.` : '';
   $('profile-seal').textContent = initial(myName);
   show('home', 'profile');
   if (isTouch) field.blur(); // on a phone the keyboard comes up when you tap the name, not before
@@ -601,7 +604,7 @@ const describeGame = (g) => [g.game === 'cup' ? 'Tournament' : 'Quick match', MO
 
 function paintGames() {
   const n = games.length;
-  $('find-count').textContent = n ? `${n} game${n > 1 ? 's' : ''} open right now` : 'Join a game that is open to everyone';
+  $('find-count').textContent = n ? `${n} open` : '';
   $('btn-find').classList.toggle('has', n > 0);
   if (panel !== 'find') return;
   const box = $('games');
@@ -626,7 +629,7 @@ function paintGames() {
     if (held) (box.querySelector(`[data-code="${held}"]`) || box.querySelector('button') || $('btn-find-host')).focus?.();
   }
   $('find-none').hidden = n > 0;
-  $('find-lead').textContent = !socket.connected ? 'Waking up the server - this can take up to a minute...' : n ? 'Games that are open to everyone. Pick one to join - the list keeps itself up to date.' : 'Games that are open to everyone show up here.';
+  $('find-lead').textContent = socket.connected ? '' : 'Waking up the server - this can take up to a minute...';
   if (findFresh) {
     findFresh = false;
     focusFirst(box.querySelector('button') || $('btn-find-host'));
@@ -654,36 +657,47 @@ $('btn-find-host').addEventListener('click', () => hostGame($('find-error'), tru
 // ---------------------------------------------------------------------------
 // Match setup: an online room, or practice
 // ---------------------------------------------------------------------------
-// Every row writes one setting (`key`); two rows may write the same one, shown
-// at different times (the rules of a quick match / of a tournament).
+// The screen reads top to bottom, in the order you decide things: what game
+// (one match or a tournament, and which game), who is in it (a list - or, for
+// a team battle, the two sides), where it is played (an arena and a style; a
+// tournament has one of each per round), and a last few switches beside Start.
+//
+// Every row below writes one setting (`key`) - or says how with `set`. `box`
+// is where it is drawn, `show` when, `hot` the key that steps it.
+const MODE_ICON = { potato: 'flame', time: 'glass', team: 'bomb' };
 const OPTIONS = [
-  // who can join: beside the room code (private = by code only; public = also listed under "Public")
-  { id: 'open', key: 'open', hot: 'v', label: 'Open to', only: 'online', type: 'seg', box: 'room-open', values: [[false, 'Private'], [true, 'Public']] },
-  { id: 'arena', key: 'arena', hot: 'a', type: 'cards', box: 'arena-cards', values: [...ARENAS.map((a) => [a.id, a.name]), ['random', 'Random']] },
-  { id: 'theme', key: 'theme', hot: 's', type: 'cards', box: 'style-cards', values: [...THEMES.map((t) => [t.id, t.name]), ['random', 'Random']] },
-  { id: 'game', key: 'game', hot: 'g', label: 'Game', only: 'online', type: 'seg', values: [['quick', 'Quick match'], ['cup', 'Tournament']] },
-  { id: 'mode', key: 'mode', hot: 'r', label: 'Rules', type: 'seg', wrap: true, values: MODES.map((m) => [m.id, m.name]), show: (s) => s.game !== 'cup', hint: (s) => MODES.find((m) => m.id === s.mode)?.blurb },
-  {
-    id: 'sides',
-    key: 'mode',
-    hot: 't',
-    label: 'Sides',
-    only: 'online',
-    type: 'seg',
-    // a tournament is scored on time as the oni, or played as a team battle
-    values: [['potato', 'Free-for-all'], ['team', 'Team Bomb']],
-    on: (s, v) => (v === 'team') === (s.mode === 'team'),
-    show: (s) => s.game === 'cup',
-    hint: (s) => (s.mode === 'team' ? 'The teams stay together; their points add up.' : 'Points for the least time as the oni.'),
-  },
-  { id: 'rounds', key: 'rounds', hot: 'r', label: 'Rounds', only: 'online', type: 'seg', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup', hint: () => 'The last round counts double.' },
-  { id: 'bots', key: 'bots', hot: 'b', label: 'Bots', only: 'practice', type: 'seg', values: [1, 2, 3, 5, 7, 9].map((n) => [n, String(n)]) },
-  { id: 'duration', key: 'duration', hot: 'l', label: 'Round length', type: 'seg', values: DURATIONS.map((d) => [d, `${d} s`]) },
-  { id: 'powerups', key: 'powerups', hot: 'p', label: 'Lucky boxes', type: 'seg', values: [[true, 'On'], [false, 'Off']] },
+  { id: 'game', key: 'game', hot: 'g', label: 'Format', only: 'online', box: 'opt-format', values: [['quick', 'One match'], ['cup', 'Tournament']] },
+  { id: 'rounds', key: 'rounds', hot: 'n', label: 'Rounds', only: 'online', box: 'opt-format', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup' },
+  { id: 'mode', key: 'mode', hot: 'r', label: 'Game', box: 'opt-mode', icon: (v) => MODE_ICON[v], values: MODES.map((m) => [m.id, m.name]), show: (s) => s.game !== 'cup' },
+  // a tournament is scored on time as the oni (everyone for themselves), or played as a team battle
+  { id: 'sides', key: 'mode', hot: 'r', label: 'Game', only: 'online', box: 'opt-mode', icon: (v) => (v === 'team' ? 'bomb' : 'crowd'), values: [['potato', 'Free-for-all'], ['team', 'Team Bomb']], on: (s, v) => (v === 'team') === (s.mode === 'team'), show: (s) => s.game === 'cup' },
+  { id: 'arena', hot: 'a', type: 'cards', box: 'arena-cards', values: [...ARENAS.map((a) => [a.id, a.name]), ['random', 'Random']], on: (s, v) => stageValue('arena') === v, set: (v) => setStage('arena', v) },
+  { id: 'theme', hot: 's', type: 'cards', box: 'style-cards', values: [...THEMES.map((t) => [t.id, t.name]), ['random', 'Random']], on: (s, v) => stageValue('theme') === v, set: (v) => setStage('theme', v) },
+  { id: 'bots', key: 'bots', hot: 'b', label: 'Bots', only: 'practice', box: 'options', values: [1, 2, 3, 5, 7, 9].map((n) => [n, String(n)]) },
+  { id: 'duration', key: 'duration', hot: 'l', label: 'Round', box: 'options', values: DURATIONS.map((d) => [d, `${d} s`]) },
+  { id: 'powerups', key: 'powerups', hot: 'p', label: 'Lucky boxes', box: 'options', values: [[true, 'On'], [false, 'Off']] },
 ];
 const settings = () => (kind === 'practice' ? practice : room.settings);
 const locked = () => kind === 'online' && !amHost();
 const isOn = (o, s, value) => (o.on ? o.on(s, value) : String(s[o.key]) === String(value));
+const isCup = () => kind === 'online' && room.settings.game === 'cup';
+
+// (see the 'room' handler: how a host's own changes are kept from being undone by late echoes)
+const SETTLE_MS = 450;
+let settingsAt = -1e9;
+let echoed = null;
+let settleTimer = 0;
+function settle() {
+  if (!room || !echoed || performance.now() - settingsAt < SETTLE_MS) return;
+  room.settings = echoed;
+  echoed = null;
+  if (panel === 'lobby' && kind === 'online' && !overlay) renderLobby();
+}
+const touched = () => {
+  settingsAt = performance.now();
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(settle, SETTLE_MS + 20);
+};
 
 function changeSetting(patch) {
   if (kind === 'practice') {
@@ -691,9 +705,83 @@ function changeSetting(patch) {
     store.set('tag.practice', JSON.stringify(practice));
   } else {
     if (!amHost()) return;
-    Object.assign(room.settings, patch);
+    const s = room.settings;
+    // (what the server will do too, so the screen does not wait for it)
+    if (patch.game === 'cup' && s.game !== 'cup' && patch.mode === undefined) s.mode = 'team';
+    Object.assign(s, patch);
     socket.emit('settings', patch);
+    touched();
   }
+  syncOptions();
+}
+
+// --- the stage: an arena and a style. A tournament has one of each for every
+// round; `stageSel` says which round the picture cards are for right now.
+let stageSel = 'all'; // 'all', or a round of the tournament (0 = the first)
+const planNow = () => room.settings.plan.slice(0, isCup() ? room.settings.rounds : 1);
+
+// What the cards should show as chosen: the selected round's pick - for "all
+// rounds", the pick they all share ('' if they do not).
+function stageValue(what) {
+  if (kind === 'practice') return practice[what];
+  const plan = planNow();
+  if (stageSel !== 'all' && isCup()) return plan[Math.min(stageSel, plan.length - 1)][what];
+  return plan.every((st) => st[what] === plan[0][what]) ? plan[0][what] : '';
+}
+function setStage(what, value) {
+  if (kind === 'practice') return changeSetting({ [what]: value });
+  if (!amHost()) return;
+  const s = room.settings;
+  if (stageSel === 'all' || !isCup()) {
+    for (const st of s.plan) st[what] = value;
+    socket.emit('settings', { [what]: value });
+  } else {
+    s.plan[stageSel][what] = value;
+    socket.emit('settings', { stage: { i: stageSel, [what]: value } });
+  }
+  touched();
+  s[what] = s.plan[0][what];
+  syncOptions();
+}
+const stageName = (what, id) => (id === 'random' ? 'Surprise' : (what === 'arena' ? ARENAS : THEMES).find((x) => x.id === id)?.name || id);
+
+// A tournament: one slot per round (and one for all of them at once).
+function renderRounds() {
+  const strip = $('round-strip');
+  const cup = isCup();
+  strip.hidden = !cup;
+  if (!cup) {
+    stageSel = 'all';
+    strip.textContent = '';
+    return;
+  }
+  const plan = planNow();
+  if (stageSel !== 'all' && stageSel >= plan.length) stageSel = 'all';
+  const sig = JSON.stringify([plan, stageSel]);
+  if (strip.dataset.sig === sig) return;
+  strip.dataset.sig = sig;
+  const held = strip.contains(document.activeElement) ? document.activeElement.dataset.i : null;
+  strip.textContent = '';
+  const add = (value, title, st) => {
+    const b = el('button', 'slot');
+    b.type = 'button';
+    b.dataset.i = String(value);
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(stageSel === value));
+    b.append(el('b', '', title));
+    // (a round's slot says what it is played on: the arena, and under it the style)
+    if (st) b.append(el('span', st.arena === 'random' ? 'any' : '', stageName('arena', st.arena)), el('span', st.theme === 'random' ? 'any st' : 'st', stageName('theme', st.theme)));
+    else b.title = 'One arena and one style for every round';
+    b.addEventListener('click', () => pickRound(value));
+    strip.append(b);
+  };
+  add('all', 'All');
+  plan.forEach((st, i) => add(i, String(i + 1), st));
+  if (held != null) strip.querySelector(`[data-i="${held}"]`)?.focus();
+}
+function pickRound(value) {
+  stageSel = value;
+  sfx.play('click');
   syncOptions();
 }
 
@@ -704,22 +792,19 @@ function radio(o, value, i) {
   inp.name = `opt-${o.id}`;
   inp.value = String(value);
   inp.dataset.i = i;
-  inp.addEventListener('change', () => changeSetting({ [o.key]: value }));
+  inp.addEventListener('change', () => (o.set ? o.set(value) : changeSetting({ [o.key]: value })));
   return inp;
 }
 
 function buildOptions() {
-  const box = $('options');
-  box.textContent = '';
-  $('room-open').textContent = '';
+  for (const id of ['options', 'opt-format', 'opt-mode']) $(id).textContent = '';
   for (const o of OPTIONS) {
     if (o.only && o.only !== kind) continue;
     if (o.type === 'cards') {
-      // picture cards: one per arena / art style, painted a moment later
+      // picture cards: one per arena / art style, in a single row, painted a moment later
       const grid = $(o.box);
       grid.textContent = '';
-      const n = o.values.length;
-      grid.style.setProperty('--cols', o.id === 'arena' ? (n <= 6 ? 3 : n <= 8 ? 4 : n <= 10 ? 5 : 6) : 4);
+      grid.style.setProperty('--cols', o.values.length);
       o.values.forEach(([value, text], i) => {
         const card = el('label', 'card');
         let pic;
@@ -734,29 +819,38 @@ function buildOptions() {
       });
       continue;
     }
-    const row = el('div', 'opt');
+    const row = el('div', o.icon ? 'opt modes' : 'opt');
     row.dataset.id = o.id;
     const lab = el('span', 'lab', o.label);
     lab.append(el('kbd', '', o.hot.toUpperCase()));
     row.append(lab);
-    const seg = el('div', o.wrap || o.values.some(([, t]) => t.length > 12) ? 'seg wrap' : 'seg');
+    const seg = el('div', 'seg');
     seg.setAttribute('role', 'radiogroup');
     seg.setAttribute('aria-label', o.label);
     o.values.forEach(([value, text], i) => {
-      const lab = el('label');
-      lab.append(radio(o, value, i), el('span', '', text));
-      seg.append(lab);
+      const item = el('label');
+      const face = el('span', '', text);
+      if (o.icon) face.insertAdjacentHTML('afterbegin', `<svg class="ic" aria-hidden="true"><use href="#i-${o.icon(value)}" /></svg>`);
+      item.append(radio(o, value, i), face);
+      seg.append(item);
     });
     row.append(seg);
-    if (o.hint) row.append(el('span', 'hint'));
-    (o.box ? $(o.box) : box).append(row);
+    $(o.box).append(row);
   }
+  // practice has no format to choose: the games stand alone under the heading, which then carries their key
+  const solo = !$('opt-format').childElementCount;
+  $('opt-format').hidden = solo;
+  document.querySelector('.blk.what').classList.toggle('solo', solo);
+  const head = document.querySelector('.blk.what h3');
+  head.textContent = 'Game';
+  if (solo) head.append(el('kbd', '', 'R'));
 }
 
 function syncOptions() {
   const s = settings();
   const lock = locked();
-  for (const id of ['options', 'arena-cards', 'style-cards', 'room-open']) $(id).classList.toggle('locked', lock);
+  renderRounds();
+  for (const id of ['options', 'opt-format', 'opt-mode', 'arena-cards', 'style-cards']) $(id).classList.toggle('locked', lock);
   for (const inp of $('s-lobby').querySelectorAll('input[type="radio"]')) {
     const o = OPTIONS.find((x) => x.id === inp.name.slice(4));
     inp.checked = isOn(o, s, o.values[inp.dataset.i][0]);
@@ -766,21 +860,53 @@ function syncOptions() {
   for (const row of $('s-lobby').querySelectorAll('.opt')) {
     const o = OPTIONS.find((x) => x.id === row.dataset.id);
     row.hidden = !!o.show && !o.show(s);
-    const hint = row.querySelector('.hint');
-    if (hint) hint.textContent = o.hint(s) || '';
+  }
+  // one line about the game that is chosen - no more
+  const cup = isCup();
+  $('mode-note').textContent = cup
+    ? s.mode === 'team'
+      ? 'The sides stay together and their points add up. The last round counts double.'
+      : 'Points each round for the least time as the oni. The last round counts double.'
+    : MODES.find((m) => m.id === s.mode)?.blurb || '';
+  $('stage-title').textContent = cup ? (stageSel === 'all' ? 'Stage - every round' : `Stage - round ${stageSel + 1}`) : 'Stage';
+  for (const key of ['A', 'S', ...(cup ? ['T'] : [])]) $('stage-title').append(el('kbd', '', key));
+  // who can come in
+  const sw = $('btn-open');
+  sw.hidden = kind !== 'online';
+  if (kind === 'online') {
+    sw.setAttribute('aria-checked', String(!!s.open));
+    sw.disabled = lock;
+    $('open-label').textContent = s.open ? 'Public' : 'Private';
+    sw.title = s.open ? 'Public: anyone can find this game' : 'Private: only people with the code can come in';
   }
   paintCards();
 }
+$('btn-open').addEventListener('click', () => {
+  if (kind !== 'online' || !amHost()) return;
+  sfx.play('click');
+  changeSetting({ open: !room.settings.open });
+});
 
 // A letter key steps one setting to its next value (Shift: previous) and puts
 // the focus there, so the arrow keys carry on from it.
 function hotOption(letter, back) {
-  if (locked()) return false;
   const s = settings();
+  if (letter === 't' && isCup()) {
+    // which round the arena and style are for: all, 1, 2, ...
+    const order = ['all', ...planNow().map((_, i) => i)];
+    pickRound(order[(order.indexOf(stageSel) + (back ? -1 : 1) + order.length) % order.length]);
+    $('round-strip').querySelector('[aria-checked="true"]')?.focus();
+    return true;
+  }
+  if (locked()) return false;
+  // (the switch is not focused: Enter must still start the match right after)
+  if (letter === 'v' && kind === 'online') return $('btn-open').click(), true;
   const o = OPTIONS.find((x) => x.hot === letter && (!x.only || x.only === kind) && (!x.show || x.show(s)));
   if (!o) return false;
   const i = o.values.findIndex(([v]) => isOn(o, s, v));
-  changeSetting({ [o.key]: o.values[(i + (back ? -1 : 1) + o.values.length) % o.values.length][0] });
+  const next = o.values[(i + (back ? -1 : 1) + o.values.length) % o.values.length][0];
+  if (o.set) o.set(next);
+  else changeSetting({ [o.key]: next });
   $('s-lobby').querySelector(`input[name="opt-${o.id}"]:checked`)?.focus();
   sfx.play('click');
   return true;
@@ -792,11 +918,14 @@ function hotOption(letter, back) {
 // borrows the same pictures).
 let paintRun = 0;
 function paintCards() {
-  const s = settings();
   const run = ++paintRun;
-  const themeId = s.theme === 'random' ? DEFAULT_THEME : s.theme;
+  const chosen = stageValue('theme');
+  const themeId = !chosen || chosen === 'random' ? DEFAULT_THEME : chosen;
   const jobs = [];
-  for (const img of $('arena-cards').querySelectorAll('img')) jobs.push([themeId, () => (img.src = scenePreview(img.dataset.id, themeId, 240, 135))]);
+  for (const img of $('arena-cards').querySelectorAll('img')) {
+    if (img.dataset.in === themeId) continue;
+    jobs.push([themeId, () => ((img.src = scenePreview(img.dataset.id, themeId, 240, 135)), (img.dataset.in = themeId))]);
+  }
   for (const img of $('style-cards').querySelectorAll('img')) if (!img.dataset.done) jobs.push([img.dataset.id, () => ((img.src = styleStill(img.dataset.id)), (img.dataset.done = '1'))]);
   jobs.push([themeId, () => (cardTheme = themeId)]);
   const live = () => run === paintRun && panel === 'lobby';
@@ -834,21 +963,22 @@ function renderLobby() {
   const rows = sided
     ? []
     : online
-    ? room.players.slice().sort((a, b) => a.slot - b.slot).map((p) => ({ slot: p.slot, name: p.name, host: p.id === room.hostId, you: p.id === socket.id, score: p.wins ? `${p.wins} win${p.wins > 1 ? 's' : ''}` : '' }))
-    : [{ slot: 0, name: myName, you: true }, ...Array.from({ length: practice.bots }, (_, i) => ({ slot: i + 1, name: 'Bot', bot: true }))];
+      ? room.players.slice().sort((a, b) => a.slot - b.slot).map((p) => ({ slot: p.slot, name: p.name, host: p.id === room.hostId, you: p.id === socket.id, score: p.wins ? `${p.wins} win${p.wins > 1 ? 's' : ''}` : '' }))
+      : [{ slot: 0, name: myName, you: true }, ...Array.from({ length: practice.bots }, (_, i) => ({ slot: i + 1, name: BOT_NAMES[i] || 'Bot', bot: true }))];
   for (const r of rows) {
-    const li = el('li');
+    // your own name is underlined in red, here as on the team board and the results
+    const li = el('li', r.bot ? 'bot' : r.you ? 'me' : '');
     const chip = el('i', 'chip');
     chip.style.background = INK_COLORS[r.slot];
     li.append(chip, el('span', 'nm', r.name));
+    if (r.you) li.title = 'You';
     if (r.host) li.append(el('span', 'tag', 'HOST'));
-    if (r.you) li.append(el('span', 'tag you', 'YOU'));
+    if (r.bot) li.append(el('span', 'tag bot', 'BOT'));
     if (r.score) li.append(el('span', 'score', r.score));
     list.append(li);
   }
-  // empty places: all of them in a room; in practice only enough to fill the row
-  const places = sided ? 0 : online ? MAX_PLAYERS : Math.ceil(rows.length / 5) * 5;
-  for (let i = rows.length; i < places; i++) list.append(el('li', 'empty', online ? 'waiting...' : ''));
+  // one "waiting" place, so it is plain that more can come
+  if (online && !sided && rows.length < MAX_PLAYERS) list.append(el('li', 'empty', 'waiting...'));
 
   const start = $('btn-start');
   if (online) {
@@ -859,21 +989,10 @@ function renderLobby() {
     start.hidden = !amHost();
     start.disabled = !enough;
     setLabel(start, room.settings.game === 'cup' ? 'Start tournament' : 'Start match', 'Enter');
-    const open = !!room.settings.open;
-    $('room-open').hidden = false;
-    const sizes = [0, 1].map((t) => room.players.filter((p) => p.side === t).length);
-    const bots = room.settings.mode === 'team' ? Math.abs(sizes[0] - sizes[1]) : 0;
-    const fillNote = bots && enough ? `The sides are uneven, so ${bots > 1 ? `${bots} bots fill` : 'a bot fills'} in for ${TEAM_NAMES[sizes[0] < sizes[1] ? 0 : 1]}.` : '';
-    const openNote = open
-      ? `Public: anyone can find this game${enough ? '.' : ' - you need at least 2 players.'}`
-      : enough
-        ? ''
-        : 'Private: share the code with your friends - you need at least 2 players.';
-    $('lobby-note').textContent = [openNote, fillNote].filter(Boolean).join(' ');
+    $('lobby-note').textContent = enough ? '' : 'You need at least 2 players - send someone the code or the invite link.';
     $('start-note').textContent = amHost() ? '' : `Waiting for ${host ? host.name : 'the host'} to start...`;
   } else {
     $('players-title').textContent = 'Players';
-    $('room-open').hidden = true;
     $('lobby-note').textContent = '';
     $('start-note').textContent = '';
     start.hidden = false;
@@ -883,8 +1002,8 @@ function renderLobby() {
   setLegend(
     $('lobby-legend'),
     locked()
-      ? [[['Esc', 'Esc'], 'leave the room'], [['C'], 'copy the invite link']]
-      : [[['\u2191', '\u2193'], 'move'], [['\u2190', '\u2192'], 'choose'], [['Enter'], 'start'], ...(online ? [[['V'], 'public or private']] : []), [online ? ['Esc', 'Esc'] : ['Esc'], online ? 'leave the room' : 'back']],
+      ? [[['Esc', 'Esc'], 'leave the room'], [['C'], 'copy the invite link'], ...(sided ? [[['X'], 'change sides']] : [])]
+      : [[['↑', '↓'], 'move'], [['←', '→'], 'choose'], [['Enter'], 'start'], ...(sided ? [[['X'], 'change sides']] : []), [online ? ['Esc', 'Esc'] : ['Esc'], online ? 'leave the room' : 'back']],
   );
   // Where the keyboard starts: the start button; alone in a room, the invite
   // link. (A guest gets no starting point: Enter must not walk them out.)
@@ -895,15 +1014,18 @@ function renderLobby() {
   syncOptions();
 }
 
-// Team battle: who is on which side, in the colours they will wear. The sides
-// are the room's - they stay as they are from match to match until someone
-// crosses over or the host shuffles. A side that is short gets bots.
+// Team battle: the two sides, face to face, everyone in the colour they will
+// wear. The sides are the room's: they stay as they are from match to match
+// until someone crosses over (their own arrow, or X) or the host moves people
+// (anyone's arrow) or shuffles (Z). A side that is short gets bots.
 function renderSquads() {
   const box = $('squads');
-  box.textContent = '';
   const mine = me();
+  const host = amHost();
   const sizes = [0, 1].map((t) => room.players.filter((p) => p.side === t).length);
   const fill = botFill(sizes, MAX_PLAYERS - room.players.length);
+  const held = box.contains(document.activeElement) ? document.activeElement.dataset.id || document.activeElement.id : '';
+  box.textContent = '';
   const taken = new Set(room.players.map((p) => p.name.toLowerCase()));
   const botNames = BOT_NAMES.filter((n) => !taken.has(n.toLowerCase()));
   const seen = [0, 0];
@@ -913,27 +1035,30 @@ function renderSquads() {
   [0, 1].forEach((t) => {
     const side = el('section', 'squad');
     side.style.setProperty('--side', TEAM_COLORS[t]);
+    side.classList.toggle('mine', !!mine && mine.side === t);
     const head = el('header');
-    head.append(el('b', '', TEAM_NAMES[t]), el('span', 'n', String(sizes[t] + fill[t])));
-    if (mine && mine.side === t) head.append(el('span', 'yours', 'your side'));
-    else if (mine) {
-      const go = el('button', 'cross');
-      go.id = 'btn-side';
-      setLabel(go, `Join ${TEAM_NAMES[t]}`, 'X');
-      go.addEventListener('click', switchSide);
-      head.append(go);
-    }
+    head.append(el('b', '', TEAM_NAMES[t]), el('span', 'n', `${sizes[t]}${fill[t] ? ` + ${fill[t]} bot${fill[t] > 1 ? 's' : ''}` : ''}`));
     side.append(head);
     const ul = el('ul', 'players');
     for (const p of room.players) {
       if (p.side !== t) continue;
-      const li = el('li');
+      const you = p.id === socket.id;
+      const li = el('li', you ? 'me' : '');
       const chip = el('i', 'chip');
       chip.style.background = chips.get(p.id);
       li.append(chip, el('span', 'nm', p.name));
       if (p.id === room.hostId) li.append(el('span', 'tag', 'HOST'));
-      if (p.id === socket.id) li.append(el('span', 'tag you', 'YOU'));
-      if (p.wins) li.append(el('span', 'score', `${p.wins} win${p.wins > 1 ? 's' : ''}`));
+      if (you || host) {
+        // across to the other side: your own arrow, and - for the host - everyone's
+        const go = el('button', 'cross');
+        go.type = 'button';
+        go.dataset.id = p.id;
+        go.setAttribute('aria-label', `Move ${you ? 'yourself' : p.name} to ${TEAM_NAMES[1 - t]}`);
+        go.innerHTML = `<svg class="ic" aria-hidden="true"><use href="#i-${t ? 'left' : 'right'}" /></svg>`;
+        go.title = you ? 'Change sides (X)' : `Move ${p.name} to ${TEAM_NAMES[1 - t]}`;
+        go.addEventListener('click', () => moveSide(p.id, 1 - t));
+        li.append(go);
+      }
       ul.append(li);
     }
     for (let k = 0; k < fill[t]; k++) {
@@ -948,23 +1073,31 @@ function renderSquads() {
     if (t === 0) {
       const mid = el('div', 'mid');
       mid.append(el('i', 'vs', 'vs'));
-      if (amHost()) {
-        const sh = el('button', 'link');
+      if (host) {
+        const sh = el('button', 'shuffle');
+        sh.type = 'button';
         sh.id = 'btn-shuffle';
-        sh.append(el('kbd', '', 'Z'), 'Shuffle');
+        sh.setAttribute('aria-label', 'Shuffle the teams (Z)');
+        sh.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-shuffle" /></svg>';
+        sh.append(el('kbd', '', 'Z'));
         sh.addEventListener('click', shuffleSides);
         mid.append(sh);
       }
       box.append(mid);
     }
   });
+  if (held) (box.querySelector(`[data-id="${held}"]`) || document.getElementById(held))?.focus();
+}
+function moveSide(id, to) {
+  if (kind !== 'online' || !room || room.settings.mode !== 'team') return false;
+  if (id !== socket.id && !amHost()) return false;
+  socket.emit('side', to, id);
+  sfx.play('click');
+  return true;
 }
 function switchSide() {
   const mine = me();
-  if (!mine || kind !== 'online' || room.settings.mode !== 'team') return false;
-  socket.emit('side', 1 - mine.side);
-  sfx.play('click');
-  return true;
+  return !!mine && moveSide(mine.id, 1 - mine.side);
 }
 function shuffleSides() {
   if (!amHost() || kind !== 'online' || room.settings.mode !== 'team') return false;
@@ -1018,7 +1151,7 @@ fonts.then(() => {
 // ---------------------------------------------------------------------------
 function openPause() {
   if (screen !== 'game' || overlay) return;
-  $('pause-note').textContent = kind === 'practice' ? 'The match is on hold.' : `Room ${room?.code || ''} - the match carries on without you.`;
+  $('pause-note').textContent = kind === 'practice' ? '' : 'The match carries on without you.';
   $('btn-pause-full').hidden = !canFullscreen;
   play.hold(true); // practice really pauses; an online match carries on behind the menu
   setOverlay('pause');
@@ -1069,7 +1202,10 @@ function showResults(res) {
     const tally = cup && team.total ? team.total : team.score;
     const lead = final ? team.win : tally[0] === tally[1] ? -1 : tally[0] > tally[1] ? 0 : 1;
     const side = (t) => (t === mine ? 'Your team' : TEAM_NAMES[t]);
-    const points = `A flag in your colour pays ${flagPay}. A bomb still in someone's hands at the buzzer scores ${BOMB_POINTS} for the other team.`;
+    // where this round's points came from: bombs that went off on the other side, and the flags
+    const fromBombs = [0, 1].map((t) => BOMB_POINTS * res.rows.filter((r) => r.boom && r.team === 1 - t).length);
+    const fromFlags = [0, 1].map((t) => Math.max(0, team.score[t] - fromBombs[t]));
+    const points = `Flags ${fromFlags[0]} - ${fromFlags[1]}, bombs ${fromBombs[0]} - ${fromBombs[1]}.`;
     if (cup) {
       kicker = cup.final ? 'Tournament over - Team Bomb' : `Round ${cup.round} of ${cup.rounds} - Team Bomb`;
       if (cup.final) {
@@ -1077,7 +1213,7 @@ function showResults(res) {
         sub = forfeit ? 'Everyone else left.' : 'Final score.';
       } else {
         title = lead < 0 ? `Level at ${tally[0]} all` : `${side(lead)} ${lead === mine ? 'leads' : 'lead'} ${tally[lead]} - ${tally[1 - lead]}`;
-        sub = `${points} The last round counts double.`;
+        sub = points;
       }
     } else {
       kicker = forfeit ? 'Match over' : 'Team Bomb';
@@ -1088,12 +1224,12 @@ function showResults(res) {
     kicker = cup.final ? 'Tournament over' : `Round ${cup.round} of ${cup.rounds}`;
     if (cup.final) {
       title = iWon ? 'You win the tournament!' : `${list(winners)} win${winners.length > 1 ? '' : 's'} the tournament!`;
-      sub = forfeit ? 'Everyone else left.' : 'Final standings.';
+      sub = forfeit ? 'Everyone else left.' : '';
     } else {
       const lead = cup.table[0];
       const tied = cup.table.filter((r) => r.pts === lead.pts).length > 1;
       title = tied ? 'Level at the top' : lead.slot === mySlot ? 'You are in the lead' : `${lead.name} is in the lead`;
-      sub = 'Points for the least time as the oni, plus one if you were not it at the buzzer.';
+      sub = '';
     }
   } else if (forfeit) {
     kicker = 'Match over';
@@ -1106,17 +1242,30 @@ function showResults(res) {
   } else {
     kicker = 'Least Time';
     title = iWon ? (winners.length > 1 ? 'You share the win!' : 'You win!') : `${list(winners)} win${winners.length > 1 ? '' : 's'}!`;
-    sub = 'Least time as the oni wins.';
+    sub = '';
   }
   $('res-kicker').textContent = kicker;
   $('res-title').textContent = title;
   $('res-sub').textContent = sub;
+  // the seal says it in one sign: won, lost, level - or, between rounds, which round that was
+  const between = !!cup && !cup.final;
+  const mine = res.rows.find((r) => r.slot === mySlot);
+  const level = team ? (cup && team.total ? team.total[0] === team.total[1] : team.win < 0) : false;
+  const seal = $('res-seal');
+  seal.textContent = between ? String(cup.round) : level ? '分' : iWon ? '勝' : '負';
+  seal.className = `seal big${between || level ? ' dark' : iWon ? '' : ' dark'}`;
+  $('s-results').classList.toggle('won', !between && iWon && !level);
   $('res-teams').hidden = !team;
   $('res-table').hidden = !!team;
-  $('s-results').classList.toggle('crowd', res.rows.length > 6); // seven or more: a tighter table
   $('s-results').classList.toggle('teams', !!team);
+  $('s-results').classList.toggle('crowd', res.rows.length > 6); // seven or more: a tighter board
+  // a podium for the first three, where there is a ranking to speak of: a
+  // finished tournament, or a match scored on time as the oni
+  const ranked = !team && !forfeit && (cup ? cup.final : res.mode !== 'potato');
+  $('res-podium').hidden = !ranked;
+  if (ranked) paintPodium(res, mySlot);
   if (team) paintSides(res, mySlot);
-  else paintTable(res, mySlot);
+  else paintBoard(res, mySlot, ranked);
 
   renderResultButtons();
   setOverlay('results');
@@ -1131,32 +1280,89 @@ function showResults(res) {
     nextTimer = setInterval(tick, 250);
   }
   sfx.play(iWon || (cup && !cup.final && res.loser !== mySlot) ? 'win' : 'lose');
+  void mine;
 }
 
-// everyone for themselves: one table
-function paintTable(res, mySlot) {
+// Everyone in the order they finished: tournament points first, else the least time as the oni.
+function ranking(res) {
   const cup = res.cup;
-  const table = $('res-table');
-  table.textContent = '';
-  const head = el('tr');
-  for (const h of cup ? ['', 'Player', 'As oni', 'Round', 'Total'] : ['', 'Player', 'As oni', 'Tags']) head.append(el('th', '', h));
-  table.append(head);
-  const rows = cup ? cup.table.map((t) => ({ ...t, row: res.rows.find((r) => r.slot === t.slot) })) : res.rows.map((r) => ({ slot: r.slot, name: r.name, row: r }));
+  return cup ? cup.table.map((t) => ({ ...t, row: res.rows.find((r) => r.slot === t.slot) })) : res.rows.map((r) => ({ slot: r.slot, name: r.name, row: r }));
+}
+
+// A picture of the player in the style the match was played in (their colour square until it is painted).
+function face(slot, size = 'sm') {
+  const box = el('i', `face ${size}`);
+  box.style.setProperty('--c', play.colorOf(slot));
+  const url = portraitOf(slot);
+  if (url) {
+    const img = el('img');
+    img.alt = '';
+    img.src = url;
+    box.append(img);
+  }
+  return box;
+}
+function portraitOf(slot) {
+  try {
+    const cols = play.info?.cols;
+    const theme = play.renderer.theme?.id;
+    return theme && typeof art.playerPortrait === 'function' ? art.playerPortrait(theme, cols ? cols[slot] ?? slot : slot) || '' : '';
+  } catch {
+    return '';
+  }
+}
+
+// The first three, the winner in the middle and a step higher.
+function paintPodium(res, mySlot) {
+  const cup = res.cup;
+  const box = $('res-podium');
+  box.textContent = '';
+  const top = ranking(res).slice(0, 3);
+  [1, 0, 2].forEach((i) => {
+    const r = top[i];
+    if (!r) return;
+    const step = el('div', `step p${i + 1}${r.slot === mySlot ? ' me' : ''}`);
+    step.append(face(r.slot, 'lg'), el('b', 'nm', r.name));
+    step.append(el('span', 'stat', cup ? `${r.pts} pts` : r.row ? secs(r.row.ms) : ''));
+    const block = el('div', 'block');
+    block.append(el('i', i === 0 ? 'seal' : 'seal dark', String(i + 1)));
+    step.append(block);
+    box.append(step);
+  });
+}
+
+// The board: one line each, with a bar for the time they spent as the oni.
+function paintBoard(res, mySlot, ranked) {
+  const cup = res.cup;
+  const board = $('res-table');
+  board.textContent = '';
+  board.className = `board${cup ? ' cup' : ''}`;
+  const rows = ranking(res);
+  const most = Math.max(1, ...rows.map((r) => (r.row ? r.row.ms : 0)));
+  const head = el('li', 'hd');
+  head.append(el('span', '', ''), el('span', '', 'Player'), el('span', '', 'As oni'), ...(cup ? [el('span', '', 'Round'), el('span', '', 'Total')] : [el('span', '', 'Tags')]));
+  board.append(head);
   rows.forEach((r, i) => {
-    const tr = el('tr');
+    const li = el('li', r.slot === mySlot ? 'me' : '');
     const final = !cup || cup.final;
-    if (r.slot === mySlot) tr.classList.add('me');
-    const who = el('td', 'who');
-    const chip = el('i', 'chip');
-    chip.style.background = play.colorOf(r.slot);
-    who.append(chip, r.name);
+    const who = el('span', 'who');
+    who.append(face(r.slot), r.name);
     // a seal for the winner, and one for whoever was it at the end
-    if (final && res.winners.includes(r.slot)) who.append(mark('\u52dd', 'wins'));
-    if (res.loser === r.slot && res.reason !== 'forfeit') who.append(mark('\u9b3c', 'it', true));
-    tr.append(el('td', '', String(i + 1)), who, el('td', '', r.row ? secs(r.row.ms) : '-'));
-    if (cup) tr.append(el('td', 'gain', r.row ? `+${r.gained}` : '-'), el('td', '', `${r.pts} pts`));
-    else tr.append(el('td', '', String(r.row.tags)));
-    table.append(tr);
+    // (not when nearly everyone won - Hot Potato - where the one seal that matters is the oni's)
+    if (final && res.winners.includes(r.slot) && !ranked && res.winners.length * 2 <= rows.length) who.append(mark('勝', 'wins'));
+    if (res.loser === r.slot && res.reason !== 'forfeit') who.append(mark('鬼', 'it', true));
+    const time = el('span', 'time');
+    if (r.row) {
+      const track = el('span', 'track');
+      const bar = el('i', 'bar');
+      bar.style.width = `${Math.round((r.row.ms / most) * 100)}%`;
+      track.append(bar);
+      time.append(track, el('b', '', secs(r.row.ms)));
+    } else time.append(el('b', '', '-'));
+    li.append(el('span', 'rank', String(i + 1)), who, time);
+    if (cup) li.append(el('span', 'gain', r.row ? `+${r.gained}` : '-'), el('span', 'pts', `${r.pts}`));
+    else li.append(el('span', 'num', String(r.row.tags)));
+    board.append(li);
   });
 }
 
@@ -1177,7 +1383,7 @@ function paintSides(res, mySlot) {
     const tally = el('span', 'tally', String(cup && total ? total[t] : score[t]));
     head.append(el('b', 'nm', TEAM_NAMES[t]), tally);
     if (cup && total) head.append(el('small', '', `+${score[t] * (cup.double ? 2 : 1)} this round${cup.double ? ' (double)' : ''}`));
-    if (won) head.append(mark('\u52dd', 'wins'));
+    if (won) head.append(mark('勝', 'wins'));
     else if (final && win < 0) head.append(el('small', '', 'a draw'));
     side.append(head);
     const ul = el('ul');
@@ -1187,10 +1393,8 @@ function paintSides(res, mySlot) {
     for (const r of res.rows) {
       if (r.team !== t) continue;
       const li = el('li', r.slot === mySlot ? 'me' : '');
-      const chip = el('i', 'chip');
-      chip.style.background = play.colorOf(r.slot);
       const who = el('span', 'who');
-      who.append(chip, r.name);
+      who.append(face(r.slot), r.name);
       if (r.bot) who.append(el('span', 'tag bot', 'BOT'));
       // a bomb went off in their hands
       if (r.boom) {
@@ -1255,6 +1459,16 @@ $('btn-res-back').addEventListener('click', resultsBack);
 // ---------------------------------------------------------------------------
 socket.on('room', (r) => {
   if (!room || room.code !== r.code) return; // not in (or no longer in) this room
+  // The host is the only one who changes settings, and the screen shows each
+  // change at once. The server's echo of an EARLIER change must not undo a
+  // later one that is still on its way: while changes are fresh, keep ours,
+  // and take the server's word once things have been quiet for a moment.
+  if (r.hostId === socket.id && room.hostId === socket.id && performance.now() - settingsAt < SETTLE_MS) {
+    echoed = r.settings;
+    r = { ...r, settings: room.settings };
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(settle, SETTLE_MS);
+  }
   room = r;
   net.code = r.code;
   if (r.phase === 'lobby') {
@@ -1345,7 +1559,18 @@ function shortcut(key, e) {
   } else if (at === 'find') {
     if (key === 'c') return $('btn-find-host').click(), true;
   } else if (at === 'lobby') {
-    if (key === 'enter' && !onButton) {
+    // along the rounds of a tournament: left and right pick the one before or after
+    const slot = document.activeElement?.classList.contains('slot') ? document.activeElement : null;
+    if (slot && (key === 'arrowleft' || key === 'arrowright')) {
+      const to = key === 'arrowright' ? slot.nextElementSibling : slot.previousElementSibling;
+      if (to) {
+        to.click();
+        $('round-strip').querySelector('[aria-checked="true"]')?.focus();
+      }
+      return true;
+    }
+    // Enter starts, also from a round's tile (which is already chosen once it has the focus)
+    if (key === 'enter' && (!onButton || slot)) {
       if (!$('btn-start').hidden && !$('btn-start').disabled) $('btn-start').click();
       return true;
     }
