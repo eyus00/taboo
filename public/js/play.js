@@ -1,15 +1,28 @@
 // Everything that happens while a match is on screen: the renderer, the frame
-// loop, the heads-up display (timer, players, item slot, team score, minimap),
-// touch controls, and turning game events into pictures, words and sound.
+// loop, the heads-up display, touch controls, and turning game events into
+// pictures, words and sound.
+//
+// The heads-up display, and where each part sits:
+//   top left      the minimap; under it, in a free-for-all, the list of players
+//   top centre    the clock; in a team battle each side's score beside it and
+//                 that side's players beyond the score (Sun left, Moon right),
+//                 the flags and the name of the round underneath
+//   top right     the menu button
+//   bottom        the "kit": what you are (it / carrying a bomb), the item in
+//                 your hands, boosts that are running
+//   above the kit the item draw: a small reel that rolls while a lucky box's
+//                 item is being armed, stops on it and drops into the item tile
+//   upper middle  for the 3-2-1 only: the objective card (what this mode asks
+//                 of you, the twist, who leads, the controls in a first match)
 //
 // The menus (main.js) only call a handful of things here:
 //   play.init({ socket, isTouch, onStart(info), onEnd(results), onPause() })
 //   play.practice(settings, name)        a match against bots
 //   play.round(msg, mySlot)              an online round is starting
 //   play.finish() / play.stop() / play.hold(true|false)
-//   play.nameOf(slot), play.mySlot(), play.colors(), play.el.spin
+//   play.nameOf(slot), play.colorOf(slot), play.portraitOf(slot), play.mySlot(), play.el.spin
 
-import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, FLAG_PAY_TICKS, PW, PH } from '/shared/config.js';
+import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, ITEM_ARM_TICKS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, PW, PH, THEMES } from '/shared/config.js';
 import { ARENA_IDS, arenaById } from '/shared/arenas.js';
 import { Renderer } from './renderer.js';
 import { Input } from './input.js';
@@ -17,7 +30,7 @@ import { Sfx } from './audio.js';
 import { NetGame } from './net.js';
 import { LocalGame } from './local.js';
 import { loadTheme } from './themes/index.js';
-import { THEMES } from '/shared/config.js';
+import { playerPortrait } from './art.js';
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -25,8 +38,12 @@ const el = (tag, cls, text) => {
   if (text != null) e.textContent = text;
   return e;
 };
-const icon = (name) => `<svg class="ic"><use href="#pi-${name}" /></svg>`;
+const icon = (name) => `<svg class="ic" aria-hidden="true"><use href="#pi-${name}" /></svg>`;
 const pickRandom = (list) => list[Math.floor(Math.random() * list.length)];
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
+
+const ITEM_LAND_MS = 720; // the item draw, once it has stopped: its name for a moment, then into the tile
+const FIRST_MATCHES = 3; // how many matches start with a reminder of the controls
 
 // item icons (and a few others), kept here so the match needs nothing from the page
 const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
@@ -37,16 +54,20 @@ const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden=
 <symbol id="pi-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></symbol>
 <symbol id="pi-speed" viewBox="0 0 24 24"><path d="M14 2L5 13.5h6L8.5 22 19 9.8h-6z" fill="currentColor"/></symbol>
 <symbol id="pi-jump" viewBox="0 0 24 24"><path d="M5 11l7-7 7 7M5 20l7-7 7 7" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-<symbol id="pi-shield" viewBox="0 0 24 24"><path d="M12 2l8 3.6v6.6c0 5-3.4 8.4-8 9.800-4.600-1.400-8-4.800-8-9.800V5.600z" fill="currentColor"/></symbol>
-<symbol id="pi-freeze" viewBox="0 0 24 24"><path d="M12 2v20M3.300 7l17.400 10M20.700 7L3.300 17" fill="none" stroke="currentColor" stroke-width="2.800" stroke-linecap="round"/></symbol>
-<symbol id="pi-blast" viewBox="0 0 24 24"><path d="M12 1l2.600 6.200L21 4.500l-2.700 6.400L23 12l-4.700 1.100L21 19.500l-6.400-2.700L12 23l-2.600-6.200L3 19.500l2.700-6.400L1 12l4.700-1.100L3 4.500l6.400 2.700z" fill="currentColor"/></symbol>
+<symbol id="pi-shield" viewBox="0 0 24 24"><path d="M12 2l8 3.6v6.6c0 5-3.4 8.4-8 9.8-4.6-1.4-8-4.800-8-9.800V5.600z" fill="currentColor"/></symbol>
+<symbol id="pi-freeze" viewBox="0 0 24 24"><path d="M12 2v20M3.3 7l17.400 10M20.700 7L3.300 17" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></symbol>
+<symbol id="pi-blast" viewBox="0 0 24 24"><path d="M12 1l2.6 6.2L21 4.5l-2.700 6.400L23 12l-4.700 1.100L21 19.500l-6.400-2.700L12 23l-2.600-6.200L3 19.500l2.700-6.400L1 12l4.700-1.100L3 4.500l6.400 2.700z" fill="currentColor"/></symbol>
 <symbol id="pi-swap" viewBox="0 0 24 24"><path d="M4 8h14l-4-4M20 16H6l4 4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-<symbol id="pi-storm" viewBox="0 0 24 24"><path d="M6 13a5 5 0 1 1 3.500-8.500A6 6 0 0 1 20 8a4 4 0 0 1-2 7.500" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round"/><path d="M12 12l-3 5h4l-2 5" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="pi-storm" viewBox="0 0 24 24"><path d="M6 13a5 5 0 1 1 3.5-8.5A6 6 0 0 1 20 8a4 4 0 0 1-2 7.500" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M12 12l-3 5h4l-2 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="pi-goo" viewBox="0 0 24 24"><path d="M12 2c3 5 6 8 6 12a6 6 0 0 1-12 0c0-4 3-7 6-12z" fill="currentColor"/></symbol>
-<symbol id="pi-box" viewBox="0 0 24 24"><path d="M8 9a4 4 0 1 1 6 3.500c-1.300.800-2 1.500-2 3M12 19.500v.500" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
-<symbol id="pi-it" viewBox="0 0 24 24"><path d="M6 2.500c.300 2.600 1.300 4.300 3.200 5.400M18 2.500c-.300 2.600-1.300 4.300-3.200 5.400" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round"/><path d="M5.500 9.500h13l-1 8.200c-.400 2.600-2.600 4.300-5.500 4.300s-5.100-1.700-5.500-4.300z" fill="currentColor"/></symbol>
-<symbol id="pi-bomb" viewBox="0 0 24 24"><circle cx="10.500" cy="14" r="7.500" fill="currentColor"/><path d="M15.500 8.500l3-3M18 3l3 1-1 3" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-<symbol id="pi-flag" viewBox="0 0 24 24"><path d="M6 22V3M6 4h12l-3 4 3 4H6" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="pi-box" viewBox="0 0 24 24"><path d="M8 9a4 4 0 1 1 6 3.5c-1.300.800-2 1.500-2 3M12 19.500v.500" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
+<symbol id="pi-it" viewBox="0 0 24 24"><path d="M6 2.5c.3 2.6 1.300 4.300 3.200 5.400M18 2.500c-.300 2.600-1.300 4.300-3.200 5.400" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M5.5 9.5h13l-1 8.200c-.400 2.600-2.600 4.300-5.500 4.300s-5.100-1.700-5.500-4.300z" fill="currentColor"/></symbol>
+<symbol id="pi-bomb" viewBox="0 0 24 24"><circle cx="10" cy="15" r="7.5" fill="currentColor"/><path d="M13.3 8.2l2.9-2.900 2.500 2.500-2.900 2.900z" fill="currentColor"/><path d="M17.8 5.9c.7-1.700 1.900-2.600 3.400-2.700" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21.6 1v1.300M23.300 3.300H22M22.900 1.500l-.900.900" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+<symbol id="pi-flag" viewBox="0 0 24 24"><path d="M6 22V3M6 4h12l-3 4 3 4H6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="pi-clock" viewBox="0 0 24 24"><circle cx="12" cy="13.5" r="7.8" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M12 9v4.500l3 2M9.500 2.500h5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="pi-crown" viewBox="0 0 24 24"><path d="M3.5 19L2 7.500l5.500 4.300L12 4l4.500 7.800L22 7.500 20.500 19z" fill="currentColor"/></symbol>
+<symbol id="pi-twist" viewBox="0 0 24 24"><path d="M12 1.5l2.5 7.500 7.500 2.500-7.500 2.500-2.500 7.500-2.500-7.500L2 11.500 9.500 9z" fill="currentColor"/></symbol>
+<symbol id="pi-eye" viewBox="0 0 24 24"><path d="M2 12c2.800-4.700 6.100-7 10-7s7.200 2.300 10 7c-2.800 4.700-6.100 7-10 7s-7.200-2.300-10-7z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></symbol>
 </defs></svg>`;
 
 export const play = {
@@ -66,23 +87,26 @@ export const play = {
     root.innerHTML = `${SPRITE}
       <div id="stage"></div>
       <div id="hud">
+        <canvas id="minimap" width="220" height="124" aria-hidden="true"></canvas>
         <ul id="pills" aria-label="Players"></ul>
-        <div class="clock">
-          <div class="scoreline"><b id="team-a" hidden></b><div id="timer" aria-label="Seconds left">60</div><b id="team-b" hidden></b></div>
+        <div id="top">
+          <div class="h-wing a"><ul id="roster-a" class="h-roster" aria-label="${TEAM_NAMES[0]}"></ul><b id="team-a" class="h-score" hidden></b></div>
+          <div id="timer" aria-label="Seconds left">60</div>
+          <div class="h-wing b"><b id="team-b" class="h-score" hidden></b><ul id="roster-b" class="h-roster" aria-label="${TEAM_NAMES[1]}"></ul></div>
           <div id="flags" hidden></div>
           <div id="round-label"></div>
         </div>
         <button id="btn-pause" class="hud-btn" aria-label="Menu (Esc)">${icon('menu')}</button>
         <kbd class="hud-key">Esc</kbd>
-        <canvas id="minimap" width="220" height="124" aria-hidden="true"></canvas>
         <div id="kit">
-          <div id="status" hidden><span class="ic"></span><b></b></div>
+          <div id="status" hidden><span class="sign"></span><b></b></div>
           <div id="itemslot" hidden><span class="tile"><span class="pic"></span></span><kbd>E</kbd><span class="cap"></span></div>
           <div id="buffs"></div>
         </div>
+        <div id="itemdraw" hidden aria-hidden="true"><div class="box"><div class="win"><div class="strip"></div></div></div><div class="tag"><b></b><kbd>E</kbd></div></div>
         <div id="banner" role="status"></div>
+        <div id="brief" hidden></div>
         <div id="count" aria-hidden="true"></div>
-        <div id="hint"></div>
         <div id="spin"></div>
       </div>
       <div id="touch" class="touch" hidden>
@@ -93,7 +117,13 @@ export const play = {
           <button class="t-jump" data-bit="4" aria-label="Jump">${icon('up')}</button>
         </div>
       </div>`;
-    for (const id of ['stage', 'pills', 'timer', 'team-a', 'team-b', 'flags', 'round-label', 'btn-pause', 'minimap', 'status', 'itemslot', 'buffs', 'banner', 'count', 'hint', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
+    for (const id of ['stage', 'hud', 'pills', 'top', 'timer', 'team-a', 'team-b', 'roster-a', 'roster-b', 'flags', 'round-label', 'btn-pause', 'minimap', 'kit', 'status', 'itemslot', 'buffs', 'itemdraw', 'banner', 'brief', 'count', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
+    const E = this.el;
+    E.use = E.touch.querySelector('.t-use');
+    E.itemPic = E.itemslot.querySelector('.pic');
+    E.itemCap = E.itemslot.querySelector('.cap');
+    E.reelStrip = E.itemdraw.querySelector('.strip');
+    E.reelName = E.itemdraw.querySelector('.tag b');
     this.root = root;
     this.isTouch = opts.isTouch;
     // on touch screens the view can scroll a little past the floor, so the buttons never cover you
@@ -112,7 +142,7 @@ export const play = {
     s.on('block', (from, to) => this.game === this.net && this.onEvent('block', from, to));
     s.on('pick', (slot, k) => this.game === this.net && this.onEvent('pick', slot, k));
     s.on('ev', (e) => this.game === this.net && this.onEvent(e.type, e));
-    this.hud = { sec: -1, count: 0, pills: [], buffs: '', hintNow: '', hint: '', item: '', teams: '', spinAt: 0, mapAt: 0 };
+    this.hud = { sec: -1, count: 0, pills: [], buffs: '', item: '', teams: '', at: 0, mapAt: 0 };
   },
 
   nameOf(slot) {
@@ -126,6 +156,12 @@ export const play = {
     const th = this.renderer.theme;
     const cols = this.info?.cols;
     return th ? th.colors[cols ? cols[slot] ?? slot : slot] : '#888';
+  },
+  // a picture of a player's character as it looks in this round: a data URL (see playerPortrait in art.js for opts), or null
+  portraitOf(slot, opts) {
+    const th = this.renderer.theme;
+    const cols = this.info?.cols;
+    return th ? playerPortrait(th.id, cols ? cols[slot] ?? slot : slot, opts) : null;
   },
 
   // --- starting and stopping ----------------------------------------------------------
@@ -161,20 +197,31 @@ export const play = {
     this.renderer.setScene(arena, themeId, info.cols || null);
     this.root.style.background = this.renderer.theme.letterbox;
     const h = this.hud;
-    Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], hintNow: '', item: '', teams: '', crowd: 0, role: '', hot: false, side: -2 });
-    this.el.status.hidden = true;
-    this.el.pills.textContent = '';
-    this.el.buffs.textContent = '';
-    this.el.count.textContent = '';
-    this.el.banner.className = '';
-    this.el.itemslot.hidden = true;
+    const E = this.el;
+    clearTimeout(h.itemTimer);
+    clearTimeout(h.briefTimer);
+    Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], item: '', teams: '', crowd: 0, sides: '', role: '', hot: false, side: -2, briefOn: false });
+    E.status.hidden = true;
+    E.pills.textContent = '';
+    E.rosterA.textContent = '';
+    E.rosterB.textContent = '';
+    E.buffs.textContent = '';
+    E.count.textContent = '';
+    E.count.className = '';
+    E.banner.className = '';
+    E.itemslot.hidden = true;
+    E.itemslot.className = '';
+    this.reelOff();
+    this.setUse('');
     const team = info.mode === 'team';
+    E.hud.className = team ? 'team' : 'ffa';
+    E.pills.className = '';
     for (const [id, t] of [['teamA', 0], ['teamB', 1]]) {
-      this.el[id].hidden = !team;
-      this.el[id].style.background = TEAM_COLORS[t];
+      E[id].hidden = !team;
+      E[id].style.background = TEAM_COLORS[t];
     }
-    this.el.flags.hidden = !team;
-    this.el.flags.textContent = '';
+    E.flags.hidden = !team;
+    E.flags.textContent = '';
     h.flagEls = [];
     if (team) {
       // one marker per flag, in the order they stand on the map: a letter, and a bar that fills with a team's colour
@@ -185,33 +232,26 @@ export const play = {
         const fill = el('i');
         bar.append(fill);
         chip.append(el('b', '', 'ABCD'[i]), bar);
-        this.el.flags.append(chip);
+        E.flags.append(chip);
         h.flagEls.push({ chip, fill, sig: '' });
       });
     }
     const mode = MODES.find((m) => m.id === info.mode)?.name || '';
     let label = this.kind === 'practice' ? `Practice - ${mode}` : mode;
-    let hint = '';
     if (info.cup) {
       label = info.cup.double ? 'Final round - double points' : `Round ${info.cup.round} of ${info.cup.rounds}`;
       if (team) label += ' - Team Bomb';
-      if (info.twist && info.twist !== 'none' && g.twist?.name) {
-        label += ` - ${g.twist.name}`;
-        hint = `Twist: ${g.twist.name} - ${g.twist.blurb.toLowerCase()}. `;
-      }
-      if (info.cup.leader >= 0) hint += `${this.nameOf(info.cup.leader)} leads, so starts as it.`;
+      if (info.twist && info.twist !== 'none' && g.twist?.name) label += ` - ${g.twist.name}`;
     }
-    if (!hint && team) hint = `Stand in a flag's ring to turn it your colour: it pays a point every ${Math.round(FLAG_PAY_TICKS / TICK_RATE)} s. Bombs go off at the buzzer - pass yours to an enemy.`;
-    // the first few matches on a keyboard start with a reminder of the keys
+    E.roundLabel.textContent = label;
+    // the first few matches start with a reminder of the controls (on the objective card)
     let played = 0;
     try {
       played = Number(localStorage.getItem('tag.played')) || 0;
       localStorage.setItem('tag.played', String(played + 1));
     } catch {}
-    if (!hint && !this.isTouch && played < 3) hint = 'Arrows or A / D to run - Up, W or Space to jump, again in the air for a second jump - Down to drop - E to use an item';
-    this.el.roundLabel.textContent = label;
-    h.hint = hint;
-    this.el.touch.hidden = !this.isTouch;
+    this.buildBrief(info, g, played < FIRST_MATCHES);
+    E.touch.hidden = !this.isTouch;
     document.body.classList.toggle('touch-on', this.isTouch);
     this.bakeMinimap(arena);
     this.start();
@@ -245,6 +285,7 @@ export const play = {
     if (!view) return;
     this.renderer.draw(view, now);
     const h = this.hud;
+    this.tick(view);
     if (now - h.at > 100 || !h.at) {
       h.at = now;
       this.updateHud(view);
@@ -256,6 +297,23 @@ export const play = {
   },
 
   // --- heads-up display -------------------------------------------------------------------
+  // Every frame: the two things that have to happen on the dot - the 3-2-1 with
+  // the objective card, and the item draw. Only comparisons, unless something changed.
+  tick(view) {
+    const h = this.hud;
+    const cd = view.phase === 'countdown' ? view.countdownMs || 0 : 0;
+    const n = cd > 0 && cd <= COUNTDOWN_MS ? Math.min(3, Math.ceil(cd / 1000)) : 0;
+    if (n !== h.count) {
+      h.count = n;
+      this.showBrief(n, view);
+    }
+    const m = view.me;
+    const kind = m && m.item ? ITEM_KINDS[m.item - 1] : '';
+    const state = !kind ? '' : m.arm > 0 ? 'draw' : m.locked ? `${kind}-locked` : kind;
+    if (state !== h.item) this.itemChanged(state, kind, m, view);
+  },
+
+  // About ten times a second: everything else.
   updateHud(view) {
     const h = this.hud;
     const E = this.el;
@@ -265,42 +323,62 @@ export const play = {
       E.timer.textContent = String(sec);
       E.timer.classList.toggle('low', view.phase === 'playing' && sec <= 10);
     }
-    // one plaque per player: colour, name, seconds spent as it
+    // One plaque per player. Free-for-all: colour, name, seconds spent as it, in a
+    // list under the minimap. Team battle: colour and name beside that side's
+    // score, with a bomb on it while they carry one.
     const seen = [];
+    const sizes = [0, 0];
     for (const p of view.players) {
       seen[p.slot] = true;
+      const sided = !!view.team && p.team >= 0;
+      if (sided) sizes[p.team]++;
       let pill = h.pills[p.slot];
       if (!pill) {
         const li = el('li');
         const chip = el('i', 'chip');
         chip.style.background = this.colorOf(p.slot);
-        const val = el('span', 'val');
-        li.append(chip, el('span', 'nm', p.name), val);
-        li.classList.toggle('me', !!p.local);
-        if (p.team >= 0) {
-          // team battle: one column a side, each plaque with its side's colour down its edge
-          li.classList.add(`t${p.team}`);
-          li.style.setProperty('--team', TEAM_COLORS[p.team]);
+        li.append(chip, el('span', 'nm', p.name));
+        let val = null;
+        if (sided) {
+          li.insertAdjacentHTML('beforeend', '<svg class="bm" viewBox="0 0 24 24" aria-hidden="true"><use href="#pi-bomb"/></svg>');
+          (p.team ? E.rosterB : E.rosterA).append(li);
+        } else {
+          val = el('span', 'val');
+          li.append(val, el('em', '', 'IT'));
+          E.pills.append(li);
         }
-        E.pills.append(li);
+        if (p.local) li.classList.add('me');
         pill = h.pills[p.slot] = { li, val, text: '', it: false };
       }
-      const text = `${Math.floor((p.itTicks || 0) / TICK_RATE)}s`;
-      if (text !== pill.text) pill.val.textContent = pill.text = text;
+      if (pill.val) {
+        const text = `${Math.floor((p.itTicks || 0) / TICK_RATE)}s`;
+        if (text !== pill.text) pill.val.textContent = pill.text = text;
+      }
       const it = view.it === p.slot || !!p.bomb;
       if (it !== pill.it) pill.li.classList.toggle('it', (pill.it = it));
     }
-    h.pills.forEach((pill, slot) => pill && pill.li.classList.toggle('gone', !seen[slot]));
-    // five or more: two columns; seven or more: smaller plaques (and on a small screen, only the colours)
+    h.pills.forEach((pill, slot) => {
+      if (pill && pill.gone !== !seen[slot]) pill.li.classList.toggle('gone', (pill.gone = !seen[slot]));
+    });
     const n = view.players.length;
-    if (n !== h.crowd) {
+    if (view.team) {
+      // up to five a side, in at most two rows: three or fewer stand in one row
+      const sig = sizes.join();
+      if (sig !== h.sides) {
+        h.sides = sig;
+        [E.rosterA, E.rosterB].forEach((list, t) => {
+          const cols = sizes[t] <= 3 ? Math.max(1, sizes[t]) : Math.ceil(sizes[t] / 2);
+          list.style.setProperty('--cols', String(cols));
+          list.className = `h-roster c${cols}`;
+        });
+        E.hud.classList.toggle('deep', Math.max(sizes[0], sizes[1]) > 3); // a side stands in two rows
+      }
+    } else if (n !== h.crowd) {
+      // six or more: two columns
       h.crowd = n;
-      E.pills.classList.toggle('many', n > 4);
-      E.pills.classList.toggle('crowd', n > 6);
+      E.pills.classList.toggle('many', n > 5);
       E.pills.style.setProperty('--rows', String(Math.ceil(n / 2)));
     }
-    E.pills.classList.toggle('bomb', !!view.team);
-    E.pills.classList.toggle('teams', !!view.team);
 
     // team battle: the score either side of the clock (with a bomb for every one that side is holding), the flags under it
     if (view.team) {
@@ -311,14 +389,16 @@ export const play = {
       if (sig !== h.teams) {
         h.teams = sig;
         const bombs = (n) => '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#pi-bomb"/></svg>'.repeat(n);
-        E.teamA.innerHTML = `${TEAM_NAMES[0]} ${t.score[0]}<span class="held">${bombs(held[0])}</span>`;
-        E.teamB.innerHTML = `<span class="held">${bombs(held[1])}</span>${t.score[1]} ${TEAM_NAMES[1]}`;
+        E.teamA.innerHTML = `<span class="tn">${TEAM_NAMES[0]}</span> ${t.score[0]}<span class="held">${bombs(held[0])}</span>`;
+        E.teamB.innerHTML = `<span class="held">${bombs(held[1])}</span>${t.score[1]} <span class="tn">${TEAM_NAMES[1]}</span>`;
       }
       const side = view.players.find((p) => p.local)?.team ?? -1;
       if (side !== h.side) {
         h.side = side;
         E.teamA.classList.toggle('mine', side === 0);
         E.teamB.classList.toggle('mine', side === 1);
+        E.rosterA.parentNode.classList.toggle('mine', side === 0);
+        E.rosterB.parentNode.classList.toggle('mine', side === 1);
       }
       t.flags.forEach((f, i) => {
         const e = h.flagEls[i];
@@ -335,9 +415,9 @@ export const play = {
       });
     }
 
-    // what you are right now: it, or carrying a bomb (a small sign that stays up as long as it is true)
+    // what you are right now: it, or carrying a bomb - or only watching (a small sign that stays up as long as it is true)
     const self = view.phase === 'playing' ? view.players.find((p) => p.local) : null;
-    const role = !self ? '' : self.bomb ? 'bomb' : view.it === self.slot ? 'it' : '';
+    const role = view.spectating ? 'watch' : !self ? '' : self.bomb ? 'bomb' : view.it === self.slot ? 'it' : '';
     const hot = role === 'bomb' && view.timeLeft <= 10;
     if (role !== h.role || hot !== h.hot) {
       h.role = role;
@@ -345,39 +425,13 @@ export const play = {
       E.status.hidden = !role;
       E.status.className = role + (hot ? ' hot' : '');
       if (role) {
-        E.status.firstChild.innerHTML = icon(role === 'bomb' ? 'bomb' : 'it');
-        E.status.lastChild.textContent = role === 'bomb' ? (hot ? 'BOMB - get rid of it!' : 'BOMB - tag an enemy') : "YOU'RE IT - tag someone";
+        E.status.firstChild.innerHTML = icon(role === 'bomb' ? 'bomb' : role === 'watch' ? 'eye' : 'it');
+        E.status.lastChild.textContent = role === 'watch' ? 'Watching - you play next round' : role === 'bomb' ? (hot ? 'BOMB - get rid of it!' : 'BOMB - tag an enemy') : "YOU'RE IT - tag someone";
       }
     }
 
-    // the item in your hands
-    const m = view.me;
-    const kind = m && m.item ? ITEM_KINDS[m.item - 1] : '';
-    const state = !kind ? '' : m.arm > 0 ? 'draw' : m.locked ? `${kind}-locked` : kind;
-    if (state !== h.item) {
-      // One small tile: it flickers through the items while yours is being
-      // drawn, then shows it, with its name beside it for a moment.
-      const landed = h.item === 'draw' && kind && m.arm === 0;
-      h.item = state;
-      E.itemslot.hidden = !kind;
-      E.itemslot.className = !kind ? '' : m.arm > 0 ? 'draw' : m.locked ? 'locked' : 'ready';
-      if (kind && m.arm === 0) {
-        E.itemslot.querySelector('.pic').innerHTML = icon(kind);
-        E.itemslot.querySelector('.cap').textContent = m.locked ? 'Locked - the round is nearly over' : ITEM_INFO[kind].name;
-        E.itemslot.title = `${ITEM_INFO[kind].name}: ${ITEM_INFO[kind].blurb}`;
-        if (landed || m.locked) {
-          E.itemslot.classList.remove('named');
-          void E.itemslot.offsetWidth; // restart the caption's fade
-          E.itemslot.classList.add('named');
-        }
-      } else if (kind) E.itemslot.classList.remove('named');
-      const use = E.touch.querySelector('.t-use');
-      use.innerHTML = icon(kind && m.arm === 0 ? kind : 'box');
-      use.classList.toggle('ready', !!kind && m.arm === 0 && !m.locked);
-    }
-    if (kind && m.arm > 0) E.itemslot.querySelector('.pic').innerHTML = icon(ITEM_KINDS[Math.floor(performance.now() / 70) % ITEM_KINDS.length]); // the draw spins
-
     // boosts that are running
+    const m = view.me;
     const buffs = m ? [m.spd > 0 && ['speed', m.spd], m.jmp > 0 && ['jump', m.jmp], m.shd > 0 && ['shield', m.shd], m.slw > 0 && ['storm', m.slw]].filter(Boolean) : [];
     const bsig = buffs.map(([k, t]) => `${k}${Math.ceil(t / TICK_RATE)}`).join();
     if (bsig !== h.buffs) {
@@ -390,17 +444,132 @@ export const play = {
         E.buffs.append(d);
       }
     }
-    if (view.phase === 'countdown' && view.countdownMs <= COUNTDOWN_MS) {
-      const n = Math.min(3, Math.max(1, Math.ceil((view.countdownMs || 0) / 1000)));
-      if (n !== h.count) {
-        h.count = n;
-        this.pop(String(n));
-      }
-    }
     // the minimap is only for when you cannot see everything anyway
-    E.minimap.hidden = view.phase === 'over' || (view.phase === 'countdown' && view.countdownMs > 1800);
-    const hint = view.spectating ? 'Watching - you play in the next round' : view.phase === 'countdown' && view.countdownMs <= COUNTDOWN_MS ? h.hint : '';
-    if (hint !== h.hintNow) E.hint.textContent = h.hintNow = hint;
+    const noMap = view.phase === 'over' || (view.phase === 'countdown' && view.countdownMs > 1800);
+    if (noMap !== h.noMap) E.minimap.hidden = h.noMap = noMap;
+  },
+
+  // --- the objective card -----------------------------------------------------------------
+  // Shown for the 3-2-1 and gone at GO: the mode's name, a line per goal with
+  // its icon, then whatever is special about this round - the twist, the leader
+  // starting as it - and, in someone's first matches, the controls. The count
+  // itself is the seal on the card's corner.
+  buildBrief(info, g, teach) {
+    const b = this.el.brief;
+    const me = this.mySlot();
+    const team = info.mode === 'team';
+    b.hidden = true;
+    b.textContent = '';
+    this.hud.briefKind = info.mode;
+    const head = el('div', 'b-hd');
+    const seal = (this.hud.briefSeal = el('i', 'b-n'));
+    head.append(seal, el('b', 'b-title', MODES.find((m) => m.id === info.mode)?.name || 'Tag'));
+    const side = team && me >= 0 ? (g.teamOf?.(me) ?? -1) : -1;
+    if (side >= 0) {
+      const tag = el('span', 'b-side', `You: ${TEAM_NAMES[side]}`);
+      tag.style.background = TEAM_COLORS[side];
+      head.append(tag);
+    }
+    b.append(head);
+    const goals = el('ul', 'b-goals');
+    const goal = (ic, html) => {
+      const li = el('li');
+      li.innerHTML = `<i class="b-tile">${icon(ic)}</i><span>${html}</span>`;
+      goals.append(li);
+    };
+    if (team) {
+      goal('flag', '<b>Stand in a flag ring</b> to score');
+      goal('bomb', '<b>Pass bombs</b> to enemies before the buzzer');
+    } else if (info.mode === 'time') goal('clock', '<b>Least time as it</b> wins');
+    else goal('it', "<b>Don't be it</b> at the buzzer");
+    b.append(goals);
+    const extra = (cls, ic, strong, rest) => {
+      const p = el('p', `b-extra b-${cls}`);
+      p.innerHTML = icon(ic);
+      const words = el('span');
+      words.append(el('b', '', strong), rest);
+      p.append(words);
+      b.append(p);
+    };
+    const twist = info.twist && info.twist !== 'none' ? g.twist : null;
+    if (twist?.name) extra('twist', 'twist', `Twist: ${twist.name}`, ` - ${twist.blurb.toLowerCase()}`);
+    if (!team && info.cup && info.cup.leader >= 0) {
+      if (info.cup.leader === me) extra('lead', 'crown', 'You lead', ', so you start as it');
+      else extra('lead', 'crown', this.nameOf(info.cup.leader), ' leads, so starts as it');
+    }
+    if (teach) {
+      const keys = el('div', 'b-keys');
+      keys.innerHTML = this.isTouch
+        ? `<span><i class="b-tb b-wide">${icon('left')}${icon('right')}</i>Run</span><span><i class="b-tb">${icon('up')}</i>Jump, twice</span><span><i class="b-tb">${icon('down')}</i>Drop</span><span><i class="b-tb">${icon('box')}</i>Item</span>`
+        : `<span><kbd>A</kbd><kbd>D</kbd>Run</span><span><kbd>W</kbd>Jump, twice</span><span><kbd>S</kbd>Drop</span><span><kbd>E</kbd>Item</span><small>Arrows and Space work too</small>`;
+      b.append(keys);
+    }
+  },
+
+  showBrief(n, view) {
+    const h = this.hud;
+    const b = this.el.brief;
+    if (!n) {
+      if (h.briefOn) {
+        h.briefOn = false;
+        b.classList.remove('in');
+        b.classList.add('out');
+        this.el.hud.classList.remove('briefing');
+        // and once it has faded it is taken away altogether
+        clearTimeout(h.briefTimer);
+        h.briefTimer = setTimeout(() => !h.briefOn && (b.hidden = true), 300);
+      }
+      return;
+    }
+    if (!h.briefOn) {
+      h.briefOn = true;
+      // Upper middle - unless that would hide your own player, either now (the
+      // whole arena is in view) or once the view has closed in on you: then lower
+      // middle, if that is any better. Worked out once, when the card appears.
+      const R = this.renderer;
+      const me = view.players.find((p) => p.local);
+      const spots = []; // [x, y, how much it matters] in CSS px
+      const cam = me && R.viewRect();
+      if (cam) {
+        spots.push([((me.x + PW / 2 - cam.x) / cam.w) * R.cssW, ((me.y + PH / 2 - cam.y) / cam.h) * R.cssH, 1]);
+        const A = R.arena;
+        const vw = R.cssW / R.kCss; // world units on screen during play
+        const vh = R.cssH / R.kCss;
+        const roomX = A.w - vw;
+        const roomY = A.h + (R.padB || 0) - vh;
+        const left = roomX <= 0 ? roomX / 2 : Math.min(Math.max(me.x + PW / 2 - vw / 2, 0), roomX);
+        const top = roomY <= 0 ? (A.h - vh) / 2 : Math.min(Math.max(me.y + PH / 2 - vh * 0.54, 0), roomY);
+        spots.push([(me.x + PW / 2 - left) * R.kCss, (me.y + PH / 2 - top) * R.kCss, 2]);
+      }
+      b.hidden = false;
+      let best = 'hi';
+      let least = Infinity;
+      let natural = 0;
+      for (const where of spots.length ? ['hi', 'lo'] : ['hi']) {
+        b.className = `${h.briefKind} ${where}`;
+        let cost = 0;
+        if (spots.length) {
+          const host = this.el.hud.getBoundingClientRect();
+          const r = b.getBoundingClientRect();
+          if (where === 'hi') natural = r.width;
+          else if (r.width < natural - 1) break; // no room for it down there (a phone on its side: the gap between the thumb controls)
+          // (the name and the YOU pointer stand well above a player's head)
+          for (const [x, y, w] of spots) if (x > r.left - host.left - 50 && x < r.right - host.left + 50 && y > r.top - host.top - 26 && y < r.bottom - host.top + 96) cost += w;
+        }
+        if (cost < least) {
+          least = cost;
+          best = where;
+        }
+        if (!cost) break;
+      }
+      b.className = `${h.briefKind} ${best} in`;
+      this.el.hud.classList.add('briefing'); // (on a small screen the card takes the place of the round's name)
+    }
+    const seal = h.briefSeal;
+    seal.textContent = String(n);
+    seal.classList.remove('pop');
+    void seal.offsetWidth; // restart the pop
+    seal.classList.add('pop');
   },
 
   pop(text) {
@@ -417,6 +586,150 @@ export const play = {
     b.className = '';
     void b.offsetWidth;
     b.className = red ? 'show red' : 'show';
+  },
+
+  // --- the item in your hands, and the draw that deals it -----------------------------------
+  // state: '' (empty hands) | 'draw' (a lucky box is being opened: the server
+  // arms the item a moment after you touch the box) | <kind> | <kind>-locked
+  itemChanged(state, kind, m, view) {
+    const h = this.hud;
+    const E = this.el;
+    const was = h.item;
+    h.item = state;
+    clearTimeout(h.itemTimer);
+    const slot = E.itemslot;
+    if (!kind) {
+      slot.hidden = true;
+      slot.className = '';
+      this.reelOff();
+      this.setUse('');
+      return;
+    }
+    if (state === 'draw') {
+      // the tile waits, empty, where the item will land
+      slot.hidden = false;
+      slot.className = 'draw';
+      E.itemPic.innerHTML = icon('box');
+      slot.removeAttribute('title');
+      this.setUse('');
+      // online the server only says "arming": by the time we hear of it a frame or two have gone
+      const ms = this.game === this.net ? ((ITEM_ARM_TICKS - 3) * 1000) / TICK_RATE : (m.arm * 1000) / TICK_RATE;
+      this.reelStart(kind, ms, view);
+      return;
+    }
+    const locked = !!m.locked;
+    const hold = (named) => {
+      const it = ITEM_INFO[kind];
+      slot.hidden = false;
+      slot.className = locked ? 'locked' : 'ready';
+      E.itemPic.innerHTML = icon(kind);
+      E.itemCap.textContent = locked ? 'Locked - the round is nearly over' : it.name;
+      slot.title = `${it.name}: ${it.blurb}`;
+      this.setUse(kind, !locked);
+      if (named) {
+        void slot.offsetWidth; // (so the caption's fade starts afresh even if it was showing a moment ago)
+        slot.classList.add('named');
+      }
+    };
+    if (was === 'draw' && h.reelOn && !locked) {
+      // the reel stops on it and says its name; a moment later it drops into the tile
+      this.reelLand(kind);
+      h.itemTimer = setTimeout(() => {
+        this.reelOff();
+        hold(false);
+        slot.classList.add('got');
+      }, calm.matches ? 900 : ITEM_LAND_MS);
+    } else {
+      this.reelOff();
+      hold(locked || was === '' || was === 'draw');
+    }
+  },
+
+  // the item button on a touch screen shows what you hold
+  setUse(kind, ready) {
+    const h = this.hud;
+    const sig = `${kind}/${ready ? 1 : 0}`;
+    if (sig === h.use) return;
+    h.use = sig;
+    this.el.use.innerHTML = icon(kind || 'box');
+    this.el.use.classList.toggle('ready', !!kind && !!ready);
+  },
+
+  // The draw: a window the item icons roll through, slowing down, for exactly
+  // as long as the item takes to arm. Built once per draw; the rolling itself is
+  // one CSS animation.
+  reelStart(kind, ms, view) {
+    const h = this.hud;
+    const E = this.el;
+    const R = E.itemdraw;
+    const still = calm.matches;
+    ms = Math.max(120, ms);
+    const seq = [kind];
+    if (!still) {
+      const n = Math.max(5, Math.min(13, Math.round(ms / 68)));
+      while (seq.length < n) {
+        let k = pickRandom(ITEM_KINDS);
+        if (k === seq[0]) k = ITEM_KINDS[(ITEM_KINDS.indexOf(k) + 1 + Math.floor(Math.random() * (ITEM_KINDS.length - 1))) % ITEM_KINDS.length];
+        seq.unshift(k);
+      }
+    }
+    E.reelStrip.innerHTML = seq.map((k) => `<i>${icon(k)}</i>`).join('');
+    E.reelStrip.style.setProperty('--end', `${(-(seq.length - 1) / seq.length) * 100}%`);
+    E.reelStrip.style.animation = still ? 'none' : `item-roll ${Math.round(ms)}ms cubic-bezier(0.1, 0.55, 0.25, 1) both`;
+    E.reelName.textContent = still ? ITEM_INFO[kind].name : 'Lucky box';
+    // where it goes
+    const st = R.style;
+    st.left = st.top = st.bottom = '';
+    st.removeProperty('--dx');
+    if (this.isTouch) {
+      // right above the item button, which it drops into
+      const host = E.hud.getBoundingClientRect();
+      const u = E.use.getBoundingClientRect();
+      const size = 92;
+      st.left = `${Math.min(host.width - size - 4, Math.max(4, u.left - host.left + u.width / 2 - size / 2))}px`;
+      st.top = `${u.top - host.top - size - 30}px`;
+    } else {
+      // low in the middle, just above the kit - unless that is where you are standing: then a step to the side
+      const cam = this.renderer.viewRect();
+      const me = cam && view.players.find((p) => p.local);
+      if (me) {
+        const W = this.renderer.cssW;
+        const H = this.renderer.cssH;
+        const sx = ((me.x + PW / 2 - cam.x) / cam.w) * W;
+        const sy = ((me.y + PH / 2 - cam.y) / cam.h) * H;
+        if (sy > H - 300 && Math.abs(sx - W / 2) < 150) st.setProperty('--dx', `${sx < W / 2 ? 190 : -190}px`);
+      }
+    }
+    R.className = still ? 'roll still' : 'roll';
+    R.hidden = false;
+    h.reelOn = true;
+  },
+
+  reelLand(kind) {
+    const E = this.el;
+    const R = E.itemdraw;
+    E.reelStrip.style.animation = '';
+    E.reelName.textContent = ITEM_INFO[kind].name;
+    // where it flies to: the item tile (on a touch screen, the item button)
+    const from = R.getBoundingClientRect();
+    const to = (this.isTouch ? E.use : E.itemslot).getBoundingClientRect();
+    const st = R.style;
+    st.setProperty('--fx', `${Math.round(to.left + to.width / 2 - (from.left + from.width / 2))}px`);
+    st.setProperty('--fy', `${Math.round(to.top + to.height / 2 - (from.top + from.height / 2))}px`);
+    st.setProperty('--fs', (Math.max(24, to.width) / Math.max(1, from.width)).toFixed(3));
+    R.className = calm.matches ? 'land still' : 'land';
+    this.sfx.play('click', 0.7);
+  },
+
+  reelOff() {
+    const h = this.hud;
+    if (!h.reelOn) return;
+    h.reelOn = false;
+    const R = this.el.itemdraw;
+    R.hidden = true;
+    R.className = '';
+    this.el.reelStrip.style.animation = '';
+    this.el.reelStrip.textContent = '';
   },
 
   // --- minimap ---------------------------------------------------------------------------
@@ -482,22 +795,33 @@ export const play = {
         g.fillRect(f.x * k, f.y * k - 9, 6, 4);
       }
     }
-    // never hide your own player: the map turns faint while you are underneath it
+    // never hide your own player: the map - and the list of players under it -
+    // turns faint while you are underneath it
     const me = cam && view.players.find((p) => p.local);
     let under = false;
+    let underList = false;
     if (me) {
       const now = performance.now();
       if (!m.rect || now - m.rectAt > 1000) {
         const a = this.el.stage.getBoundingClientRect();
-        const b = c.getBoundingClientRect();
-        m.rect = { x0: b.left - a.left - 36, y0: b.top - a.top - 56, x1: b.right - a.left + 36, y1: b.bottom - a.top + 36, w: a.width, h: a.height };
+        const box = (e) => {
+          const b = e.getBoundingClientRect();
+          return b.width ? { x0: b.left - a.left - 36, y0: b.top - a.top - 56, x1: b.right - a.left + 36, y1: b.bottom - a.top + 36 } : null;
+        };
+        m.rect = box(c);
+        m.list = box(this.el.pills);
+        m.w = a.width;
+        m.h = a.height;
         m.rectAt = now;
       }
-      const sx = ((me.x + PW / 2 - cam.x) / cam.w) * m.rect.w;
-      const sy = ((me.y + PH / 2 - cam.y) / cam.h) * m.rect.h;
-      under = sx > m.rect.x0 && sx < m.rect.x1 && sy > m.rect.y0 && sy < m.rect.y1;
+      const sx = ((me.x + PW / 2 - cam.x) / cam.w) * m.w;
+      const sy = ((me.y + PH / 2 - cam.y) / cam.h) * m.h;
+      const inside = (r) => !!r && sx > r.x0 && sx < r.x1 && sy > r.y0 && sy < r.y1;
+      under = inside(m.rect);
+      underList = inside(m.list);
     }
     if (under !== m.under) c.classList.toggle('aside', (m.under = under));
+    if (underList !== m.underList) this.el.pills.classList.toggle('aside', (m.underList = underList));
     for (const p of view.players) {
       if (p.dead > 0) continue;
       const x = (p.x + PW / 2) * k;
@@ -544,6 +868,7 @@ export const play = {
     else if (type === 'go') {
       sfx.play('go');
       this.hud.count = 0;
+      this.showBrief(0); // the objective card makes way
       this.pop('GO!');
       setTimeout(() => this.el.count.textContent === 'GO!' && (this.el.count.textContent = ''), 900);
       if (team) {

@@ -4,10 +4,11 @@
 
 - **Three ways to play.** *Hot Potato* (whoever is the oni when the clock hits zero loses), *Least Time* (every second as the oni counts against you), and *Team Bomb* (two teams, flags to hold, and bombs that go off at the buzzer). Any of them as a quick match or a tournament of 3, 5 or 7 rounds.
 - **Lucky boxes.** Touch one and you get a random item to keep: set it off when it hurts most. A Blast that hurls everyone on screen away, a Swap that trades places with someone, a Storm that puts everyone else in slow motion, Goo to slip on, Frost, Ward, Swift and Spring. Nothing works in the last 10 seconds, so nobody can sit on one for the buzzer.
-- **Close-up camera** that follows you, with a minimap for everyone you cannot see. Each round opens on the whole arena, then zooms in on you.
+- **Close-up camera** that follows you, with a minimap (top left) for everyone you cannot see. Each round opens on the whole arena, then zooms in on you.
+- **A display that stays out of the way**: the clock in the middle of the top edge, in a team game each side's score and names on its own side of the clock, and what you are holding along the bottom. Before GO a card in the middle says what the game is about in one line (and, in your first matches, the keys); it leaves at GO.
 - **Movement with weight**: you build up speed, skid when you turn round, and jump in a floaty arc. Five actions &ndash; left, right, jump, down, use item.
 - **Six big arenas with room to run.** Each is built around long stretches of plain open ground (at least four of 14 tiles or more, one of them 24 or more), with the slopes, trampolines, launchers, updrafts and portals at the ends and edges instead of in the way. A portal flies you over the map in an arc, and some let you drop out half way.
-- **A draw before every round**: reels spin for the arena, the art style and who starts as the oni.
+- **A draw before every round**: three picture cards spin for the arena (shown in that round's style), the art style, and who starts as the oni (their character, in their colour).
 - **Seven art styles**: Ink & Sakura (the house style), Orbit, Xeno, Neon District, Nightmare, Sketchbook and Arcade.
 - **Practice against bots** (one to nine of them), including team battles.
 - Menus drawn like a game: brush lettering on hanging scrolls, picture cards for arenas and styles, and a how-to-play page where every picture is the real game playing itself. Everything works with the keyboard alone; phones get on-screen controls and a built-in number pad for the room code.
@@ -79,7 +80,7 @@ Keys that would throw you out of a game (Esc in a room, Q in the pause menu, Esc
 
 ### Lucky boxes
 
-Boxes appear around the arena every few seconds. Touch one with empty hands and, after a short draw, you hold one of:
+Boxes appear around the arena every few seconds. Touch one with empty hands and a reel spins low in the middle of the screen &ndash; big enough to see, clear of the action &ndash; then lands on your item and drops into your item tile. You hold one of:
 
 | | |
 |---|---|
@@ -98,7 +99,7 @@ You hold one item at a time and choose when to use it. Items stop working (and b
 
 - Two teams, Sun (warm colours) and Moon (cool colours), up to 5 v 5. The sides belong to the room: the lobby shows who is on which, anyone can cross over (X, or the arrow next to their name), the host can move anybody and shuffle (Z), and nothing is redrawn between rounds or matches. Once a match or a tournament is on, the sides are locked.
 - If one side is short, **bots fill in** for it: they play on the server like anyone else, and are marked BOT on the scoreboard.
-- You can tell friend from foe at a glance: every name sits on a plate in its side's colour (white edge: your side; dark edge: theirs; your own is white), everyone stands in a ring of their side's colour, and the list of players is one column a side.
+- You can tell friend from foe at a glance: every name sits on a plate in its side's colour (white edge: your side; dark edge: theirs; your own is white), everyone stands in a ring of their side's colour, and each side's names sit beside its own score at the top (Sun on the left, Moon on the right, a small bomb next to whoever carries one).
 - **Bombs.** One for every two players (1 to 5), handed out at GO starting with a random player of each team. A carrier gets rid of theirs by touching an **enemy** whose hands are free; team mates are safe and nobody carries two. The bombs burn for the whole round and all go off when the clock stops: each one scores 10 for the team that is *not* holding it.
 - **Flags.** A flag is a spot on the map with a ring around it (there is one near each side's start). Stand in the ring and it fills with your colour: 2.5 s alone to take a free flag, twice that to turn an enemy one, faster with a team mate. With as many enemies as friends in the ring nothing moves. A flag in your colour pays your team 1 point every 5 seconds, whether you stay or not.
 - So: the flags decide the round while it runs, and the bombs can turn it over in the last second.
@@ -148,7 +149,7 @@ test/                `npm test` - rules/physics checks and scripted online match
 
 - Everything that never moves &ndash; backdrop, platforms, slopes &ndash; is painted once into a picture of the whole arena. Each frame the part you can see is copied onto the screen, pixel for pixel, which is about the cheapest thing a browser can do.
 - Only the moving things are drawn on top of that each frame: players, items, sparks. Anything fancy (glows, portals, name tags) is pre-rendered into small sprites.
-- The heads-up display is ordinary HTML, updated ten times a second.
+- The heads-up display is ordinary HTML, updated ten times a second; only the countdown and the item reel are looked at every frame, and written when they change.
 - Art styles are loaded only when a match needs them.
 - If frames still take too long, the game drops ambient animation first and then the resolution of the moving layer.
 

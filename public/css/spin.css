@@ -1,5 +1,5 @@
-/* Onigokko - the draw before a round (spinner.js): a lacquered rack of paper
-   reels, paper doors that slide open, red seals for the results.
+/* Onigokko - the draw before a round (spinner.js): a lacquered rack of three
+   picture reels, paper doors that slide open, red seals for the results.
    Only transforms and opacity move, each with its delay set from the script. */
 
 .draw {
@@ -25,7 +25,7 @@
 @keyframes door-l { to { transform: translateX(-101%); } }
 @keyframes door-r { to { transform: translateX(101%); } }
 
-.draw .board {
+.draw .dr-board {
   position: relative; display: flex; flex-direction: column; align-items: center; gap: clamp(7px, 1.7vmin, 15px); max-width: 98vw;
   animation: board-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.25) both, board-out 0.32s ease-in var(--out, 99s) forwards;
 }
@@ -56,13 +56,12 @@
 .draw .rack::before { left: -4px; }
 .draw .rack::after { right: -4px; }
 .draw .reel { position: relative; display: flex; flex-direction: column; gap: 5px; width: var(--pic); }
-.draw .reel.who { width: calc(var(--pic) * 1.22); }
 .draw .reel h4 { margin: 0; text-align: center; font: 800 clamp(9.5px, 1.7vmin, 12px)/1 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; color: #e9d6a8; white-space: nowrap; }
 .draw .win { position: relative; height: var(--cell); overflow: hidden; background: var(--tex, none), var(--paper-lit); box-shadow: 0 0 0 2px #140c08, 0 0 0 4px var(--gold); }
 /* the reel is a drum: darker towards the top and the bottom edge */
 .draw .reel.spun .win::after { content: ''; position: absolute; inset: 0; background: linear-gradient(rgba(28, 20, 12, 0.6), rgba(28, 20, 12, 0) 26%, rgba(28, 20, 12, 0) 74%, rgba(28, 20, 12, 0.6)); animation: draw-gone 0.3s ease-out var(--at, 99s) forwards; }
 .draw .strip { will-change: transform; }
-@keyframes reel {
+@keyframes draw-reel {
   0% { transform: translateY(0); animation-timing-function: cubic-bezier(0.14, 0.56, 0.22, 1); }
   88% { transform: translateY(var(--over)); animation-timing-function: ease-in-out; }
   100% { transform: translateY(var(--end)); }
@@ -73,59 +72,59 @@
 .draw .reel.pic b { flex: 1; display: grid; place-items: center; padding: 1px 4px 0; font: 800 clamp(10.5px, 1.9vmin, 13.5px)/1 var(--serif); color: var(--paper); white-space: nowrap; overflow: hidden; }
 .draw .reel.pic .word { background: none; justify-content: center; }
 .draw .reel.pic .word b { flex: none; display: block; text-align: center; white-space: normal; font: 400 calc(var(--cell) * 0.24)/1.05 var(--brush); color: var(--ink); padding: 0 8px; }
-.draw .reel.who .cell { flex-direction: row; align-items: center; justify-content: center; gap: calc(var(--cell) * 0.09); padding: 0 calc(var(--cell) * 0.12); }
-.draw .reel.who .chip { flex: none; width: calc(var(--cell) * 0.11); height: calc(var(--cell) * 0.46); }
-.draw .reel.who b { font: 400 calc(var(--cell) * 0.31)/1.15 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0.1em 0.16em 0 0; }
-.draw .reel.who .long b { font-size: calc(var(--cell) * 0.225); }
-.draw .reel.sided .cell { box-shadow: inset 0 calc(var(--cell) * -0.07) 0 var(--side); }
+/* who is it: the player's own character, in this round's style and their colour,
+   in front of the style's backdrop (painted by art.js; the feet are in the
+   middle, 86% of the way down, exactly where the backdrop's floor is) */
+.draw .reel.cast .pose { position: relative; display: block; flex: none; height: calc(var(--cell) - 24px); overflow: hidden; background: var(--back, linear-gradient(#3b3129, #241c17)) center / cover no-repeat; }
+.draw .reel.cast .pose img { position: absolute; left: 50%; top: 0; width: auto; height: 100%; aspect-ratio: 1; transform: translateX(-50%); object-fit: contain; }
+.draw .reel.cast .pose .dot { position: absolute; left: 50%; top: 50%; width: calc(var(--cell) * 0.2); height: calc(var(--cell) * 0.2); margin: calc(var(--cell) * -0.1) 0 0 calc(var(--cell) * -0.1); transform: rotate(45deg); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); }
+/* team battle: the name sits on its side's colour */
+.draw .reel.sided .cell b { color: #fff; background: var(--side); }
 
 /* the seal that lands on a reel once it has stopped */
 .draw .stamp {
   position: absolute; right: -9px; top: 9px; width: 30px; height: 30px; display: grid; place-items: center; transform: rotate(9deg);
   color: #fff1dc; background: var(--red-deep);
   clip-path: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%);
-  animation: stamp 0.3s cubic-bezier(0.2, 1.5, 0.4, 1) var(--at, 0s) both;
+  animation: draw-stamp 0.3s cubic-bezier(0.2, 1.5, 0.4, 1) var(--at, 0s) both;
 }
 .draw .stamp.ok { background: var(--tick) center / 18px no-repeat, var(--red-deep); }
-.draw .stamp.big { right: calc(var(--cell) * -0.13); top: calc(var(--cell) * -0.02); width: calc(var(--cell) * 0.46); height: calc(var(--cell) * 0.46); font: 400 calc(var(--cell) * 0.3)/1 'Yuji Syuku', var(--serif); background: var(--red); }
-.draw .stamp.dark { background: var(--ink); font-size: calc(var(--cell) * 0.26); }
-.draw .stamp.dark .ic { color: #ffb52e; }
+.draw .stamp.big { right: calc(var(--cell) * -0.13); top: 11px; width: calc(var(--cell) * 0.46); height: calc(var(--cell) * 0.46); font: 400 calc(var(--cell) * 0.3)/1 'Yuji Syuku', var(--serif); background: var(--red); }
+.draw .stamp.fuse { background: var(--ink); font-size: calc(var(--cell) * 0.26); }
+.draw .stamp.fuse .ic { color: #ffb52e; }
 .draw .stamp.still, .draw.still .stamp { animation: none; }
-@keyframes stamp { from { opacity: 0; transform: scale(2.6) rotate(-16deg); } }
+@keyframes draw-stamp { from { opacity: 0; transform: scale(2.6) rotate(-16deg); } }
 
 /* team battle: the two sides under the rack */
-.draw .sides { display: flex; align-items: stretch; gap: 10px; max-width: 96vw; }
-.draw .sides > i { align-self: center; font: 400 clamp(17px, 3.4vmin, 26px)/1 var(--brush); color: #fff3e0; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6); }
-.draw .side { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 12px; padding: 5px 16px 4px 12px; color: #fff; background: var(--side); box-shadow: 0 0 0 2px #140c08; clip-path: polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%); }
-.draw .side b { font: 800 11px/1 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; }
-.draw .side span { font: 400 clamp(15px, 3vmin, 21px)/1.15 var(--brush); white-space: nowrap; }
-.draw .side .me { text-decoration: underline; text-underline-offset: 3px; }
-.draw .side .carries { display: inline-block; vertical-align: -2px; margin-left: 4px; font-size: 0.8em; color: #140c08; animation: verdict 0.3s cubic-bezier(0.2, 1.4, 0.4, 1) var(--at, 0s) both; }
-.draw.still .side .carries { animation: none; }
+.draw .dr-sides { display: flex; align-items: stretch; gap: 10px; max-width: 96vw; }
+.draw .dr-sides > i { align-self: center; font: 400 clamp(17px, 3.4vmin, 26px)/1 var(--brush); color: #fff3e0; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6); }
+.draw .dr-side { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 12px; padding: 5px 16px 4px 12px; color: #fff; background: var(--side); box-shadow: 0 0 0 2px #140c08; clip-path: polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%); }
+.draw .dr-side b { font: 800 11px/1 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; }
+.draw .dr-side span { font: 400 clamp(15px, 3vmin, 21px)/1.15 var(--brush); white-space: nowrap; }
+.draw .dr-side .me { text-decoration: underline; text-underline-offset: 3px; }
+.draw .dr-side .carries { display: inline-block; vertical-align: -2px; margin-left: 4px; font-size: 0.8em; color: #140c08; animation: draw-verdict 0.3s cubic-bezier(0.2, 1.4, 0.4, 1) var(--at, 0s) both; }
+.draw.still .dr-side .carries { animation: none; }
 
 /* and the news, in brush letters */
-.draw .verdict {
+.draw .dr-verdict {
   margin: 0; padding: 2px 30px 4px; font: 400 clamp(24px, 5.6vmin, 46px)/1.1 var(--brush); color: #fff3e0; white-space: nowrap; transform: rotate(-2deg);
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.65), 0 0 16px rgba(0, 0, 0, 0.55);
-  animation: verdict 0.3s cubic-bezier(0.2, 1.4, 0.4, 1) var(--at, 0s) both;
+  animation: draw-verdict 0.3s cubic-bezier(0.2, 1.4, 0.4, 1) var(--at, 0s) both;
 }
-.draw.mine .verdict { background: var(--stroke-red) center / 100% 100% no-repeat; text-shadow: none; }
-.draw .verdict.still, .draw.still .verdict { animation: none; }
-@keyframes verdict { from { opacity: 0; transform: scale(1.5) rotate(-2deg); } }
+.draw.mine .dr-verdict { background: var(--stroke-red) center / 100% 100% no-repeat; text-shadow: none; }
+.draw .dr-verdict.still, .draw.still .dr-verdict { animation: none; }
+@keyframes draw-verdict { from { opacity: 0; transform: scale(1.5) rotate(-2deg); } }
 
-/* a phone held upright: arena and style side by side, the names underneath */
+/* a phone held upright: arena and style side by side, who is it underneath */
 @media (orientation: portrait) and (max-width: 640px) {
   .draw { --cell: clamp(84px, 27vw, 150px); }
   .draw .rack { flex-wrap: wrap; justify-content: center; max-width: 96vw; }
-  .draw .reel.who { width: calc(var(--pic) * 2 + clamp(8px, 2vmin, 20px)); }
-  .draw .reel.who .win { height: calc(var(--cell) * 0.78); }
-  .draw .reel.who .cell { height: calc(var(--cell) * 0.78); }
   .draw .head { flex-wrap: wrap; justify-content: center; white-space: normal; text-align: center; max-width: 92vw; }
-  .draw .sides { flex-direction: column; gap: 5px; }
-  .draw .sides > i { display: none; }
+  .draw .dr-sides { flex-direction: column; gap: 5px; }
+  .draw .dr-sides > i { display: none; }
 }
 @media (max-height: 420px) {
-  .draw .board { gap: 5px; }
+  .draw .dr-board { gap: 5px; }
   .draw .head { padding: 3px 16px 2px; }
-  .draw .verdict { font-size: 24px; }
+  .draw .dr-verdict { font-size: 24px; }
 }

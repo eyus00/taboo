@@ -1,6 +1,31 @@
 // Pictures for the menus, all painted by the game's own renderer: the ink
-// landscape behind the menus, a card for every arena and every art style, and
-// the paper the scrolls are made of.
+// landscape behind the menus, a card for every arena and every art style,
+// portraits of the players, and the paper the scrolls are made of.
+//
+//   scenePreview(arenaId, themeId, w?, h?)  -> data URL: a whole arena in a style
+//   styleStill(themeId, w?, h?)             -> data URL: a corner of a match in a style
+//   playerPortrait(themeId, colourIndex, opts?) -> data URL (PNG), or null
+//       One character standing still, in that art style and colour, exactly as
+//       the game draws it. Cached, so asking again costs nothing.
+//         themeId      'ink' | 'space' | ... The style must be loaded already
+//                      (it always is for the round on screen; otherwise
+//                      `await loadTheme(themeId)` first) - if not, null.
+//         colourIndex  0-9: which of the style's ten player colours. For a
+//                      player in a match that is `cols ? cols[slot] : slot`
+//                      (play.portraitOf(slot) works it out for you).
+//         opts.size    the picture is size x size CSS px; default 96. It is
+//                      painted at the screen's devicePixelRatio (2 at most).
+//         opts.bg      false (default): transparent around the character;
+//                      true: the style's own backdrop and floor behind.
+//         opts.it      true: drawn as whoever is it (the style's angry look).
+//         opts.face    1 (default, looks right) or -1.
+//         opts.peek    true: only if it has been painted before (else null);
+//                      never paints, so it can never take time.
+//       The feet stand 86% of the way down, in the middle; the first portrait
+//       in a style takes a few tens of ms (one small scene is painted), the
+//       rest a couple each.
+//   portraitBackdrop(themeId, size?, peek?) -> data URL: the 16:9 backdrop a portrait stands in front of on a card
+//   sceneThumb / arenaThumb / styleThumb    -> pictures already painted, for the draw before a round
 
 import { arenaById } from '/shared/arenas.js';
 import { Renderer } from './renderer.js';
@@ -35,7 +60,9 @@ export function scenePreview(arenaId, themeId, w = 480, h = 270) {
   if (!cache.has(key)) {
     const arena = arenaId === 'random' ? EMPTY : arenaById(arenaId);
     const players = arena.spawns.map(([x, y], slot) => still(slot, x, y, { face: x < arena.w / 2 ? 1 : -1 }));
-    cache.set(key, shoot(arena, themeId, w, h, { phase: 'playing', it: 0, names: false, boxes: [], players }));
+    const url = shoot(arena, themeId, w, h, { phase: 'playing', it: 0, names: false, boxes: [], players });
+    if (!THEME_MAP[themeId]) return url; // not loaded: this came out in the house style, so it is not kept under that name
+    cache.set(key, url);
   }
   return cache.get(key);
 }
@@ -74,30 +101,123 @@ export function styleStill(themeId, w = 240, h = 135) {
       still(2, 296, 157, { vx: 250 }),
       still(3, 398, 100, { face: -1 }),
     ];
-    cache.set(key, shoot(SHOWCASE, themeId, w, h, { phase: 'playing', it: 0, names: false, boxes: [0, 1], players }));
+    const url = shoot(SHOWCASE, themeId, w, h, { phase: 'playing', it: 0, names: false, boxes: [0, 1], players });
+    if (!THEME_MAP[themeId]) return url;
+    cache.set(key, url);
   }
   return cache.get(key);
 }
 
-// Small pictures for the draw before a round. These hand back what the menus
-// have already painted; with `make` they paint one that is missing - an arena
-// in the house style, or a style that has been loaded (never a guess).
-export function arenaThumb(arenaId, prefer = [], make = false) {
+// Small pictures for the draw before a round. None of these paint anything:
+// they hand back what is already there (the menus paint some, the draw paints
+// the rest a moment later with scenePreview / styleStill, between frames).
+
+// This arena in this style - the picture the arena card has to end up with -
+// or null if it has not been painted yet.
+export function sceneThumb(arenaId, themeId) {
+  return cache.get(`${arenaId}/${themeId}/240`) || null;
+}
+
+// Any picture of this arena, for cells that only roll past: in one of the
+// preferred styles if there is one. Never for the cell a reel stops on - that
+// one must be in the round's own style (sceneThumb), not whatever the menus
+// happened to paint last.
+export function arenaThumb(arenaId, prefer = []) {
   for (const themeId of prefer) {
     const hit = cache.get(`${arenaId}/${themeId}/240`);
     if (hit) return hit;
   }
   for (const [key, url] of cache) if (key.startsWith(`${arenaId}/`) && key.endsWith('/240')) return url;
-  return make ? scenePreview(arenaId, 'ink', 240, 135) : null;
+  return null;
 }
 
-export function styleThumb(themeId, make = false) {
-  return cache.get(`still/${themeId}/240`) || (make && THEME_MAP[themeId] ? styleStill(themeId) : null);
+export function styleThumb(themeId) {
+  return cache.get(`still/${themeId}/240`) || null;
+}
+
+// Can this style be painted right now? (Painting one that has not been loaded
+// would quietly come out in the house style.)
+export const styleReady = (themeId) => !!THEME_MAP[themeId];
+
+// --- one character, standing ---------------------------------------------------------
+// A tiny scene, 16:9 and 64 world units high (a player is 32 x 40): a floor
+// right across, and one player in the middle of it. Painted by a renderer that
+// keeps scenery and players on separate layers, so the backdrop is baked once
+// per style and every colour after that is just one small character.
+const POSE_H = 64;
+const POSE_W = (POSE_H * 16) / 9;
+const POSE_FEET = 55;
+const POSE = {
+  id: 'pose',
+  w: POSE_W,
+  h: POSE_H,
+  platforms: [{ x: -60, y: POSE_FEET, w: POSE_W + 120, h: 80, oneway: false, ground: true }],
+  ramps: [],
+  tramps: [],
+  lifts: [],
+  spikes: [],
+  bases: [],
+  portals: [],
+  pickups: [],
+  spawns: [],
+  respawns: [],
+};
+const posers = new Map();
+
+function poser(size, themeId) {
+  let p = posers.get(size);
+  if (!p) {
+    p = new Renderer(null, { size: [Math.round((size * 16) / 9), size], dpr: dpr(), zoom: size / POSE_H, focus: { x: POSE_W / 2, y: POSE_H / 2 }, plain: true });
+    posers.set(size, p);
+  }
+  if (p.posed !== themeId) {
+    p.setScene(POSE, themeId);
+    p.level = 2; // no drifting petals, no dust behind the feet: only the character
+    p.posed = themeId;
+  }
+  return p;
+}
+
+export function playerPortrait(themeId, colourIndex = 0, opts = {}) {
+  if (!THEME_MAP[themeId]) return null;
+  const size = Math.max(16, Math.round(opts.size || 96));
+  const col = ((Math.round(colourIndex) % 10) + 10) % 10;
+  const face = opts.face === -1 ? -1 : 1;
+  const key = `portrait/${themeId}/${col}/${size}/${opts.bg ? 1 : 0}${opts.it ? 1 : 0}${face}`;
+  if (opts.peek) return cache.get(key) || null;
+  if (!cache.has(key)) {
+    const p = poser(size, themeId);
+    p.parts.length = 0;
+    const view = { phase: 'countdown', it: opts.it ? 0 : -1, names: false, boxes: [], players: [{ ...still(0, POSE_W / 2 - 16, POSE_FEET - 40, { face }), col }] };
+    p.draw(view, 1000);
+    p.draw(view, 1016);
+    // the middle square of the picture
+    const c = document.createElement('canvas');
+    c.width = c.height = p.fg.height;
+    const g = c.getContext('2d');
+    const x = -Math.round((p.fg.width - c.width) / 2);
+    if (opts.bg) g.drawImage(p.bg, 0, 0, p.bg.width, p.bg.height, x, 0, p.fg.width, p.fg.height);
+    g.drawImage(p.fg, x, 0);
+    cache.set(key, opts.bg ? c.toDataURL('image/jpeg', 0.9) : c.toDataURL('image/png'));
+  }
+  return cache.get(key);
+}
+
+// What a portrait of this size stands in front of on a 16:9 card: the style's
+// backdrop with a floor under the feet (which are in the middle, 86% down).
+export function portraitBackdrop(themeId, size = 96, peek = false) {
+  if (!THEME_MAP[themeId]) return null;
+  size = Math.max(16, Math.round(size));
+  const key = `pose/${themeId}/${size}`;
+  if (peek) return cache.get(key) || null;
+  if (!cache.has(key)) cache.set(key, poser(size, themeId).bg.toDataURL('image/jpeg', 0.88));
+  return cache.get(key);
 }
 
 // Fonts arrived after a picture was painted: start over.
 export function clearPictures() {
   cache.clear();
+  for (const p of posers.values()) p.posed = null;
 }
 
 // The ink landscape behind the menus, painted to fit the window.
