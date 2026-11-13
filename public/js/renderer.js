@@ -120,7 +120,7 @@ export class Renderer {
     const bwCss = follow ? A.w * kCss : cssW;
     const bhCss = follow ? A.h * kCss + pad : cssH;
     const s = Math.min(dpr, Math.sqrt(MAX_BG_PIXELS / (bwCss * bhCss)), MAX_BG_SIDE / bwCss, MAX_BG_SIDE / bhCss);
-    const key = [cssW, cssH, s.toFixed(3), follow, this.q, this.theme.id, A.id, A.kind || ''].join();
+    const key = [cssW, cssH, s.toFixed(3), follow, this.q, this.theme.id, A.id].join();
     if (!force && key === this.key) return;
     this.key = key;
     this.cssW = cssW;
@@ -675,6 +675,88 @@ export class Renderer {
     return hit;
   }
 
+  // A name on a small slanted plate in a team's colour (team battles). The edge
+  // says whose side it is from where you stand: white for your own side, dark
+  // for the other. Your own plate is the other way round - white, with your
+  // name in your side's colour. kind: 'ally' | 'foe' | 'you' | 'plain' (watching).
+  plate(text, color, kind) {
+    const key = `plate|${text}|${color}|${kind}`;
+    let hit = this.labels.get(key);
+    if (hit) return hit;
+    const lab = this.theme.label;
+    const px = Math.round((this.theme.pixel ? 8 : LABEL_PX) * this.s * this.q);
+    const f = lab.font.replace(/\d+(\.\d+)?px/, `${px}px`);
+    const m = this.sx;
+    m.font = f;
+    const edge = Math.max(2, Math.round(2 * this.s * this.q));
+    const slant = Math.round(px * 0.4);
+    const w = Math.ceil(m.measureText(text).width) + Math.round(px * 1.3) + slant + edge * 2;
+    const h = Math.ceil(px * 1.45) + edge * 2;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d');
+    const shape = (inset) => {
+      g.beginPath();
+      g.moveTo(slant + inset, inset);
+      g.lineTo(w - inset * 0.6, inset);
+      g.lineTo(w - slant - inset, h - inset);
+      g.lineTo(inset * 0.6, h - inset);
+      g.closePath();
+    };
+    g.fillStyle = kind === 'ally' ? '#ffffff' : kind === 'you' ? color : '#16110d';
+    shape(0);
+    g.fill();
+    g.fillStyle = kind === 'you' ? '#ffffff' : color;
+    shape(edge);
+    g.fill();
+    g.font = f;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = kind === 'you' ? color : '#ffffff';
+    g.fillText(text, w / 2, h / 2 + px * 0.06);
+    hit = { c, w, h };
+    this.labels.set(key, hit);
+    return hit;
+  }
+
+  // Who is who, on the ground. In a team battle everyone stands in a ring of
+  // their side's colour (yours has a second, white one). Whoever is it - or
+  // carries a bomb - sends out red ripples.
+  drawRings(g, view, pvs, t) {
+    const live = view.phase === 'playing';
+    for (const pv of pvs) {
+      if (pv.orb) continue;
+      const x = pv.cx;
+      const y = pv.feet - 1;
+      if (view.team && pv.team >= 0) {
+        g.globalAlpha = 0.92;
+        g.strokeStyle = TEAM_COLORS[pv.team];
+        g.lineWidth = pv.local ? 4 : 3;
+        g.beginPath();
+        g.ellipse(x, y, 21, 6, 0, 0, 6.283);
+        g.stroke();
+        if (pv.local) {
+          g.strokeStyle = '#ffffff';
+          g.lineWidth = 1.6;
+          g.beginPath();
+          g.ellipse(x, y, 26, 8.5, 0, 0, 6.283);
+          g.stroke();
+        }
+      }
+      if (pv.isIt && live) {
+        const k = (t * 1.5 + pv.id * 0.37) % 1;
+        g.globalAlpha = 0.9 * (1 - k);
+        g.strokeStyle = '#ff4d3d';
+        g.lineWidth = 3;
+        g.beginPath();
+        g.ellipse(x, y, 22 + k * 22, 6 + k * 7, 0, 0, 6.283);
+        g.stroke();
+      }
+    }
+    g.globalAlpha = 1;
+  }
+
   // --- one frame ---------------------------------------------------------------------
   draw(view, nowMs) {
     const g = this.fgx;
@@ -944,6 +1026,7 @@ export class Renderer {
     }
 
     this.drawParticles(g, dt, true);
+    this.drawRings(g, view, pvs, t);
     for (const pv of pvs) {
       if (pv.orb) this.drawOrb(g, pv, t);
       else this.drawPlayer(g, pv, t);
@@ -1287,14 +1370,45 @@ export class Renderer {
     const px = this.s * this.q; // canvas pixels per CSS pixel
     // "this one is you": while the round is introduced and for its first seconds
     const pointYou = view.phase === 'countdown' || (view.goAge != null && view.goAge < 3);
+    // team battle: which side is yours (-1 when you are only watching), and whether you carry a bomb yourself
+    const mine = pvs.find((p) => p.local);
+    const myTeam = view.team && mine ? mine.team : -1;
     for (const pv of pvs) {
       const sx = Math.round((pv.cx - cam.x) * kf);
       if (sx < -20 * px || sx > this.fg.width + 20 * px) continue; // out of sight
       let top = Math.round((pv.y - cam.y) * kf - (pv.orb ? 6 : (lab.gap || 7)) * px);
+      const foe = myTeam >= 0 && pv.team !== myTeam;
       if (view.names !== false && pv.name) {
-        const l = this.label(pv.name, pv.local ? lab.you || lab.color : lab.color);
-        g.drawImage(l.c, clamp(sx - (l.w >> 1), 0, this.fg.width - l.w), top - l.h + 4); // names stay on screen at the edges
-        top -= l.h - 6;
+        if (view.team && pv.team >= 0) {
+          // a plate in the side's colour: you can tell friend from foe without reading it
+          const l = this.plate(pv.name, TEAM_COLORS[pv.team], pv.local ? 'you' : myTeam < 0 ? 'plain' : foe ? 'foe' : 'ally');
+          g.drawImage(l.c, clamp(sx - (l.w >> 1), 0, this.fg.width - l.w), top - l.h);
+          top -= l.h + 2 * px;
+        } else {
+          const l = this.label(pv.name, pv.local ? lab.you || lab.color : lab.color);
+          g.drawImage(l.c, clamp(sx - (l.w >> 1), 0, this.fg.width - l.w), top - l.h + 4); // names stay on screen at the edges
+          top -= l.h - 6;
+        }
+      }
+      if (foe && mine.isIt && !pv.isIt && !pv.orb && view.phase === 'playing') {
+        // you carry a bomb, and this one's hands are free: someone you can stick it on (corner marks round them)
+        const cy = Math.round((pv.y + PH / 2 - cam.y) * kf);
+        const hw = (PW / 2 + 9) * kf;
+        const hh = (PH / 2 + 8) * kf;
+        const n = 7 * px;
+        const breathe = 1 + 0.08 * Math.sin(t * 7);
+        g.strokeStyle = '#ffffff';
+        g.lineWidth = 2.5 * px;
+        g.lineCap = 'square';
+        g.beginPath();
+        for (const [ax, ay] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+          const x = sx + ax * hw * breathe;
+          const y = cy + ay * hh * breathe;
+          g.moveTo(x - ax * n, y);
+          g.lineTo(x, y);
+          g.lineTo(x, y - ay * n);
+        }
+        g.stroke();
       }
       if (pv.isIt && view.phase !== 'countdown') {
         const bob = Math.round(Math.sin(t * 5) * 2 * px);
@@ -1302,6 +1416,15 @@ export class Renderer {
           // the bomb: it burns for the whole round, and its spark flickers faster as the clock runs down
           const y = top - 14 * px + bob;
           const hot = view.phase === 'playing' && view.timeLeft <= 10;
+          if (foe && !mine.isIt) {
+            // an enemy's bomb, and your hands are free: this one is after you - a red halo round it
+            const k = (t * 2) % 1;
+            g.strokeStyle = `rgba(255, 77, 61, ${(0.95 * (1 - k)).toFixed(3)})`;
+            g.lineWidth = 3 * px;
+            g.beginPath();
+            g.arc(sx, y, (13 + k * 11) * px, 0, 6.283);
+            g.stroke();
+          }
           g.fillStyle = hot && Math.floor(t * 10) % 2 ? '#ff4d3d' : '#16110d';
           g.strokeStyle = '#ffffff';
           g.lineWidth = 2 * px;

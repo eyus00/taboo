@@ -71,7 +71,7 @@ Keys that would throw you out of a game (Esc in a room, Q in the pause menu, Esc
 - The tagged player is frozen for 0.4 s so the tagger can get away, and the tagger cannot be tagged back for 1 s (they flash while protected). The oni runs slightly faster than everyone else.
 - Players pass through each other.
 - **Slopes** behave like tilted thin ledges: walk up and down them, jump up through them from below, hold down to drop through &ndash; or to walk under one from its low end.
-- **Trampolines** launch you straight up; **launchers** (the pads with arrows) fling you up and across. **Updrafts** are columns of rising air: step in, let go and ride. **Thorns** sting: a short stun, and you are thrown back off them. There are few of them: a plain game of tag has hardly any, a team battle about half of what an arena is drawn with.
+- **Trampolines** launch you straight up; **launchers** (the pads with arrows) fling you up and across. **Updrafts** are columns of rising air: step in, let go and ride. **Thorns** sting: a short stun, and you are thrown back off them. There are few of them: a match gets a quarter of what an arena is drawn with, which in most arenas is none at all.
 - **Portals** come in coloured pairs: step into one and you fly to its partner as a spark, in an unhurried arc over the map (the view flies with you), safe from tags until you arrive. A portal with a small arrow badge lets you press jump to drop out wherever you are.
 - If you join while a round is running you watch it and play the next one.
 - The player who opened the room is the host (picks the game, style, arena and round length; starts it). If they leave, the next player becomes host.
@@ -96,7 +96,9 @@ You hold one item at a time and choose when to use it. Items stop working (and b
 
 ### Team Bomb
 
-- Two teams, Sun (warm colours) and Moon (cool colours): 1 v 1 up to 5 v 5, as even as the room allows.
+- Two teams, Sun (warm colours) and Moon (cool colours), up to 5 v 5. The sides belong to the room: the lobby shows who is on which, anyone can cross over (X), the host can shuffle (Z), and nothing is redrawn between rounds or matches. Once a match or a tournament is on, the sides are locked.
+- If one side is short, **bots fill in** for it: they play on the server like anyone else, and are marked BOT on the scoreboard.
+- You can tell friend from foe at a glance: every name sits on a plate in its side's colour (white edge: your side; dark edge: theirs; your own is white), everyone stands in a ring of their side's colour, and the list of players is one column a side.
 - **Bombs.** One for every two players (1 to 5), handed out at GO starting with a random player of each team. A carrier gets rid of theirs by touching an **enemy** whose hands are free; team mates are safe and nobody carries two. The bombs burn for the whole round and all go off when the clock stops: each one scores 10 for the team that is *not* holding it.
 - **Flags.** A flag is a spot on the map with a ring around it (there is one near each side's start). Stand in the ring and it fills with your colour: 2.5 s alone to take a free flag, twice that to turn an enemy one, faster with a team mate. With as many enemies as friends in the ring nothing moves. A flag in your colour pays your team 1 point every 5 seconds, whether you stay or not.
 - So: the flags decide the round while it runs, and the bombs can turn it over in the last second.

@@ -315,49 +315,127 @@ try {
     assert.equal(a.room.phase, 'results', 'no fourth round');
   });
 
-  await test('team battle: two sides in warm and cool colours, a bomb that goes off at the buzzer, flags, and a team result', async () => {
+  await test('team battle: sides belong to the room and can be changed in the lobby; a bot fills the short side; bombs, flags and a team result', async () => {
     a.socket.emit('lobby');
     await until(() => a.room.phase === 'lobby', 'back to lobby');
     a.socket.emit('settings', { game: 'quick', mode: 'team', arena: 'dojo', duration: SHORT });
     await until(() => a.room.settings.mode === 'team' && a.room.settings.game === 'quick', 'team settings');
+    // everyone has a side from the moment they come in; three players are two and one
+    const sideOf = (x) => a.room.players.find((p) => p.id === x.socket.id).side;
+    const count = () => [0, 1].map((t) => [a, b, c].filter((x) => sideOf(x) === t).length);
+    assert.deepEqual(count().sort(), [1, 2], 'newcomers joined the smaller side');
+    // anyone can change their own side in the lobby (and nobody else's); nonsense is ignored
+    const was = sideOf(c);
+    c.socket.emit('side', 1 - was);
+    await until(() => sideOf(c) === 1 - was, 'c changed sides');
+    c.socket.emit('side', 7);
+    c.socket.emit('side', was);
+    await until(() => sideOf(c) === was, 'c went back');
+    // only the host can shuffle
+    const before = [a, b, c].map(sideOf).join();
+    b.socket.emit('shuffle');
+    await sleep(120);
+    assert.equal([a, b, c].map(sideOf).join(), before, 'a guest cannot shuffle the teams');
+    a.socket.emit('shuffle');
+    await sleep(150);
+    assert.deepEqual(count().sort(), [1, 2], 'shuffled: still as even as three can be');
+    const sides0 = [a, b, c].map(sideOf);
+
     for (const p of [a, b, c]) p.ends.length = 0;
     a.socket.emit('start');
     await until(() => a.round && a.round.mode === 'team' && a.go === null && a.round.teams, 'team round info');
-    const slots = a.round.players.map((p) => p.slot);
-    const sides = [0, 1].map((t) => slots.filter((sl) => a.round.teams[sl] === t));
-    assert.deepEqual(sides.map((x) => x.length).sort(), [1, 2], 'three players: two against one');
+    // the round has the sides exactly as the room had them, plus one bot on the short side
+    const roster = a.round.players;
+    assert.equal(roster.length, 4, 'three players and a bot');
+    const bots = roster.filter((p) => p.bot);
+    assert.equal(bots.length, 1);
+    const bot = bots[0];
+    assert.ok(bot.name && !['Anascript', 'Ben', 'Cy'].includes(bot.name), `the bot has a name of its own (${bot.name})`);
+    [a, b, c].forEach((x, i) => assert.equal(a.round.teams[x.me().slot], sides0[i], 'everyone is on the side they had in the lobby'));
+    const slots = roster.map((p) => p.slot);
+    const teams = [0, 1].map((t) => slots.filter((sl) => a.round.teams[sl] === t));
+    assert.deepEqual(teams.map((x) => x.length), [2, 2], 'two against two');
+    const short = count()[0] < count()[1] ? 0 : 1;
+    assert.equal(a.round.teams[bot.slot], short, 'the bot is on the side that was short');
+    assert.ok(![a, b, c].some((x) => x.me().slot === bot.slot), 'in a place of its own');
     for (const sl of slots) {
-      const warm = [0, 3, 5].includes(a.round.cols[sl]);
+      const warm = [0, 3, 5, 6, 8].includes(a.round.cols[sl]);
       assert.equal(warm, a.round.teams[sl] === 0, 'one side wears warm colours, the other cool ones');
     }
     assert.equal(a.round.it, -1, 'nobody is "it" in a team battle');
-    assert.equal(a.round.bombs.length, 1, 'three players: one bomb');
-    assert.ok(slots.includes(a.round.bombs[0]), 'who starts with it is known before GO');
+    assert.equal(a.round.bombs.length, 2, 'four players: two bombs');
+    assert.ok(a.round.bombs.every((sl) => slots.includes(sl)), 'who starts with them is known before GO');
     await until(() => a.go !== null && c.go !== null, 'go', 9000);
     assert.equal(a.go, -1);
-    assert.deepEqual(a.goBombs, a.round.bombs, 'and it goes out as drawn');
+    assert.deepEqual(a.goBombs.slice().sort(), a.round.bombs.slice().sort(), 'and they go out as drawn');
     await until(() => a.snap && a.snap[1] === 1 && a.snap[8], 'team snapshot');
     assert.equal(a.snap[8].length, 8, 'scores, who carries a bomb, whether it is over, and fill + owner of both flags');
-    const mask = a.snap[8][2];
-    assert.ok(mask > 0 && (mask & (mask - 1)) === 0 && slots.some((sl) => mask === 1 << sl), 'exactly one player carries the bomb');
+    const bits = (m) => m.toString(2).replace(/0/g, '').length;
+    assert.equal(bits(a.snap[8][2]), 2, 'two players carry a bomb');
     assert.equal(a.snap[8][3], 0);
     assert.deepEqual(a.snap[8].slice(4), [0, -1, 0, -1], 'the flags start as nobody\'s');
     assert.ok(Array.isArray(a.snap[5]) && Array.isArray(a.snap[7]), 'boxes and puddles are lists');
+    assert.equal(a.snap[4].length, 4, 'the bot is in the snapshot like anyone else');
     assert.equal(a.snap[4][0].length, 10, 'every player entry says what item they hold');
+    // the bot plays: it does not stand where it started
+    const botAt = () => a.snap[4].find((p) => p[0] === bot.slot);
+    const [x0, y0] = [botAt()[1], botAt()[2]];
     startChasing([a, b, c]);
+    await until(() => Math.hypot(botAt()[1] - x0, botAt()[2] - y0) > 120, 'the bot to get going', 5000);
     await until(() => a.ends.length === 1, 'round end', (SHORT + 5) * 1000);
     clearInterval(chase);
     const e = a.end;
     assert.equal(e.mode, 'team');
     assert.equal(e.team.score.length, 2);
-    // the bomb went off on whoever held it when the clock stopped, and the other side scored
+    assert.equal(e.rows.length, 4);
+    assert.deepEqual(e.rows.filter((r) => r.bot).map((r) => [r.slot, r.name]), [[bot.slot, bot.name]], 'the bot is on the scoreboard, marked as one');
+    // the bombs went off on whoever held them when the clock stopped, and the other side scored
     const blown = e.rows.filter((r) => r.boom);
-    assert.equal(blown.length, 1, 'one bomb, one explosion');
-    assert.ok(e.team.score[1 - blown[0].team] >= BOMB_POINTS, `score ${e.team.score}`);
+    assert.equal(blown.length, 2, 'two bombs, two explosions');
+    for (const t of [0, 1]) assert.ok(e.team.score[t] >= BOMB_POINTS * blown.filter((r) => r.team === 1 - t).length, `score ${e.team.score}`);
     assert.ok(e.rows.every((r) => typeof r.caps === 'number'));
     const win = e.team.score[0] === e.team.score[1] ? -1 : e.team.score[0] > e.team.score[1] ? 0 : 1;
     assert.equal(e.team.win, win);
     assert.deepEqual(e.winners.slice().sort(), e.rows.filter((r) => win < 0 || r.team === win).map((r) => r.slot).sort());
+    // a bot wins no matches: only real players collect wins
+    assert.ok(a.room.players.every((p) => p.slot !== bot.slot));
+  });
+
+  await test('the sides stay as they are: from one match to the next, and from round to round of a tournament', async () => {
+    const sideOf = (x) => a.room.players.find((p) => p.id === x.socket.id).side;
+    const sides0 = [a, b, c].map(sideOf);
+    const teamsNow = () => [a, b, c].map((x) => a.round.teams[x.me().slot]);
+    // another quick match: the same sides
+    a.round = null;
+    a.socket.emit('start');
+    await until(() => a.round && a.round.teams, 'second match');
+    assert.deepEqual(teamsNow(), sides0, 'play again: nobody changed sides');
+    // nobody can change sides while a match is on
+    c.socket.emit('side', 1 - sideOf(c));
+    a.socket.emit('shuffle');
+    await sleep(150);
+    assert.deepEqual([a, b, c].map(sideOf), sides0, 'the sides are locked during a match');
+    await until(() => a.ends.length === 2, 'second match over', (SHORT + 12) * 1000);
+    // a tournament: round after round, the same sides
+    a.socket.emit('lobby');
+    await until(() => a.room.phase === 'lobby', 'lobby');
+    a.socket.emit('settings', { game: 'cup', mode: 'team', rounds: 3 });
+    await until(() => a.room.settings.game === 'cup' && a.room.settings.mode === 'team', 'tournament settings');
+    a.round = null;
+    a.socket.emit('start');
+    await until(() => a.round && a.round.cup && a.round.cup.round === 1, 'round 1');
+    assert.deepEqual(teamsNow(), sides0, 'round 1');
+    const cols1 = a.round.cols.slice();
+    c.socket.emit('side', 1 - sideOf(c));
+    await until(() => a.round.cup.round === 2, 'round 2', (SHORT + 14) * 1000);
+    assert.deepEqual(teamsNow(), sides0, 'round 2: the same sides (and nobody could switch in between)');
+    assert.deepEqual(a.round.cols, cols1, 'and the same colours');
+    assert.equal(a.round.players.filter((p) => p.bot).length, 1, 'the bot fills in every round');
+    // the host ends the tournament between rounds
+    await until(() => a.ends.length === 4, 'round 2 over', (SHORT + 12) * 1000);
+    a.socket.emit('lobby');
+    await until(() => a.room.phase === 'lobby' && !a.room.cup, 'tournament ended');
+    assert.deepEqual([a, b, c].map(sideOf), sides0);
   });
 
   await test('a player leaving a 2-player match ends it; whoever stayed wins', async () => {

@@ -3,12 +3,11 @@
 
 import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, MAX_PLAYERS, ITEM_LOCK_TICKS, TEAM_SLOTS, BOMB_END_TICKS, FLAG_CAP_TICKS } from '/shared/config.js';
 import { Sim, standings, makeTeams } from '/shared/sim.js';
-import { makeBot, botThink, prepareBots } from '/shared/bots.js';
-
-const BOT_NAMES = ['Zap', 'Mox', 'Juno', 'Blip', 'Rook', 'Fizz', 'Pip', 'Nori', 'Kiko', 'Taro'];
+import { makeBot, botThink, prepareBots, BOT_NAMES } from '/shared/bots.js';
 
 export class LocalGame {
-  // opts: { arena, mode, duration, powerups, name, bots, input, onEvent, intro }
+  // opts: { arena, mode, duration, powerups, name, bots, input, onEvent, intro, squad }
+  //   squad: { names, teams } from the match before, to play again with the same bots on the same sides
   constructor(opts) {
     this.arena = opts.arena;
     this.mode = opts.mode || 'potato';
@@ -22,16 +21,19 @@ export class LocalGame {
     this.human = 0;
     this.twist = this.sim.twist;
 
-    const pool = BOT_NAMES.filter((n) => n.toLowerCase() !== String(opts.name).toLowerCase()).sort(() => Math.random() - 0.5);
     const count = Math.max(1, Math.min(MAX_PLAYERS - 1, opts.bots || 3));
     const slots = [...Array(count + 1).keys()];
+    // the same bots as last time (and, below, the same sides) if this is "play again"
+    const old = opts.squad && opts.squad.names.length === count + 1 ? opts.squad : null;
+    const pool = old ? old.names.slice(1) : BOT_NAMES.filter((n) => n.toLowerCase() !== String(opts.name).toLowerCase()).sort(() => Math.random() - 0.5);
     // team battle: two sides, each starting on its own half, one in warm colours and one in cool
     this.teams = null;
     this.cols = null;
     if (this.mode === 'team') {
       this.teams = new Array(MAX_PLAYERS).fill(-1);
       this.cols = new Array(MAX_PLAYERS).fill(0);
-      makeTeams(slots).forEach((list, t) => list.forEach((slot, i) => ((this.teams[slot] = t), (this.cols[slot] = TEAM_SLOTS[t][i % TEAM_SLOTS[t].length]))));
+      const sides = old && old.teams ? [0, 1].map((t) => slots.filter((slot) => old.teams[slot] === t)) : makeTeams(slots);
+      sides.forEach((list, t) => list.forEach((slot, i) => ((this.teams[slot] = t), (this.cols[slot] = TEAM_SLOTS[t][i % TEAM_SLOTS[t].length]))));
     }
     const order = [...this.arena.spawns.keys()].sort(() => Math.random() - 0.5);
     const half = [order.filter((i) => this.arena.spawns[i][0] < this.arena.w / 2), order.filter((i) => this.arena.spawns[i][0] >= this.arena.w / 2)];
@@ -44,6 +46,7 @@ export class LocalGame {
       }
     }
     if (this.teams) this.sim.setTeams(this.teams);
+    this.squad = { names: this.names.slice(), teams: this.teams ? this.teams.slice() : null };
     prepareBots(this.arena); // work out the bots' route map now, not on the first tick of the round
     this.startIt = slots[Math.floor(Math.random() * slots.length)]; // drawn now, so the draw can be shown
 

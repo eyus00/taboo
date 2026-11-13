@@ -44,6 +44,7 @@ const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden=
 <symbol id="pi-storm" viewBox="0 0 24 24"><path d="M6 13a5 5 0 1 1 3.500-8.500A6 6 0 0 1 20 8a4 4 0 0 1-2 7.500" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round"/><path d="M12 12l-3 5h4l-2 5" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="pi-goo" viewBox="0 0 24 24"><path d="M12 2c3 5 6 8 6 12a6 6 0 0 1-12 0c0-4 3-7 6-12z" fill="currentColor"/></symbol>
 <symbol id="pi-box" viewBox="0 0 24 24"><path d="M8 9a4 4 0 1 1 6 3.500c-1.300.800-2 1.500-2 3M12 19.500v.500" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
+<symbol id="pi-it" viewBox="0 0 24 24"><path d="M6 2.500c.300 2.600 1.300 4.300 3.200 5.400M18 2.500c-.300 2.600-1.300 4.300-3.200 5.400" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round"/><path d="M5.500 9.500h13l-1 8.200c-.400 2.600-2.600 4.300-5.500 4.300s-5.100-1.700-5.500-4.300z" fill="currentColor"/></symbol>
 <symbol id="pi-bomb" viewBox="0 0 24 24"><circle cx="10.500" cy="14" r="7.500" fill="currentColor"/><path d="M15.500 8.500l3-3M18 3l3 1-1 3" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="pi-flag" viewBox="0 0 24 24"><path d="M6 22V3M6 4h12l-3 4 3 4H6" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 </defs></svg>`;
@@ -74,8 +75,11 @@ export const play = {
         <button id="btn-pause" class="hud-btn" aria-label="Menu (Esc)">${icon('menu')}</button>
         <kbd class="hud-key">Esc</kbd>
         <canvas id="minimap" width="220" height="124" aria-hidden="true"></canvas>
-        <div id="itemslot" hidden><span class="pic"></span><span class="what"><b></b><small></small></span><kbd>E</kbd></div>
-        <div id="buffs"></div>
+        <div id="kit">
+          <div id="status" hidden><span class="ic"></span><b></b></div>
+          <div id="itemslot" hidden><span class="tile"><span class="pic"></span></span><kbd>E</kbd><span class="cap"></span></div>
+          <div id="buffs"></div>
+        </div>
         <div id="banner" role="status"></div>
         <div id="count" aria-hidden="true"></div>
         <div id="hint"></div>
@@ -89,7 +93,7 @@ export const play = {
           <button class="t-jump" data-bit="4" aria-label="Jump">${icon('up')}</button>
         </div>
       </div>`;
-    for (const id of ['stage', 'pills', 'timer', 'team-a', 'team-b', 'flags', 'round-label', 'btn-pause', 'minimap', 'itemslot', 'buffs', 'banner', 'count', 'hint', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
+    for (const id of ['stage', 'pills', 'timer', 'team-a', 'team-b', 'flags', 'round-label', 'btn-pause', 'minimap', 'status', 'itemslot', 'buffs', 'banner', 'count', 'hint', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
     this.root = root;
     this.isTouch = opts.isTouch;
     // on touch screens the view can scroll a little past the floor, so the buttons never cover you
@@ -126,17 +130,21 @@ export const play = {
 
   // --- starting and stopping ----------------------------------------------------------
   async practice(s, name) {
-    const arena = arenaById(s.arena === 'random' ? pickRandom(ARENA_IDS) : s.arena, s.mode);
+    const arena = arenaById(s.arena === 'random' ? pickRandom(ARENA_IDS) : s.arena);
     const themeId = s.theme === 'random' ? pickRandom(THEMES).id : s.theme;
     await loadTheme(themeId);
     this.kind = 'practice';
-    const g = new LocalGame({ arena, mode: s.mode, duration: s.duration, powerups: s.powerups, name, bots: s.bots, input: this.input, onEvent: (t, a, b) => this.onEvent(t, a, b) });
+    // "play again" keeps the same bots on the same sides, as long as you ask for the same kind of match
+    const key = `${s.mode}/${s.bots}/${name}`;
+    const squad = this.squad && this.squad.key === key ? this.squad : null;
+    const g = new LocalGame({ arena, mode: s.mode, duration: s.duration, powerups: s.powerups, name, bots: s.bots, input: this.input, onEvent: (t, a, b) => this.onEvent(t, a, b), squad });
+    this.squad = { key, ...g.squad };
     this.begin(g, arena, themeId, { ...g.info(), arena: arena.id, theme: themeId, random: { arena: s.arena === 'random', theme: s.theme === 'random' } });
   },
 
   // 'round' from the server
   round(msg, mySlot) {
-    const arena = arenaById(msg.arena, msg.mode);
+    const arena = arenaById(msg.arena);
     this.net.onRound(msg, arena, mySlot);
     this.kind = 'online';
     this.game = this.net; // snapshots count from now, even while the art style is still loading
@@ -153,7 +161,8 @@ export const play = {
     this.renderer.setScene(arena, themeId, info.cols || null);
     this.root.style.background = this.renderer.theme.letterbox;
     const h = this.hud;
-    Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], hintNow: '', item: '', teams: '', crowd: 0 });
+    Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], hintNow: '', item: '', teams: '', crowd: 0, role: '', hot: false, side: -2 });
+    this.el.status.hidden = true;
     this.el.pills.textContent = '';
     this.el.buffs.textContent = '';
     this.el.count.textContent = '';
@@ -268,7 +277,11 @@ export const play = {
         const val = el('span', 'val');
         li.append(chip, el('span', 'nm', p.name), val);
         li.classList.toggle('me', !!p.local);
-        if (p.team >= 0) li.style.order = String(p.team);
+        if (p.team >= 0) {
+          // team battle: one column a side, each plaque with its side's colour down its edge
+          li.classList.add(`t${p.team}`);
+          li.style.setProperty('--team', TEAM_COLORS[p.team]);
+        }
         E.pills.append(li);
         pill = h.pills[p.slot] = { li, val, text: '', it: false };
       }
@@ -287,6 +300,7 @@ export const play = {
       E.pills.style.setProperty('--rows', String(Math.ceil(n / 2)));
     }
     E.pills.classList.toggle('bomb', !!view.team);
+    E.pills.classList.toggle('teams', !!view.team);
 
     // team battle: the score either side of the clock (with a bomb for every one that side is holding), the flags under it
     if (view.team) {
@@ -299,6 +313,12 @@ export const play = {
         const bombs = (n) => '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#pi-bomb"/></svg>'.repeat(n);
         E.teamA.innerHTML = `${TEAM_NAMES[0]} ${t.score[0]}<span class="held">${bombs(held[0])}</span>`;
         E.teamB.innerHTML = `<span class="held">${bombs(held[1])}</span>${t.score[1]} ${TEAM_NAMES[1]}`;
+      }
+      const side = view.players.find((p) => p.local)?.team ?? -1;
+      if (side !== h.side) {
+        h.side = side;
+        E.teamA.classList.toggle('mine', side === 0);
+        E.teamB.classList.toggle('mine', side === 1);
       }
       t.flags.forEach((f, i) => {
         const e = h.flagEls[i];
@@ -315,24 +335,42 @@ export const play = {
       });
     }
 
+    // what you are right now: it, or carrying a bomb (a small sign that stays up as long as it is true)
+    const self = view.phase === 'playing' ? view.players.find((p) => p.local) : null;
+    const role = !self ? '' : self.bomb ? 'bomb' : view.it === self.slot ? 'it' : '';
+    const hot = role === 'bomb' && view.timeLeft <= 10;
+    if (role !== h.role || hot !== h.hot) {
+      h.role = role;
+      h.hot = hot;
+      E.status.hidden = !role;
+      E.status.className = role + (hot ? ' hot' : '');
+      if (role) {
+        E.status.firstChild.innerHTML = icon(role === 'bomb' ? 'bomb' : 'it');
+        E.status.lastChild.textContent = role === 'bomb' ? (hot ? 'BOMB - get rid of it!' : 'BOMB - tag an enemy') : "YOU'RE IT - tag someone";
+      }
+    }
+
     // the item in your hands
     const m = view.me;
     const kind = m && m.item ? ITEM_KINDS[m.item - 1] : '';
     const state = !kind ? '' : m.arm > 0 ? 'draw' : m.locked ? `${kind}-locked` : kind;
     if (state !== h.item) {
+      // One small tile: it flickers through the items while yours is being
+      // drawn, then shows it, with its name beside it for a moment.
+      const landed = h.item === 'draw' && kind && m.arm === 0;
       h.item = state;
       E.itemslot.hidden = !kind;
       E.itemslot.className = !kind ? '' : m.arm > 0 ? 'draw' : m.locked ? 'locked' : 'ready';
       if (kind && m.arm === 0) {
         E.itemslot.querySelector('.pic').innerHTML = icon(kind);
-        E.itemslot.querySelector('b').textContent = ITEM_INFO[kind].name;
-        E.itemslot.querySelector('small').textContent = m.locked ? 'Locked: the round is nearly over' : ITEM_INFO[kind].blurb;
-        E.itemslot.dataset.kind = kind;
-      } else if (kind) {
-        E.itemslot.querySelector('b').textContent = '...';
-        E.itemslot.querySelector('small').textContent = '';
-        E.itemslot.dataset.kind = '';
-      }
+        E.itemslot.querySelector('.cap').textContent = m.locked ? 'Locked - the round is nearly over' : ITEM_INFO[kind].name;
+        E.itemslot.title = `${ITEM_INFO[kind].name}: ${ITEM_INFO[kind].blurb}`;
+        if (landed || m.locked) {
+          E.itemslot.classList.remove('named');
+          void E.itemslot.offsetWidth; // restart the caption's fade
+          E.itemslot.classList.add('named');
+        }
+      } else if (kind) E.itemslot.classList.remove('named');
       const use = E.touch.querySelector('.t-use');
       use.innerHTML = icon(kind && m.arm === 0 ? kind : 'box');
       use.classList.toggle('ready', !!kind && m.arm === 0 && !m.locked);
@@ -464,7 +502,7 @@ export const play = {
       if (p.dead > 0) continue;
       const x = (p.x + PW / 2) * k;
       const y = (p.y + PH / 2) * k;
-      g.fillStyle = this.colorOf(p.slot);
+      g.fillStyle = view.team && p.team >= 0 ? TEAM_COLORS[p.team] : this.colorOf(p.slot); // team battle: friend or foe at a glance
       g.beginPath();
       g.arc(x, y, p.local ? 4 : 3, 0, 6.283);
       g.fill();

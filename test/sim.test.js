@@ -919,7 +919,7 @@ test('bots play every arena with 2, 4, 6 and 10: tags keep happening, nobody sta
   let minutes = 0;
   const log = [];
   for (const { id } of ARENAS) {
-    const arena = arenaById(id); // as a plain game of tag plays it (with few thorns)
+    const arena = arenaById(id); // as a match plays it (with few thorns)
     for (const n of [2, 4, 6, 10]) {
       const r = botMatch(arena, n, false);
       const who = `${arena.id} ${n}p`;
@@ -944,7 +944,7 @@ test('bots play team battles: flags are taken and turned, bombs change hands and
   let minutes = 0;
   const log = [];
   for (const { id } of ARENAS) {
-    const arena = arenaById(id, 'team'); // as a team battle plays it
+    const arena = arenaById(id); // as a match plays it
     let passes = 0;
     let turned = 0;
     let paid = 0;

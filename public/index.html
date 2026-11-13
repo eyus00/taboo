@@ -179,6 +179,8 @@
           <div class="roster">
             <h3 id="players-title">Players</h3>
             <ul class="players" id="players"></ul>
+            <!-- team battle: the two sides face to face; you can cross over, the host can shuffle -->
+            <div class="squads" id="squads" hidden></div>
             <p class="note" id="lobby-note"></p>
           </div>
           <div class="lobby">
@@ -323,6 +325,7 @@
                 <li><span><kbd>G</kbd> <kbd>R</kbd> <kbd>T</kbd></span> Match setup: game, rules or rounds, sides in a tournament</li>
                 <li><span><kbd>L</kbd> <kbd>P</kbd> <kbd>B</kbd></span> Match setup: round length, power-ups, bots</li>
                 <li><span><kbd>C</kbd> <kbd>V</kbd></span> In a room: copy the invite link, make the room public or private</li>
+                <li><span><kbd>X</kbd> <kbd>Z</kbd></span> Team battle, in a room: change sides; the host shuffles the teams</li>
                 <li><span><kbd>H</kbd></span> Menus: how to play</li>
                 <li><span><kbd>M</kbd> <kbd>F</kbd></span> Anywhere: sound on or off, full screen</li>
               </ul>

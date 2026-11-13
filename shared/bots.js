@@ -51,6 +51,9 @@ export function makeBot(seed = 1) {
   };
 }
 
+// what the computer players are called (whoever shares a name with a real player skips to the next)
+export const BOT_NAMES = ['Zap', 'Mox', 'Juno', 'Blip', 'Rook', 'Fizz', 'Pip', 'Nori', 'Kiko', 'Taro'];
+
 const navOf = (arena) => (arena.nav ||= buildNav(arena));
 
 // The route map of an arena is worked out the first time a bot thinks in it,

@@ -7,8 +7,10 @@
 // one panel at a time. Every screen can be driven with the keyboard alone
 // (arrows + Enter, Esc to go back, a letter or number for most things).
 
-import { MODES, DURATIONS, DEFAULT_DURATION, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, FLAG_PAY_TICKS, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, ITEM_LOCK_TICKS } from '/shared/config.js';
+import { MODES, DURATIONS, DEFAULT_DURATION, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_POINTS, FLAG_PAY_TICKS, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, ITEM_LOCK_TICKS } from '/shared/config.js';
 import { ARENAS } from '/shared/arenas.js';
+import { botFill } from '/shared/sim.js';
+import { BOT_NAMES } from '/shared/bots.js';
 import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
 import { loadTheme } from './themes/index.js';
@@ -824,7 +826,14 @@ function renderLobby() {
   $('btn-leave').setAttribute('aria-label', online ? 'Leave room' : 'Back (Esc)');
   const list = $('players');
   list.textContent = '';
-  const rows = online
+  // a team battle in a room shows the two sides instead of one list
+  const sided = online && room.settings.mode === 'team';
+  list.hidden = sided;
+  $('squads').hidden = !sided;
+  if (sided) renderSquads();
+  const rows = sided
+    ? []
+    : online
     ? room.players.slice().sort((a, b) => a.slot - b.slot).map((p) => ({ slot: p.slot, name: p.name, host: p.id === room.hostId, you: p.id === socket.id, score: p.wins ? `${p.wins} win${p.wins > 1 ? 's' : ''}` : '' }))
     : [{ slot: 0, name: myName, you: true }, ...Array.from({ length: practice.bots }, (_, i) => ({ slot: i + 1, name: 'Bot', bot: true }))];
   for (const r of rows) {
@@ -838,7 +847,7 @@ function renderLobby() {
     list.append(li);
   }
   // empty places: all of them in a room; in practice only enough to fill the row
-  const places = online ? MAX_PLAYERS : Math.ceil(rows.length / 5) * 5;
+  const places = sided ? 0 : online ? MAX_PLAYERS : Math.ceil(rows.length / 5) * 5;
   for (let i = rows.length; i < places; i++) list.append(el('li', 'empty', online ? 'waiting...' : ''));
 
   const start = $('btn-start');
@@ -852,11 +861,15 @@ function renderLobby() {
     setLabel(start, room.settings.game === 'cup' ? 'Start tournament' : 'Start match', 'Enter');
     const open = !!room.settings.open;
     $('room-open').hidden = false;
-    $('lobby-note').textContent = open
+    const sizes = [0, 1].map((t) => room.players.filter((p) => p.side === t).length);
+    const bots = room.settings.mode === 'team' ? Math.abs(sizes[0] - sizes[1]) : 0;
+    const fillNote = bots && enough ? `The sides are uneven, so ${bots > 1 ? `${bots} bots fill` : 'a bot fills'} in for ${TEAM_NAMES[sizes[0] < sizes[1] ? 0 : 1]}.` : '';
+    const openNote = open
       ? `Public: anyone can find this game${enough ? '.' : ' - you need at least 2 players.'}`
       : enough
         ? ''
         : 'Private: share the code with your friends - you need at least 2 players.';
+    $('lobby-note').textContent = [openNote, fillNote].filter(Boolean).join(' ');
     $('start-note').textContent = amHost() ? '' : `Waiting for ${host ? host.name : 'the host'} to start...`;
   } else {
     $('players-title').textContent = 'Players';
@@ -880,6 +893,84 @@ function renderLobby() {
   // someone joined and the match can start: Enter should start it, not copy the link again
   if (first === start && panel === 'lobby' && !overlay && [$('btn-copy'), document.body].includes(document.activeElement)) focusFirst();
   syncOptions();
+}
+
+// Team battle: who is on which side, in the colours they will wear. The sides
+// are the room's - they stay as they are from match to match until someone
+// crosses over or the host shuffles. A side that is short gets bots.
+function renderSquads() {
+  const box = $('squads');
+  box.textContent = '';
+  const mine = me();
+  const sizes = [0, 1].map((t) => room.players.filter((p) => p.side === t).length);
+  const fill = botFill(sizes, MAX_PLAYERS - room.players.length);
+  const taken = new Set(room.players.map((p) => p.name.toLowerCase()));
+  const botNames = BOT_NAMES.filter((n) => !taken.has(n.toLowerCase()));
+  const seen = [0, 0];
+  const colour = (t) => INK_COLORS[TEAM_SLOTS[t][seen[t]++ % TEAM_SLOTS[t].length]];
+  // (colours are handed out in the order people came in, bots last - the same way the server does it)
+  const chips = new Map(room.players.map((p) => [p.id, colour(p.side)]));
+  [0, 1].forEach((t) => {
+    const side = el('section', 'squad');
+    side.style.setProperty('--side', TEAM_COLORS[t]);
+    const head = el('header');
+    head.append(el('b', '', TEAM_NAMES[t]), el('span', 'n', String(sizes[t] + fill[t])));
+    if (mine && mine.side === t) head.append(el('span', 'yours', 'your side'));
+    else if (mine) {
+      const go = el('button', 'cross');
+      go.id = 'btn-side';
+      setLabel(go, `Join ${TEAM_NAMES[t]}`, 'X');
+      go.addEventListener('click', switchSide);
+      head.append(go);
+    }
+    side.append(head);
+    const ul = el('ul', 'players');
+    for (const p of room.players) {
+      if (p.side !== t) continue;
+      const li = el('li');
+      const chip = el('i', 'chip');
+      chip.style.background = chips.get(p.id);
+      li.append(chip, el('span', 'nm', p.name));
+      if (p.id === room.hostId) li.append(el('span', 'tag', 'HOST'));
+      if (p.id === socket.id) li.append(el('span', 'tag you', 'YOU'));
+      if (p.wins) li.append(el('span', 'score', `${p.wins} win${p.wins > 1 ? 's' : ''}`));
+      ul.append(li);
+    }
+    for (let k = 0; k < fill[t]; k++) {
+      const li = el('li', 'bot');
+      const chip = el('i', 'chip');
+      chip.style.background = colour(t);
+      li.append(chip, el('span', 'nm', botNames.shift() || 'Bot'), el('span', 'tag bot', 'BOT'));
+      ul.append(li);
+    }
+    side.append(ul);
+    box.append(side);
+    if (t === 0) {
+      const mid = el('div', 'mid');
+      mid.append(el('i', 'vs', 'vs'));
+      if (amHost()) {
+        const sh = el('button', 'link');
+        sh.id = 'btn-shuffle';
+        sh.append(el('kbd', '', 'Z'), 'Shuffle');
+        sh.addEventListener('click', shuffleSides);
+        mid.append(sh);
+      }
+      box.append(mid);
+    }
+  });
+}
+function switchSide() {
+  const mine = me();
+  if (!mine || kind !== 'online' || room.settings.mode !== 'team') return false;
+  socket.emit('side', 1 - mine.side);
+  sfx.play('click');
+  return true;
+}
+function shuffleSides() {
+  if (!amHost() || kind !== 'online' || room.settings.mode !== 'team') return false;
+  socket.emit('shuffle');
+  sfx.play('click');
+  return true;
 }
 
 function leaveRoom() {
@@ -1100,6 +1191,7 @@ function paintSides(res, mySlot) {
       chip.style.background = play.colorOf(r.slot);
       const who = el('span', 'who');
       who.append(chip, r.name);
+      if (r.bot) who.append(el('span', 'tag bot', 'BOT'));
       // a bomb went off in their hands
       if (r.boom) {
         const blown = el('span', 'mark blown');
@@ -1179,7 +1271,8 @@ socket.on('round', (msg) => {
   if (!room) return;
   clearInterval(nextTimer);
   const mine = me();
-  const mySlot = mine && msg.players.some((p) => p.slot === mine.slot) ? mine.slot : -1;
+  // (a bot filling in may hold the same place as someone who arrived after the round began: they are only watching)
+  const mySlot = mine && msg.players.some((p) => p.slot === mine.slot && !p.bot) ? mine.slot : -1;
   net.code = room.code;
   kind = 'online';
   play.round(msg, mySlot);
@@ -1257,6 +1350,8 @@ function shortcut(key, e) {
       return true;
     }
     if (key === 'c' && kind === 'online') return copyInvite(), true;
+    if (key === 'x' && switchSide()) return true;
+    if (key === 'z' && shuffleSides()) return true;
     if (/^[a-z]$/.test(key)) return hotOption(key, e.shiftKey);
   } else if (at === 'pause') {
     if (key === 'q') {

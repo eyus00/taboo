@@ -509,6 +509,16 @@ export function cupPoints(sim, double = false) {
   return out;
 }
 
+// Team battle with uneven sides: how many bots each side gets, so that both
+// have as many players as the bigger one (as far as there is room for them).
+//   sizes: [players on side 0, players on side 1]; room: free places
+export function botFill(sizes, room) {
+  const fill = [0, 0];
+  const small = sizes[0] <= sizes[1] ? 0 : 1;
+  fill[small] = Math.max(0, Math.min(room, Math.abs(sizes[0] - sizes[1])));
+  return fill;
+}
+
 // Split players into two teams as evenly as possible: [slots of team 0, slots of team 1].
 export function makeTeams(slots, rnd = Math.random) {
   const order = slots.slice().sort(() => rnd() - 0.5);

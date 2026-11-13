@@ -491,11 +491,11 @@ export function rampY(r, x) {
 export const ARENAS = MAPS.map(parse);
 export const ARENA_IDS = ARENAS.map((a) => a.id);
 
-// Thorns. The maps are drawn with plenty of them, but a match only gets some:
-// a plain game of tag a quarter of them (in most arenas that is none at all),
-// a team battle half. Mirror-image pairs stay together, so both sides of an
-// arena always get the same.
-const THORN_SHARE = { tag: 0.25, team: 0.5 };
+// Thorns. The maps are drawn with plenty of them, but a match only gets a
+// quarter (in most arenas that is none at all): they are a hazard to trip over
+// now and then, not something to pick your way through. Mirror-image pairs
+// stay together, so both sides of an arena always get the same.
+const THORN_SHARE = 0.25;
 function thinThorns(arena, share) {
   const groups = new Map();
   for (const z of arena.spikes) {
@@ -511,18 +511,15 @@ function thinThorns(arena, share) {
   return keep;
 }
 
-// The arena as a match plays it. mode: 'team' for a team battle; anything
-// else is a plain game of tag. (ARENAS holds the maps as drawn.)
+// The arena as a match plays it (ARENAS holds the maps as drawn).
 const played = new Map();
-export function arenaById(id, mode) {
+export function arenaById(id) {
   const base = ARENAS.find((a) => a.id === id) || ARENAS[0];
-  const kind = mode === 'team' ? 'team' : 'tag';
-  const key = `${base.id}/${kind}`;
-  let arena = played.get(key);
+  let arena = played.get(base.id);
   if (!arena) {
-    // (nav: the bots' route map is worked out per version, since thorns are in the way of some routes)
-    arena = { ...base, spikes: thinThorns(base, THORN_SHARE[kind]), kind, nav: undefined };
-    played.set(key, arena);
+    // (nav: the bots' route map belongs to this version, since thorns are in the way of some routes)
+    arena = { ...base, spikes: thinThorns(base, THORN_SHARE), nav: undefined };
+    played.set(base.id, arena);
   }
   return arena;
 }

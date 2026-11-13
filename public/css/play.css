@@ -13,6 +13,11 @@
 #hud { position: absolute; inset: 0; pointer-events: none; color: #fff; font-family: var(--ui); }
 #pills { position: absolute; left: max(10px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 4px; max-width: 38vw; }
 #pills.many { display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--rows, 3), auto); gap: 4px 2px; }
+/* team battle: one column a side (Sun on the left, Moon on the right), each plaque with its side's colour down its edge */
+#pills.teams { display: grid; grid-auto-flow: row dense; grid-template-rows: none; grid-template-columns: auto auto; gap: 4px 2px; align-items: start; }
+#pills.teams li { box-shadow: inset 5px 0 0 var(--team, transparent); padding-left: 16px; }
+#pills.teams li.t0 { grid-column: 1; }
+#pills.teams li.t1 { grid-column: 2; }
 /* seven to ten players: smaller plaques */
 #pills.crowd { gap: 3px 2px; }
 #pills.crowd li { font-size: 12px; line-height: 16px; padding: 2px 13px 2px 10px; gap: 5px; }
@@ -32,7 +37,10 @@
 #round-label { font-size: 12.5px; font-weight: 700; padding: 2px 16px; background: var(--hud); white-space: nowrap; clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); }
 #round-label:empty { display: none; }
 .hud-btn { position: absolute; right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); width: 44px; height: 42px; display: grid; place-items: center; border: 0; background: var(--hud); color: #fff; pointer-events: auto; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
-#buffs { position: absolute; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; gap: 6px; }
+/* the bottom of the screen, in one row: what you are (it / carrying a bomb), the item in your hands, boosts that are running */
+#kit { position: absolute; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; }
+#buffs { display: flex; gap: 6px; }
+#buffs:empty { display: none; }
 #buffs div { display: flex; align-items: center; gap: 5px; padding: 4px 16px 4px 12px; background: var(--hud); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); }
 #banner { position: absolute; left: 0; right: 0; top: max(21%, 96px); text-align: center; font: 400 clamp(26px, 6vmin, 52px)/1.1 var(--brush); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6), 0 0 14px rgba(0, 0, 0, 0.5); opacity: 0; }
 #banner.show { animation: banner 1.7s ease-out forwards; }
@@ -41,7 +49,7 @@
 #count { position: absolute; inset: 0; display: grid; place-items: center; font: 400 clamp(100px, 34vmin, 240px)/1 var(--brush); text-shadow: 0 4px 0 rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 0, 0, 0.4); }
 #count.pop { animation: count 0.9s ease-out; }
 @keyframes count { 0% { transform: scale(1.5); opacity: 0; } 20% { transform: none; opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0.2; } }
-#hint { position: absolute; left: 50%; bottom: max(52px, calc(env(safe-area-inset-bottom) + 46px)); transform: translateX(-50%); max-width: 92vw; font-size: 13px; font-weight: 700; padding: 4px 18px; background: var(--hud); text-align: center; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
+#hint { position: absolute; left: 50%; bottom: max(76px, calc(env(safe-area-inset-bottom) + 70px)); transform: translateX(-50%); max-width: 92vw; font-size: 13px; font-weight: 700; padding: 4px 18px; background: var(--hud); text-align: center; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
 #hint:empty { display: none; }
 
 /* touch controls */
@@ -55,28 +63,41 @@
 .touch .t-jump { width: 92px; height: 92px; font-size: 36px; }
 .touch .t-down { width: 64px; height: 64px; font-size: 26px; }
 .touch .down { background: rgba(255, 255, 255, 0.4) !important; }
-body.touch-on #buffs { bottom: auto; top: max(58px, calc(env(safe-area-inset-top) + 50px)); }
 body.touch-on #hint { bottom: auto; top: max(92px, calc(env(safe-area-inset-top) + 84px)); }
 
 .hud-key { position: absolute; right: max(60px, calc(env(safe-area-inset-right) + 60px)); top: max(17px, calc(env(safe-area-inset-top) + 9px)); transform: none; opacity: 0.9; color: #fff; background: var(--hud); border-color: rgba(255, 255, 255, 0.7); height: 24px; padding: 0 7px; font: 700 11px/1 var(--ui); }
 
-/* the item in your hands */
-#itemslot { position: absolute; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 18px 6px 8px; background: var(--hud); clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
-#itemslot .pic { width: 44px; height: 44px; display: grid; place-items: center; font-size: 26px; background: #f3ead6; color: #1c1b1f; clip-path: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%); }
-#itemslot .what { display: flex; flex-direction: column; line-height: 1.15; }
-#itemslot b { font: 400 22px/1.1 var(--brush); }
-#itemslot small { font-size: 12px; opacity: 0.85; max-width: 46vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#itemslot kbd { color: #fff; border-color: rgba(255, 255, 255, 0.8); transform: none; opacity: 1; font-family: var(--ui); }
-#itemslot.ready .pic { background: #ffd23f; animation: ready 0.9s ease-in-out infinite; }
-#itemslot.locked { opacity: 0.6; }
+/* the item in your hands: one small tile with its key on the corner. While it
+   is being drawn the tile flickers through the items; when it lands, its name
+   shows beside it for a moment and then goes away. */
+#itemslot { position: relative; display: flex; }
+#itemslot .tile { display: grid; place-items: center; width: 50px; height: 50px; background: #16110d; clip-path: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%); }
+#itemslot .pic { width: 44px; height: 44px; display: grid; place-items: center; font-size: 25px; background: #f3ead6; color: #1c1b1f; clip-path: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%); }
+#itemslot kbd { position: absolute; right: -9px; bottom: -5px; min-width: 20px; height: 20px; padding: 0 4px; display: grid; place-items: center; font: 800 11px/1 var(--ui); color: #fff; background: #16110d; border: 1.5px solid rgba(255, 255, 255, 0.85); transform: none; opacity: 1; }
+#itemslot .cap { position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%); padding: 3px 12px 2px; font: 800 12.5px/1.3 var(--ui); white-space: nowrap; background: var(--hud); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); opacity: 0; pointer-events: none; }
+#itemslot.named .cap { animation: cap 1.9s ease-out forwards; }
+@keyframes cap { 0% { opacity: 0; transform: translate(-50%, 6px); } 10%, 78% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, 0); } }
+#itemslot.ready .pic { background: #ffd23f; }
+#itemslot.ready.named .tile { animation: landed 0.32s ease-out; }
+@keyframes landed { 0% { transform: scale(1.35) rotate(-8deg); } 100% { transform: none; } }
+#itemslot.draw .pic { opacity: 0.8; }
+#itemslot.locked .tile { opacity: 0.5; }
 #itemslot.locked kbd, #itemslot.draw kbd { display: none; }
-@keyframes ready { 50% { transform: scale(1.12) rotate(-4deg); } }
-#buffs { bottom: max(76px, calc(env(safe-area-inset-bottom) + 70px)); }
+/* what you are right now: it, or carrying a bomb */
+#status { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 16px 0 11px; font: 800 13px/1 var(--ui); letter-spacing: 0.02em; color: #fff; background: var(--red); white-space: nowrap; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
+#status .ic { display: grid; place-items: center; font-size: 17px; }
+#status.bomb { background: #16110d; box-shadow: inset 0 -3px 0 #ff7a2b; }
+#status.bomb.hot { animation: hot 0.5s steps(2, jump-none) infinite; }
+@keyframes hot { to { box-shadow: inset 0 -3px 0 #ffd23f; } }
 #buffs .bad { background: #7a2a8c; }
 
 /* team battle: the score either side of the clock, the fuse under it */
 .scoreline { display: flex; align-items: center; gap: 6px; }
 .scoreline b { display: flex; align-items: center; gap: 5px; font: 800 clamp(15px, 2.6vmin, 20px)/1 var(--serif); padding: 7px 14px 5px; color: #fff; white-space: nowrap; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
+/* your own side's score has a white line under it and a small "you" */
+.scoreline b.mine { box-shadow: inset 0 -3px 0 #fff; }
+.scoreline b.mine::after { content: 'YOU'; font: 800 9px/1 var(--ui); letter-spacing: 0.08em; padding: 2px 4px 1px; color: #16110d; background: #fff; }
+#team-b.mine::after { order: -1; }
 /* a little bomb beside a team's score for each one that team is holding */
 .scoreline .held { display: inline-flex; gap: 1px; }
 .scoreline .held svg { width: 0.95em; height: 0.95em; display: block; color: #1c1b1f; }
@@ -99,15 +120,41 @@ body.touch-on #minimap { bottom: auto; top: max(58px, calc(env(safe-area-inset-t
 /* touch: the item button */
 .touch .t-use { width: 64px; height: 64px; font-size: 28px; }
 .touch .t-use.ready { background: rgba(255, 210, 63, 0.75) !important; color: #1c1b1f !important; border-color: #fff !important; }
-body.touch-on #itemslot { bottom: auto; top: max(58px, calc(env(safe-area-inset-top) + 50px)); left: max(10px, env(safe-area-inset-left)); transform: none; }
-body.touch-on #itemslot small { display: none; }
-body.touch-on #buffs { top: max(118px, calc(env(safe-area-inset-top) + 110px)); left: max(10px, env(safe-area-inset-left)); transform: none; }
+/* on a phone the row sits top left, under the players; the item itself is on its button, so only its name shows here for a moment */
+body.touch-on #kit { bottom: auto; top: max(62px, calc(env(safe-area-inset-top) + 54px)); left: max(10px, env(safe-area-inset-left)); transform: none; gap: 6px; flex-wrap: wrap; max-width: 46vw; }
+body.touch-on #itemslot .tile, body.touch-on #itemslot kbd { display: none; }
+body.touch-on #itemslot .cap { position: static; transform: none; display: none; }
+body.touch-on #itemslot.named .cap { display: block; animation: capt 1.9s ease-out forwards; }
+@keyframes capt { 0% { opacity: 0; } 10%, 78% { opacity: 1; } 100% { opacity: 0; } }
+body.touch-on #status { height: 28px; font-size: 12px; padding: 0 13px 0 9px; }
 
 @media (max-width: 760px) {
   #pills li { font-size: 12px; padding: 2px 13px 2px 10px; }
 }
 @media (max-width: 540px) {
-  /* a phone held upright: the item button sits above jump, clear of the run strip */
+  /* a phone held upright. The top is narrow: the clock and the score take the
+     first row, the players sit under them on the left (names only), and what
+     you are / what you hold goes just above the run strip, near your thumb. */
+  .scoreline b { font-size: 14px; padding: 6px 10px 4px; }
+  .scoreline b.mine::after { display: none; } /* (the white line under your side's score stays) */
+  #timer { min-width: 68px; padding: 3px 16px 1px; font-size: 26px; }
+  #pills { top: max(100px, calc(env(safe-area-inset-top) + 92px)); max-width: 48vw; gap: 3px; }
+  #pills .val { display: none; }
+  #pills li { font-size: 11.5px; line-height: 16px; padding: 2px 11px 2px 9px; gap: 5px; }
+  #pills .nm { max-width: 9ch; }
+  #pills.crowd { display: grid; grid-auto-flow: row; grid-template-rows: none; grid-template-columns: repeat(5, auto); justify-content: start; gap: 3px 1px; }
+  #pills.crowd .nm, #pills.crowd li::after { display: none; }
+  #pills.crowd li { padding: 4px 9px 4px 8px; }
+  #pills.crowd li.me { box-shadow: inset 0 -2px 0 #fff; }
+  #pills.teams.crowd { grid-auto-flow: column dense; grid-template-columns: none; grid-template-rows: auto auto; }
+  #pills.teams.crowd li { padding-left: 11px; box-shadow: inset 4px 0 0 var(--team, transparent); }
+  #pills.teams.crowd li.me { box-shadow: inset 4px 0 0 var(--team, transparent), inset 0 -2px 0 #fff; }
+  #pills.teams.crowd li.t0 { grid-column: auto; grid-row: 1; }
+  #pills.teams.crowd li.t1 { grid-column: auto; grid-row: 2; }
+  body.touch-on #kit { top: auto; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 98px); left: max(14px, env(safe-area-inset-left)); max-width: 60vw; }
+  body.touch-on #hint { top: auto; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 136px); }
+  body.touch-on #minimap { top: max(100px, calc(env(safe-area-inset-top) + 92px)); width: 112px; }
+  /* the item button sits above jump, clear of the run strip */
   .touch .acts { display: grid; grid-template-columns: auto auto; gap: 10px; justify-items: end; align-items: end; }
   .touch .t-use { grid-column: 2; grid-row: 1; justify-self: center; }
   .touch .t-down { grid-column: 1; grid-row: 2; }
@@ -122,9 +169,15 @@ body.touch-on #buffs { top: max(118px, calc(env(safe-area-inset-top) + 110px)); 
   #pills.crowd .nm, #pills.crowd li::after { display: none; } /* (a red plaque says "it", or "has a bomb") */
   #pills.crowd li { padding: 4px 9px 4px 8px; }
   #pills.crowd li.me { box-shadow: inset 0 -2px 0 #fff; }
+  /* ...and in a team battle, a row a side */
+  #pills.teams.crowd { grid-auto-flow: column dense; grid-template-columns: none; grid-template-rows: auto auto; }
+  #pills.teams.crowd li { padding-left: 11px; box-shadow: inset 4px 0 0 var(--team, transparent); }
+  #pills.teams.crowd li.me { box-shadow: inset 4px 0 0 var(--team, transparent), inset 0 -2px 0 #fff; }
+  #pills.teams.crowd li.t0 { grid-column: auto; grid-row: 1; }
+  #pills.teams.crowd li.t1 { grid-column: auto; grid-row: 2; }
   .touch .pad { height: 74px; }
   .touch .t-jump { width: 80px; height: 80px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  #banner.show, #count.pop, .flash.go, #itemslot.ready .pic { animation-duration: 0.01s; }
+  #banner.show, #count.pop, .flash.go, #itemslot.named .tile, #status.bomb.hot { animation-duration: 0.01s; }
 }
