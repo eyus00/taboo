@@ -798,7 +798,7 @@ export class Renderer {
       cam.set = true;
     } else {
       // (flying between portals you move fast: the view keeps right with you)
-      const k = 1 - Math.exp(-dt * (this.flying ? 15 : z === 1 ? 6 : 9));
+      const k = 1 - Math.exp(-dt * (this.flying ? 28 : z === 1 ? 6 : 9));
       cam.fx += (tx - cam.fx) * k;
       cam.fy += (ty - cam.fy) * k;
       // never show past the arena's edge while the zoom is still catching up

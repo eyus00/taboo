@@ -18,7 +18,7 @@
   // Development page: four bots play a match in one art style.
   //   /_theme.html?theme=ink&arena=hills            whole arena, as on a laptop
   //   ...&zoom=1.6&fx=820&fy=900                    fixed close-up centred on a world point
-  //   ...&seed=3&names=0&freeze=5&players=6          different match / no names / stop the clock after 5 s / 2-6 bots
+  //   ...&seed=3&names=0&freeze=5&players=6          different match / no names / stop the clock after 5 s / 2-10 bots
   import { PW, PH } from '/shared/config.js';
   import { arenaById } from '/shared/arenas.js';
   import { Sim } from '/shared/sim.js';
@@ -43,7 +43,7 @@
   let seed = Number(q.get('seed')) || 7;
   const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
   const sim = new Sim(arena, rnd);
-  const count = Math.max(2, Math.min(6, Number(q.get('players')) || 4));
+  const count = Math.max(2, Math.min(10, Number(q.get('players')) || 4));
   const names = ['Mika', 'Jo', 'Sam', 'Lee', 'Ren', 'Aya'];
   const bots = [];
   for (let i = 0; i < count; i++) {

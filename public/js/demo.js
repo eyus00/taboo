@@ -509,7 +509,7 @@ class Run {
       this.cols = [];
       list.forEach((c, slot) => {
         teams[slot] = c.team;
-        this.cols[slot] = TEAM_SLOTS[c.team][seen[c.team]++ % 3];
+        this.cols[slot] = TEAM_SLOTS[c.team][seen[c.team]++ % TEAM_SLOTS[c.team].length];
       });
       sim.setTeams(teams);
     }

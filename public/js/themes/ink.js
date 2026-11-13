@@ -192,7 +192,7 @@ function drawPlatform(g, rnd, p) {
 
 export default {
   id: 'ink',
-  colors: ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12', '#7a4a9e', '#d9689a'],
+  colors: ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12', '#7a4a9e', '#d9689a', '#d2691e', '#2a8f8f', '#7a5230', '#7c8088'],
   letterbox: '#ddd2b8',
   lift: '#4f6f8f', // colour of the air in updraft columns
   label: {

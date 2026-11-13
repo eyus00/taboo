@@ -41,7 +41,7 @@ const cleanName = (raw) =>
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, NAME_MAX);
-const INK_COLORS = ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12', '#7a4a9e', '#d9689a']; // the house style's six player colours
+const INK_COLORS = ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12', '#7a4a9e', '#d9689a', '#d2691e', '#2a8f8f', '#7a5230', '#7c8088']; // the house style's ten player colours
 const isTouch = matchMedia('(pointer: coarse)').matches;
 // Key cues are shown wherever there is a keyboard: always on a computer, and
 // on a tablet from the moment someone presses a real key.
@@ -675,7 +675,7 @@ const OPTIONS = [
     hint: (s) => (s.mode === 'team' ? 'The teams stay together; their points add up.' : 'Points for the least time as the oni.'),
   },
   { id: 'rounds', key: 'rounds', hot: 'r', label: 'Rounds', only: 'online', type: 'seg', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup', hint: () => 'The last round counts double.' },
-  { id: 'bots', key: 'bots', hot: 'b', label: 'Bots', only: 'practice', type: 'seg', values: [1, 2, 3, 4, 5].map((n) => [n, String(n)]) },
+  { id: 'bots', key: 'bots', hot: 'b', label: 'Bots', only: 'practice', type: 'seg', values: [1, 2, 3, 5, 7, 9].map((n) => [n, String(n)]) },
   { id: 'duration', key: 'duration', hot: 'l', label: 'Round length', type: 'seg', values: DURATIONS.map((d) => [d, `${d} s`]) },
   { id: 'powerups', key: 'powerups', hot: 'p', label: 'Lucky boxes', type: 'seg', values: [[true, 'On'], [false, 'Off']] },
 ];
@@ -837,7 +837,9 @@ function renderLobby() {
     if (r.score) li.append(el('span', 'score', r.score));
     list.append(li);
   }
-  for (let i = rows.length; i < MAX_PLAYERS; i++) list.append(el('li', 'empty', online ? 'waiting...' : ''));
+  // empty places: all of them in a room; in practice only enough to fill the row
+  const places = online ? MAX_PLAYERS : Math.ceil(rows.length / 5) * 5;
+  for (let i = rows.length; i < places; i++) list.append(el('li', 'empty', online ? 'waiting...' : ''));
 
   const start = $('btn-start');
   if (online) {
@@ -1020,6 +1022,7 @@ function showResults(res) {
   $('res-sub').textContent = sub;
   $('res-teams').hidden = !team;
   $('res-table').hidden = !!team;
+  $('s-results').classList.toggle('crowd', res.rows.length > 6); // seven or more: a tighter table
   $('s-results').classList.toggle('teams', !!team);
   if (team) paintSides(res, mySlot);
   else paintTable(res, mySlot);

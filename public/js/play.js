@@ -153,7 +153,7 @@ export const play = {
     this.renderer.setScene(arena, themeId, info.cols || null);
     this.root.style.background = this.renderer.theme.letterbox;
     const h = this.hud;
-    Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], hintNow: '', item: '', teams: '' });
+    Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], hintNow: '', item: '', teams: '', crowd: 0 });
     this.el.pills.textContent = '';
     this.el.buffs.textContent = '';
     this.el.count.textContent = '';
@@ -278,7 +278,14 @@ export const play = {
       if (it !== pill.it) pill.li.classList.toggle('it', (pill.it = it));
     }
     h.pills.forEach((pill, slot) => pill && pill.li.classList.toggle('gone', !seen[slot]));
-    E.pills.classList.toggle('many', view.players.length > 4); // five or six: two columns
+    // five or more: two columns; seven or more: smaller plaques (and on a small screen, only the colours)
+    const n = view.players.length;
+    if (n !== h.crowd) {
+      h.crowd = n;
+      E.pills.classList.toggle('many', n > 4);
+      E.pills.classList.toggle('crowd', n > 6);
+      E.pills.style.setProperty('--rows', String(Math.ceil(n / 2)));
+    }
     E.pills.classList.toggle('bomb', !!view.team);
 
     // team battle: the score either side of the clock (with a bomb for every one that side is holding), the flags under it

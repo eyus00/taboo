@@ -24,7 +24,7 @@ are what made the old version slow.
 ```js
 export default {
   id: 'ink',
-  colors: ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12', '#7a4a9e', '#d9689a'], // players 1-6: red, blue, green, yellow, purple, pink (in that order, any shade)
+  colors: ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12', '#7a4a9e', '#d9689a', '#d2691e', '#2a8f8f', '#7a5230', '#7c8088'], // players 1-10: red, blue, green, yellow, purple, pink, orange, teal, brown, silver (in that order, any shade)
   letterbox: '#ddd2b8',   // page colour behind / around everything
   lift: '#4f6f8f',        // colour of the air streaks in updraft columns
   pixel: 2,               // OPTIONAL, pixel-art styles only: size of one art pixel in world units

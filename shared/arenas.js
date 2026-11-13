@@ -10,6 +10,7 @@
 //   A/a B/b C/c  portal pairs: step into one and fly to its partner as an orb
 //   *  a place where lucky boxes can appear
 //   1-6  player start positions      r  where you come back after falling in a pit
+//        (starts 7-10 are worked out: see extraStarts below)
 //   7 8  the two team bases (flag stands) for team battles; left and right ends if left out
 //   .  air
 //
@@ -417,7 +418,9 @@ function parse(def) {
       portals[b].to = a;
       portals[a].pair = portals[b].pair = pair;
     });
-  if (spawns.filter(Boolean).length !== MAX_PLAYERS) throw new Error(def.id + ': needs spawns 1-' + MAX_PLAYERS);
+  if (spawns.filter(Boolean).length !== DRAWN_STARTS) throw new Error(def.id + ': needs spawns 1-' + DRAWN_STARTS);
+  extraStarts(def.id, C * TILE, spawns, pickups, platforms, { tramps, spikes, lifts, portals, bases });
+  if (spawns.length < MAX_PLAYERS) throw new Error(def.id + ': only found ' + spawns.length + ' starts');
 
   // slopes: always stored left to right
   const ramps = (def.ramps || []).map(([c0, r0, c1, r1]) => {
@@ -448,6 +451,35 @@ function parse(def) {
     spawns,
     respawns: respawns.length ? respawns : spawns,
   };
+}
+
+// Starts 7 to 10. The maps are drawn with six; a full room of ten gets two more
+// on each side, taken from the box spots: of all the mirror-image pairs of
+// spots standing on flat ground, the ones furthest from every other start
+// (and from the flags). Odd-numbered starts are on the left, like the drawn ones.
+const DRAWN_STARTS = 6;
+function extraStarts(id, w, spawns, pickups, platforms, { tramps, spikes, lifts, portals, bases }) {
+  const ground = (pt) => pt.y - 18 + TILE; // a box floats just above the tile it stands on
+  const firm = (pt) => {
+    const y = ground(pt);
+    if (!platforms.some((p) => p.y === y && p.x <= pt.x - PW && p.x + p.w >= pt.x + PW)) return false;
+    const near = (z, pad) => z.x < pt.x + pad && z.x + z.w > pt.x - pad && z.y < y + 4 && z.y + z.h > y - PH - 8;
+    return !tramps.some((z) => near(z, 44)) && !spikes.some((z) => near(z, 44)) && !lifts.some((z) => near(z, 30)) && !portals.some((z) => near(z, 50));
+  };
+  const left = pickups.filter((pt) => pt.x < w / 2 - 60 && firm(pt));
+  const pairs = left
+    .map((pt) => [pt, pickups.find((q) => Math.abs(q.x - (w - pt.x)) < 3 && q.y === pt.y)])
+    .filter(([, mirror]) => mirror && firm(mirror));
+  const taken = [...spawns.map(([x, y]) => [x + PW / 2, y + PH]), ...bases];
+  while (spawns.length < MAX_PLAYERS && pairs.length) {
+    const apart = ([pt]) => Math.min(...taken.map(([x, y]) => Math.hypot(pt.x - x, (ground(pt) - y) * 1.5)));
+    pairs.sort((a, b) => apart(b) - apart(a));
+    const [l, r] = pairs.shift();
+    for (const pt of [l, r]) {
+      spawns.push([pt.x - PW / 2, ground(pt) - PH]);
+      taken.push([pt.x, ground(pt)], [w - pt.x, ground(pt)]);
+    }
+  }
 }
 
 // Height of a slope's surface at x.

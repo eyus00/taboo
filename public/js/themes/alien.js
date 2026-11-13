@@ -775,7 +775,7 @@ function capPath(g, x, w, base, k, o) {
 
 export default {
   id: 'alien',
-  colors: ['#ff5a66', '#4b93ff', '#76e04a', '#ffd43d', '#b68cff', '#ff8fd6'],
+  colors: ['#ff5a66', '#4b93ff', '#76e04a', '#ffd43d', '#b68cff', '#ff8fd6', '#ff9a3d', '#3fe0d0', '#c08a55', '#e9eef5'],
   letterbox: '#0e0822',
   lift: PINK,
   label: {

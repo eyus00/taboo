@@ -304,7 +304,7 @@ function startRound(room) {
     for (const p of everyone) {
       const t = side.get(p.id);
       teams[p.slot] = t;
-      cols[p.slot] = TEAM_SLOTS[t][seen[t]++ % 3]; // one side in warm colours, the other in cool ones
+      cols[p.slot] = TEAM_SLOTS[t][seen[t]++ % TEAM_SLOTS[t].length]; // one side in warm colours, the other in cool ones
     }
   }
 

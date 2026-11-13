@@ -17,7 +17,7 @@ const AMBER = '#ffb62e'; // jump pads and hazard paint
 const ALERT = '#ff4a3d'; // whoever is it
 const SPACE = '#070a1d';
 const LIFT = '#8fe9ff'; // ion stream in the updraft columns
-const COLORS = ['#ff5747', '#3f9dff', '#3fd97f', '#ffd23f', '#a57bff', '#ff7ac4']; // red, blue, green, yellow, purple, pink
+const COLORS = ['#ff5747', '#3f9dff', '#3fd97f', '#ffd23f', '#a57bff', '#ff7ac4', '#ff9838', '#35dccd', '#b98455', '#eef2f8']; // red, blue, green, yellow, purple, pink, orange, teal, brown, silver
 
 // the planet whose horizon fills the bottom of the picture
 const PX = 300;

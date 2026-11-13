@@ -4,6 +4,7 @@ import {
   PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, MOVE_SPEED, IMMUNE_TICKS, STUN_TICKS, RESPAWN_TICKS,
   SPEED_BUFF_MUL, TOUCH, AIR_JUMPS, twistById, IN_USE, ITEM_KINDS, BOX_FIRST_TICKS, ITEM_ARM_TICKS, STORM_SPEED, IT_SPEED_MUL,
   BLAST_RADIUS, BOMB_POINTS, FLAG_POINTS, FLAG_CAP_TICKS, FLAG_PAY_TICKS, FLAG_HALF, FLAG_UP, LAUNCH_VX, LAUNCH_VY,
+  MAX_PLAYERS, PLAYER_COLORS, TEAM_SLOTS,
 } from '../shared/config.js';
 import { ARENAS, arenaById } from '../shared/arenas.js';
 import { makeState, stepPlayer, packState, unpackState, STATE_LEN } from '../shared/physics.js';
@@ -553,7 +554,7 @@ test('team battle: a bomb for every two players, passed only to enemies with fre
   assert.deepEqual(res.winners.sort(), [0, 1]);
   assert.deepEqual(res.rows.filter((r) => r.boom).map((r) => r.slot).sort(), [2, 3]);
   // how many bombs, and how they are shared out
-  for (const [n, want] of [[2, 1], [3, 1], [4, 2], [5, 2], [6, 3]]) {
+  for (const [n, want] of [[2, 1], [3, 1], [4, 2], [5, 2], [6, 3], [7, 3], [8, 4], [9, 4], [10, 5]]) {
     for (let seed = 1; seed <= 6; seed++) {
       let x = seed * 7919;
       const m = new Sim(box, () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296));
@@ -576,6 +577,7 @@ test('team battle: a bomb for every two players, passed only to enemies with fre
   m.remove(0);
   assert.deepEqual(m.bombs(), [1, 2]);
   // teams are as even as they can be
+  assert.deepEqual(makeTeams([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).map((t) => t.length), [5, 5]);
   assert.deepEqual(makeTeams([0, 1, 2, 3, 4, 5]).map((t) => t.length), [3, 3]);
   assert.deepEqual(makeTeams([0, 1, 2, 3, 4]).map((t) => t.length), [3, 2]);
   assert.deepEqual(makeTeams([0, 1]).map((t) => t.length), [1, 1]);
@@ -761,29 +763,35 @@ test('the leader can be made to start as it; twists change the round', () => {
   assert.equal(frenzy.boxes.length, 1, 'boxes arrive sooner in a frenzy');
 });
 
-test('six players: everyone gets their own start, any of them can tag or be tagged, and all six score', () => {
+test('ten players: everyone gets their own start, any of them can tag or be tagged, and all ten score', () => {
+  assert.equal(MAX_PLAYERS, 10);
+  assert.equal(PLAYER_COLORS.length, 10);
+  assert.equal(new Set(PLAYER_COLORS).size, 10, 'ten different colours');
+  assert.deepEqual([...TEAM_SLOTS[0], ...TEAM_SLOTS[1]].sort((x, y) => x - y), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 'five colours a side');
   for (const arena of ARENAS) {
-    assert.equal(arena.spawns.length, 6, `${arena.id} has six start positions`);
-    assert.equal(new Set(arena.spawns.map((s) => s.join())).size, 6, `${arena.id}: no two players start on the same spot`);
+    assert.equal(arena.spawns.length, 10, `${arena.id} has ten start positions`);
+    assert.equal(new Set(arena.spawns.map((s) => s.join())).size, 10, `${arena.id}: no two players start on the same spot`);
+    // ...and not on top of each other either
+    arena.spawns.forEach((p, i) => arena.spawns.forEach((q, j) => i < j && assert.ok(Math.hypot(p[0] - q[0], p[1] - q[1]) > 60, `${arena.id}: starts ${i + 1} and ${j + 1} are too close`)));
   }
   const sim = new Sim(box);
-  for (let i = 0; i < 6; i++) sim.add(i).itTicks = [300, 100, 500, 200, 600, 400][i];
-  assert.equal(sim.active().length, 6);
-  // slot 5 (the sixth player) is it and touches slot 4
-  const a = sim.players[5].s;
-  const b = sim.players[4].s;
+  for (let i = 0; i < 10; i++) sim.add(i).itTicks = [300, 100, 500, 200, 600, 400, 700, 800, 900, 1000][i];
+  assert.equal(sim.active().length, 10);
+  // slot 9 (the tenth player) is it and touches slot 8
+  const a = sim.players[9].s;
+  const b = sim.players[8].s;
   a.x = 2400;
   b.x = 2400 + PW;
   a.y = b.y = floorY;
-  sim.it = 5;
+  sim.it = 9;
   sim.step([]);
-  assert.equal(sim.it, 4, 'the sixth player tagged the fifth');
-  assert.equal(sim.players[5].tags, 1);
-  // tournament points: 5 down to 0 for least time as it, +1 for everyone but whoever is it
+  assert.equal(sim.it, 8, 'the tenth player tagged the ninth');
+  assert.equal(sim.players[9].tags, 1);
+  // tournament points: 9 down to 0 for least time as it, +1 for everyone but whoever is it
   sim.it = 4;
-  assert.deepEqual(cupPoints(sim), { 0: 4, 1: 6, 2: 2, 3: 5, 4: 0, 5: 3 });
-  const names = ['A', 'B', 'C', 'D', 'E', 'F'];
-  assert.deepEqual(standings(sim, names, 'potato').winners.sort(), [0, 1, 2, 3, 5]);
+  assert.deepEqual(cupPoints(sim), { 0: 8, 1: 10, 2: 6, 3: 9, 4: 4, 5: 7, 6: 4, 7: 3, 8: 2, 9: 1 });
+  const names = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+  assert.deepEqual(standings(sim, names, 'potato').winners.sort(), [0, 1, 2, 3, 5, 6, 7, 8, 9]);
   assert.equal(standings(sim, names, 'time').winners[0], 1);
 });
 
@@ -906,13 +914,13 @@ function botMatch(arena, n, teams, seconds = 120) {
   return out;
 }
 
-test('bots play every arena with 2, 4 and 6: tags keep happening, nobody stands about, pit falls are rare', () => {
+test('bots play every arena with 2, 4, 6 and 10: tags keep happening, nobody stands about, pit falls are rare', () => {
   let falls = 0;
   let minutes = 0;
   const log = [];
   for (const { id } of ARENAS) {
     const arena = arenaById(id); // as a plain game of tag plays it (with few thorns)
-    for (const n of [2, 4, 6]) {
+    for (const n of [2, 4, 6, 10]) {
       const r = botMatch(arena, n, false);
       const who = `${arena.id} ${n}p`;
       log.push(`${who} ${r.tags} tags (longest gap ${Math.round(r.worst / 60)}s, ${r.falls} falls)`);
@@ -941,7 +949,7 @@ test('bots play team battles: flags are taken and turned, bombs change hands and
     let turned = 0;
     let paid = 0;
     let taken = 0;
-    for (const n of [2, 4, 6]) {
+    for (const n of [2, 4, 6, 10]) {
       const r = botMatch(arena, n, true, 90);
       const who = `${arena.id} ${n}p teams`;
       log.push(`${who} ${r.score.join('-')} (${r.tags} passes, ${r.booms} bombs, flags: ${r.takes} taken ${r.turned} lost, ${r.flags} points; idle ${Math.round(r.idle / 60)}s, ${r.falls} falls)`);
@@ -960,8 +968,8 @@ test('bots play team battles: flags are taken and turned, bombs change hands and
       falls += r.falls;
       minutes += 1.5 * n;
     }
-    assert.ok(passes >= 3, `${arena.id}: bombs changed hands only ${passes} times in three team matches`);
-    assert.ok(taken >= 5 && paid >= 30, `${arena.id}: in three team matches flags were taken ${taken} times and paid ${paid} points`);
+    assert.ok(passes >= 3, `${arena.id}: bombs changed hands only ${passes} times in four team matches`);
+    assert.ok(taken >= 6 && paid >= 40, `${arena.id}: in four team matches flags were taken ${taken} times and paid ${paid} points`);
     log.push(`[${arena.id}: ${passes} passes, ${turned} flags lost]`);
   }
   console.log(`      ${log.join('; ')}`);

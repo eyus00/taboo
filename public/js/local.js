@@ -31,7 +31,7 @@ export class LocalGame {
     if (this.mode === 'team') {
       this.teams = new Array(MAX_PLAYERS).fill(-1);
       this.cols = new Array(MAX_PLAYERS).fill(0);
-      makeTeams(slots).forEach((list, t) => list.forEach((slot, i) => ((this.teams[slot] = t), (this.cols[slot] = TEAM_SLOTS[t][i % 3]))));
+      makeTeams(slots).forEach((list, t) => list.forEach((slot, i) => ((this.teams[slot] = t), (this.cols[slot] = TEAM_SLOTS[t][i % TEAM_SLOTS[t].length]))));
     }
     const order = [...this.arena.spawns.keys()].sort(() => Math.random() - 0.5);
     const half = [order.filter((i) => this.arena.spawns[i][0] < this.arena.w / 2), order.filter((i) => this.arena.spawns[i][0] >= this.arena.w / 2)];

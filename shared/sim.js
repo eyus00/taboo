@@ -278,7 +278,8 @@ export class Sim {
     }
     if (!this.powerups || this.tick < this.nextBox || !pts.length || this.locked()) return;
     this.nextBox = this.tick + Math.round(BOX_EVERY_TICKS / this.twist.items);
-    if (this.boxes.length >= BOX_MAX + (this.twist.items > 1 ? 2 : 0) + (this.active().length > 4 ? 1 : 0)) return;
+    // (a crowd gets more boxes: one more for every two players beyond four)
+    if (this.boxes.length >= BOX_MAX + (this.twist.items > 1 ? 2 : 0) + Math.floor(Math.max(0, this.active().length - 4) / 2)) return;
     const free = [];
     for (let p = 0; p < pts.length; p++) {
       if (this.boxes.includes(p)) continue;

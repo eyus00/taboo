@@ -372,7 +372,7 @@ body.in-game .conn { display: none; }
 }
 .roster { display: flex; flex-direction: column; gap: 6px; }
 .roster .note:empty { display: none; }
-.players { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 16px; }
+.players { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 14px; } /* ten places: two rows of five */
 .players li { display: flex; align-items: center; flex-wrap: wrap; gap: 0 8px; min-width: 0; min-height: 34px; padding: 2px 4px 2px 0; border-bottom: 1.5px solid var(--faint); }
 .players .chip { width: 9px; height: 22px; flex: none; }
 .players .nm { flex: 0 1 auto; min-width: 2.6em; font: 400 20px/1.1 var(--brush); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px 0 0; margin-right: -7px; } /* room for the brush letters' tails */
@@ -437,6 +437,12 @@ body.in-game .conn { display: none; }
 .table .chip { display: inline-block; width: 9px; height: 22px; margin-right: 10px; vertical-align: -4px; }
 .mark { display: inline-flex; align-items: center; gap: 5px; margin-left: 10px; font: 800 11px/1 var(--serif); letter-spacing: 0.1em; text-transform: uppercase; color: var(--red-deep); vertical-align: 3px; }
 .table tr.me td { background: rgba(200, 55, 45, 0.08); }
+/* seven or more players: a tighter table, so all ten fit on a laptop screen */
+#s-results.crowd .table td { padding-top: 4px; padding-bottom: 3px; }
+#s-results.crowd .table td.who { font-size: 20px; }
+#s-results.crowd .table .chip { height: 18px; }
+#s-results.crowd .side li { padding-top: 4px; padding-bottom: 3px; }
+#s-results.crowd .scroll { gap: 10px; }
 .table .gain { color: #2f7a48; font-weight: 800; }
 
 /* team battle: the two sides face to face, each under its own banner */
@@ -592,6 +598,7 @@ body:not(.no-kbd) .touch-only { display: none; }
   .cards.arenas { grid-template-columns: repeat(min(var(--cols, 3), 3), minmax(0, 1fr)); }
   .rules .btn.big { position: sticky; bottom: 4px; }
   .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .players li.empty ~ li.empty { display: none; } /* one "waiting..." is enough on a small screen */
 }
 @media (max-width: 620px) {
   /* the ways to play: the note goes under the name, the code gets a line of its own */

@@ -127,10 +127,10 @@ export const FLAG_POINTS = 1; // ...this much
 export const TEAM_NAMES = ['Sun', 'Moon'];
 export const TEAM_COLORS = ['#e2543f', '#3f7fe2'];
 // colour slots handed out by team, so one side is warm and the other cool
-export const TEAM_SLOTS = [[0, 3, 5], [1, 2, 4]];
+export const TEAM_SLOTS = [[0, 3, 5, 6, 8], [1, 2, 4, 7, 9]]; // red, yellow, pink, orange, brown | blue, green, purple, teal, silver
 
 // --- Rooms and games --------------------------------------------------------------
-export const MAX_PLAYERS = 6;
+export const MAX_PLAYERS = 10;
 export const MIN_PLAYERS = 2;
 export const NAME_MAX = 12;
 export const CODE_LEN = 4; // room codes are 4 digits
@@ -172,9 +172,9 @@ export const IN_DOWN = 8;
 export const IN_USE = 16; // set off the item you are holding
 export const IN_MASK = 31;
 
-// Join-order colours: red, blue, green, yellow, purple, pink
-export const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#ff79b0'];
-export const COLOR_NAMES = ['Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Pink'];
+// Join-order colours: red, blue, green, yellow, purple, pink, orange, teal, brown, silver
+export const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#ff79b0', '#ff8c1a', '#1abc9c', '#a0693c', '#dfe6ee'];
+export const COLOR_NAMES = ['Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Pink', 'Orange', 'Teal', 'Brown', 'Silver'];
 
 // Art styles (drawing code lives in public/js/themes). Ink is the house style.
 export const THEMES = [

@@ -377,16 +377,16 @@ try {
     assert.equal(a.end.loser, -1);
   });
 
-  await test('room is full at 6 players; host leaving hands the room over', async () => {
-    const extra = ['Di', 'Eve', 'Flo', 'Gus', 'Hal', 'Ivy'].map((n) => client(n));
+  await test('room is full at 10 players; host leaving hands the room over', async () => {
+    const extra = ['Di', 'Eve', 'Flo', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kai', 'Lu', 'Max'].map((n) => client(n));
     const slots = [a.me().slot];
-    for (const x of extra.slice(0, 5)) {
+    for (const x of extra.slice(0, 9)) {
       const res = await x.call('join', { code, name: x.name });
       assert.ok(res.ok, `${x.name} joins`);
       slots.push(res.room.players.find((p) => p.id === x.socket.id).slot);
     }
-    assert.deepEqual(slots.slice().sort(), [0, 1, 2, 3, 4, 5], 'six players, six different colours');
-    assert.match((await extra[5].call('join', { code, name: 'Ivy' })).error, /full \(6 players max\)/);
+    assert.deepEqual(slots.slice().sort((x, y) => x - y), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 'ten players, ten different colours');
+    assert.match((await extra[9].call('join', { code, name: 'Max' })).error, /full \(10 players max\)/);
     extra[0].room = { players: [] };
     extra[0].socket.on('room', (r) => (extra[0].room = r));
     a.stop();
@@ -422,18 +422,18 @@ try {
     assert.equal(found.length, 1);
     assert.deepEqual(
       { ...found[0] },
-      { code: made.room.code, host: 'Hoshi', players: 2, max: 6, game: 'cup', mode: 'team', arena: 'random', theme: host.room.settings.theme, playing: false },
+      { code: made.room.code, host: 'Hoshi', players: 2, max: 10, game: 'cup', mode: 'team', arena: 'random', theme: host.room.settings.theme, playing: false },
     );
     // found it: join with what the list gave us
     const joined = await seeker.call('join', { code: found[0].code, name: 'Suki' });
     assert.ok(joined.ok);
     assert.equal(joined.room.players.length, 3);
     // a full room is no longer offered, and neither is one made private again
-    const more = ['Ichi', 'Ni', 'San'].map((n) => client(n));
+    const more = ['Ichi', 'Ni', 'San', 'Shi', 'Go', 'Roku', 'Nana'].map((n) => client(n));
     for (const x of more) assert.ok((await x.call('join', { code: made.room.code, name: x.name })).ok);
-    assert.deepEqual(await list(seeker), [], 'six of six: nothing to join');
+    assert.deepEqual(await list(seeker), [], 'ten of ten: nothing to join');
     more[2].socket.emit('leave');
-    await until(() => host.room.players.length === 5, 'one left');
+    await until(() => host.room.players.length === 9, 'one left');
     assert.equal((await list(seeker)).length, 1);
     host.socket.emit('settings', { open: false });
     await until(() => host.room.settings.open === false, 'room closed');

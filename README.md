@@ -1,6 +1,6 @@
 # Onigokko
 
-*Onigokko* (鬼ごっこ) is Japanese for tag; whoever is it is the *oni*. This is real-time multiplayer tag for 2&ndash;6 players, in the browser. Everyone plays on their own device. **Host** a game, find a **Public** one in the list, or type the 4-digit code of a **Private** one (an invite link works too).
+*Onigokko* (鬼ごっこ) is Japanese for tag; whoever is it is the *oni*. This is real-time multiplayer tag for 2&ndash;10 players, in the browser. Everyone plays on their own device. **Host** a game, find a **Public** one in the list, or type the 4-digit code of a **Private** one (an invite link works too).
 
 - **Three ways to play.** *Hot Potato* (whoever is the oni when the clock hits zero loses), *Least Time* (every second as the oni counts against you), and *Team Bomb* (two teams, flags to hold, and bombs that go off at the buzzer). Any of them as a quick match or a tournament of 3, 5 or 7 rounds.
 - **Lucky boxes.** Touch one and you get a random item to keep: set it off when it hurts most. A Blast that hurls everyone on screen away, a Swap that trades places with someone, a Storm that puts everyone else in slow motion, Goo to slip on, Frost, Ward, Swift and Spring. Nothing works in the last 10 seconds, so nobody can sit on one for the buzzer.
@@ -71,8 +71,8 @@ Keys that would throw you out of a game (Esc in a room, Q in the pause menu, Esc
 - The tagged player is frozen for 0.4 s so the tagger can get away, and the tagger cannot be tagged back for 1 s (they flash while protected). The oni runs slightly faster than everyone else.
 - Players pass through each other.
 - **Slopes** behave like tilted thin ledges: walk up and down them, jump up through them from below, hold down to drop through &ndash; or to walk under one from its low end.
-- **Trampolines** launch you straight up; **launchers** (the pads with arrows) fling you up and across. **Updrafts** are columns of rising air: step in, let go and ride. **Thorns** sting: a short stun, and you are thrown back off them.
-- **Portals** come in coloured pairs: step into one and you fly to its partner as a spark, in an arc over the map, safe from tags until you arrive. A portal with a small arrow badge lets you press jump to drop out wherever you are.
+- **Trampolines** launch you straight up; **launchers** (the pads with arrows) fling you up and across. **Updrafts** are columns of rising air: step in, let go and ride. **Thorns** sting: a short stun, and you are thrown back off them. There are few of them: a plain game of tag has hardly any, a team battle about half of what an arena is drawn with.
+- **Portals** come in coloured pairs: step into one and you fly to its partner as a spark, in an unhurried arc over the map (the view flies with you), safe from tags until you arrive. A portal with a small arrow badge lets you press jump to drop out wherever you are.
 - If you join while a round is running you watch it and play the next one.
 - The player who opened the room is the host (picks the game, style, arena and round length; starts it). If they leave, the next player becomes host.
 - A room starts **private**: only people with the code or the invite link get in. The host can switch it to **public**, and then it shows up under Play &rarr; Public for anyone to join until it is full.
@@ -96,8 +96,8 @@ You hold one item at a time and choose when to use it. Items stop working (and b
 
 ### Team Bomb
 
-- Two teams, Sun (warm colours) and Moon (cool colours): 1 v 1 up to 3 v 3, as even as the room allows.
-- **Bombs.** One for every two players (1, 2 or 3), handed out at GO starting with a random player of each team. A carrier gets rid of theirs by touching an **enemy** whose hands are free; team mates are safe and nobody carries two. The bombs burn for the whole round and all go off when the clock stops: each one scores 10 for the team that is *not* holding it.
+- Two teams, Sun (warm colours) and Moon (cool colours): 1 v 1 up to 5 v 5, as even as the room allows.
+- **Bombs.** One for every two players (1 to 5), handed out at GO starting with a random player of each team. A carrier gets rid of theirs by touching an **enemy** whose hands are free; team mates are safe and nobody carries two. The bombs burn for the whole round and all go off when the clock stops: each one scores 10 for the team that is *not* holding it.
 - **Flags.** A flag is a spot on the map with a ring around it (there is one near each side's start). Stand in the ring and it fills with your colour: 2.5 s alone to take a free flag, twice that to turn an enemy one, faster with a team mate. With as many enemies as friends in the ring nothing moves. A flag in your colour pays your team 1 point every 5 seconds, whether you stay or not.
 - So: the flags decide the round while it runs, and the bombs can turn it over in the last second.
 - Items only hit the other team.
@@ -105,7 +105,7 @@ You hold one item at a time and choose when to use it. Items stop working (and b
 ### Tournaments
 
 - **Teams** (the default): Team Bomb every round, the sides stay together, points add up, and the last round counts double.
-- **Free-for-all**: each round players are ranked by time spent as the oni &ndash; least is best &ndash; and score one point for every player they beat (5 down to 0 with six players; equal times share the better place). Everyone who is **not** the oni at the buzzer gets 1 more. From round 2 the leader starts as the oni. A tie at the end is broken by less total time as the oni.
+- **Free-for-all**: each round players are ranked by time spent as the oni &ndash; least is best &ndash; and score one point for every player they beat (9 down to 0 with ten players; equal times share the better place). Everyone who is **not** the oni at the buzzer gets 1 more. From round 2 the leader starts as the oni. A tie at the end is broken by less total time as the oni.
 - Every second round has a twist: *Moon Gravity*, *Turbo* or *Item Frenzy*. With "Random" arena a tournament visits a different arena every round.
 
 ## How it works

@@ -16,7 +16,7 @@ const HOT = '#ff2b6a'; // whoever is "it" burns this colour
 const SHELL = '#0c0a1f';
 const AIR = '#7df9ff'; // updraft columns
 const SIGN_COLORS = [CYAN, PINK, AMBER, '#7dff6b'];
-const COLORS = ['#ff4d5e', '#3da8ff', '#3dff9a', '#ffe14d', '#b37dff', '#ff7ad9'];
+const COLORS = ['#ff4d5e', '#3da8ff', '#3dff9a', '#ffe14d', '#b37dff', '#ff7ad9', '#ff9a3d', '#3df2e8', '#c08a5a', '#f2f6ff'];
 const SLAB = 14; // how thick ledges and slopes are
 const LIP = 16; // flat bit at a loose end of a slope (a player's centre rides the slope, so half of them hangs over)
 
