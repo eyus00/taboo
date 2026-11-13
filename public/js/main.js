@@ -1,11 +1,12 @@
-// Onigokko - everything outside the match itself: the title scroll, the ways
-// to play (host, public, private), your profile, match setup, how to play,
-// the draw before a round, results.
+// Onigokko - everything outside the match itself: the title scroll, Play
+// (host a room, join with a code, open rooms), your profile, the room and its
+// stage sheet, how to play, the draw before a round, results.
 //
-// On a wide screen the title scroll stays on the left and whatever you open
-// (play, public games, profile, match setup, how to play) opens beside it; on a narrow one there is
-// one panel at a time. Every screen can be driven with the keyboard alone
-// (arrows + Enter, Esc to go back, a letter or number for most things).
+// On a wide screen the title scroll stays on the left and what you open from
+// it (play, profile, how to play) opens beside it; a room takes the whole
+// screen. On a narrow one there is one panel at a time. Every screen can be
+// driven with the keyboard alone (arrows + Enter, Esc to go back, a letter or
+// number for most things).
 
 import { MODES, DURATIONS, DEFAULT_DURATION, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_POINTS, FLAG_PAY_TICKS, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, ITEM_LOCK_TICKS } from '/shared/config.js';
 import { ARENAS } from '/shared/arenas.js';
@@ -14,7 +15,7 @@ import { BOT_NAMES } from '/shared/bots.js';
 import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
 import * as art from './art.js'; // (also: playerPortrait, for the results)
-import { loadTheme } from './themes/index.js';
+import { loadTheme, THEME_MAP } from './themes/index.js';
 import { draw } from './spinner.js';
 
 const $ = (id) => document.getElementById(id);
@@ -68,8 +69,8 @@ const { renderer, input, sfx, net } = play;
 
 let myName = cleanName(store.get('tag.name'));
 let screen = ''; // name | home | game
-let panel = ''; // what is open beside the title scroll: '' | rooms (the ways to play) | find | profile | lobby | help
-let overlay = ''; // over a match: '' | results | pause | help
+let panel = ''; // what is open from the title scroll: '' | rooms (Play) | profile | lobby (a room, or practice) | help
+let overlay = ''; // in front of everything else: '' | results | pause | help (over a match) | stage (over the room)
 let helpFrom = ''; // what How to play goes back to
 let profileFrom = ''; // and what your profile goes back to
 let kind = 'online'; // what match setup is showing: online | practice
@@ -130,7 +131,7 @@ for (let i = 0; i < 14; i++) {
 // ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
-const PANELS = ['rooms', 'find', 'profile', 'lobby', 'help'];
+const PANELS = ['rooms', 'profile', 'lobby', 'help'];
 // the first letter of a name, for its seal
 const initial = (name) => (Array.from(String(name || '').trim())[0] || '?').toUpperCase();
 
@@ -148,12 +149,13 @@ function show(name, beside = '') {
   $('game').hidden = name !== 'game';
   document.body.classList.toggle('in-game', name === 'game');
   document.body.classList.toggle('has-panel', !!panel);
+  document.body.classList.toggle('in-room', panel === 'lobby'); // a room has the screen to itself
   if (name !== 'game') {
     play.stop();
     draw.clear();
   }
   // which entry of the title scroll is open
-  $('btn-play').toggleAttribute('aria-current', panel === 'rooms' || panel === 'find' || (panel === 'lobby' && kind === 'online'));
+  $('btn-play').toggleAttribute('aria-current', panel === 'rooms' || (panel === 'lobby' && kind === 'online'));
   $('btn-practice').toggleAttribute('aria-current', panel === 'lobby' && kind === 'practice');
   $('btn-profile').toggleAttribute('aria-current', panel === 'profile');
   $('btn-help').toggleAttribute('aria-current', panel === 'help');
@@ -164,6 +166,7 @@ function setOverlay(name) {
   overlay = name;
   $('s-results').hidden = name !== 'results';
   $('s-pause').hidden = name !== 'pause';
+  $('s-stage').hidden = name !== 'stage';
   for (const p of PANELS) $(`s-${p}`).hidden = !(panel === p || (p === 'help' && name === 'help'));
   $('s-help').classList.toggle('over', name === 'help');
   input.active = screen === 'game' && !name;
@@ -187,22 +190,23 @@ function focusFirst(prefer) {
   else document.activeElement?.blur();
 }
 
-// Up / down walk through the controls of whatever is in front.
+// Up / down walk through the controls of whatever is in front. A group of
+// choices (a row of words, a grid of cards, the rounds of a tournament - any
+// element marked data-group) counts as one stop; left / right move inside it.
 function moveFocus(dir) {
   const root = topRoot();
   if (!root) return;
-  // a group of choices (a row of rules, a grid of cards) counts as one stop; left / right move inside it
-  const stops = [...root.querySelectorAll('button, input[type="text"], .seg, .cards, .digits, .rounds')].filter((e) => {
+  const stops = [...root.querySelectorAll('[data-group], button, input[type="text"], .digits')].filter((e) => {
     if (e.closest('.numpad') || e.closest('.locked') || e.closest('.demo')) return false;
-    if (e.classList.contains('slot')) return false; // (the rounds of a tournament are one stop: left and right move along them)
-    return !e.disabled && e.offsetParent !== null;
+    const group = e.closest('[data-group]');
+    if (group && group !== e) return false;
+    return !e.disabled && e.offsetParent !== null && (!e.hasAttribute('data-group') || e.querySelector('input:not(:disabled), button:not(:disabled)'));
   });
   if (!stops.length) return;
   const cur = stops.findIndex((s) => s === document.activeElement || s.contains(document.activeElement));
   const next = stops[cur < 0 ? (dir > 0 ? 0 : stops.length - 1) : (cur + dir + stops.length) % stops.length];
-  const group = next.classList.contains('seg') || next.classList.contains('cards');
-  if (next.classList.contains('rounds')) (next.querySelector('[aria-checked="true"]') || next.querySelector('button'))?.focus();
-  else (group ? next.querySelector('input:checked') || next.querySelector('input') : next).focus();
+  if (next.hasAttribute('data-group')) (next.querySelector('input:checked, [aria-checked="true"]') || next.querySelector('input, button'))?.focus();
+  else next.focus();
 }
 
 // A button label with its key beside it.
@@ -310,7 +314,6 @@ function reopen(from) {
   if (from === 'lobby' && (room || kind === 'practice')) return openLobby();
   if (room) return openLobby(); // the room you are in comes first
   if (from === 'rooms') return openRooms(code);
-  if (from === 'find') return openFind();
   if (from === 'profile') return openProfile(true);
   closePanel();
 }
@@ -493,29 +496,35 @@ for (const k of ITEM_KINDS) {
 }
 
 // ---------------------------------------------------------------------------
-// Play: host a game, find a public one, or enter the code of a private one
+// Play: the way in to every online game
 // ---------------------------------------------------------------------------
+// One screen with all three ways in on it: host a room of your own (the one
+// big button), type the code a friend gave you (digits go straight in, from
+// anywhere on the screen), or walk into a room that is open to everyone - the
+// list of those is right there and keeps itself up to date.
 let code = '';
 let codeTried = '';
+const svg = (name) => `<svg class="ic" aria-hidden="true"><use href="#i-${name}" /></svg>`;
 
 function openRooms(start) {
-  $('join-error').textContent = '';
-  $('create-error').textContent = '';
+  for (const id of ['join-error', 'create-error', 'find-error']) $(id).textContent = '';
   $('numpad').hidden = true;
   $('digits').classList.remove('open');
   codeTried = '';
+  gamesSig = null;
   show('home', 'rooms');
   setCode(start);
-  watchGames();
+  paintGames(); // what we already know, straight away...
+  watchGames(); // ...then the latest
 }
 
-// Host: a room of your own. It starts private, and "Public" in the room opens
-// it to everyone - unless you came from the list of public games, where a new
-// game is meant for everyone from the start.
+// Host: a room of your own. It starts private, and the switch in the room
+// opens it to everyone - unless you asked for an open one from the list.
 const hostGame = (errorEl, open = false) => enterRoom('create', { name: myName, open }, errorEl);
 $('btn-create').addEventListener('click', () => hostGame($('create-error')));
+$('btn-find-host').addEventListener('click', () => hostGame($('find-error'), true));
 
-// Private: the code is typed straight into the menu.
+// A friend's room: the code is typed straight into the screen.
 function setCode(next) {
   code = String(next).replace(/\D/g, '').slice(0, CODE_LEN);
   const boxes = $('digits').children;
@@ -545,7 +554,7 @@ function retryCode() {
   submitCode();
 }
 
-// Typing a digit anywhere on this panel goes into the code.
+// Typing a digit anywhere on this screen goes into the code.
 function typeCode(next) {
   setCode(next);
   if (top() === 'rooms' && !isTouch && document.activeElement !== $('digits')) $('digits').focus({ preventScroll: true });
@@ -577,12 +586,12 @@ addEventListener('paste', (e) => {
   if (/\d/.test(text)) typeCode(text);
 });
 
-// Public: the games anyone may join. The server is asked again every couple
-// of seconds while this panel or the list is open.
+// Open rooms: the ones anyone may join. The server is asked again every
+// couple of seconds while this screen is up.
+const MODE_ICON = { potato: 'flame', time: 'glass', team: 'bomb' };
 let games = [];
-let gamesSig = '';
+let gamesSig = null;
 let gamesTimer = 0;
-let findFresh = false; // the list was just opened: put the keyboard on its first row
 
 async function refreshGames() {
   if (!socket.connected) return paintGames();
@@ -594,93 +603,89 @@ function watchGames() {
   clearInterval(gamesTimer);
   refreshGames();
   gamesTimer = setInterval(() => {
-    if (panel !== 'rooms' && panel !== 'find') return clearInterval(gamesTimer);
+    if (panel !== 'rooms') return clearInterval(gamesTimer);
     if (!document.hidden) refreshGames();
   }, 2500);
 }
 
 const nameOfArena = (id) => (id === 'random' ? 'Random arena' : ARENAS.find((a) => a.id === id)?.name || 'Arena');
-const describeGame = (g) => [g.game === 'cup' ? 'Tournament' : 'Quick match', MODES.find((m) => m.id === g.mode)?.name || '', nameOfArena(g.arena)].filter(Boolean).join(' - ');
+const nameOfMode = (id) => MODES.find((m) => m.id === id)?.name || '';
+// what a room is playing, in a few words: "Hot Potato - Bounce Hills", "Team tournament"
+const describeGame = (g) => (g.game === 'cup' ? (g.mode === 'team' ? 'Team tournament' : 'Tournament') : [nameOfMode(g.mode), nameOfArena(g.arena)].filter(Boolean).join(' - '));
 
 function paintGames() {
+  if (panel !== 'rooms') return;
   const n = games.length;
-  $('find-count').textContent = n ? `${n} open` : '';
-  $('btn-find').classList.toggle('has', n > 0);
-  if (panel !== 'find') return;
+  $('find-count').textContent = n ? String(n) : '';
   const box = $('games');
   const sig = JSON.stringify(games);
-  if (sig !== gamesSig || !box.childElementCount !== !n) {
+  if (sig !== gamesSig) {
     gamesSig = sig;
     const held = box.contains(document.activeElement) ? document.activeElement.dataset.code : '';
     box.textContent = '';
     for (const g of games) {
       const li = el('li');
-      const b = el('button', 'game');
+      const b = el('button', 'hub-room');
       b.dataset.code = String(g.code).replace(/\D/g, '');
       const who = el('span', 'who');
-      who.append(el('b', '', `${g.host || 'Someone'}'s game`), el('small', '', describeGame(g)));
-      const state = el('span', g.playing ? 'state on' : 'state', g.playing ? 'Playing' : 'In the room');
-      b.append(el('i', 'seal hanko', initial(g.host)), who, el('span', 'count', `${g.players}/${g.max}`), state, el('span', 'join', 'Join'));
-      b.setAttribute('aria-label', `Join ${g.host}'s game: ${describeGame(g)}, ${g.players} of ${g.max} players, ${g.playing ? 'playing - you join the next round' : 'waiting in the room'}`);
+      const what = el('small');
+      what.innerHTML = svg(g.game === 'cup' ? 'cup' : MODE_ICON[g.mode] || 'flame');
+      what.append(describeGame(g));
+      who.append(el('b', '', `${g.host || 'Someone'}'s room`), what);
+      const fill = el('span', 'fill');
+      fill.append(el('b', '', String(g.players)), `/${g.max}`);
+      b.append(el('i', 'seal hanko', initial(g.host)), who, fill, el('span', g.playing ? 'state on' : 'state', g.playing ? 'Playing' : 'In the room'), el('span', 'join', 'Join'));
+      b.setAttribute('aria-label', `Join ${g.host}'s room: ${describeGame(g)}, ${g.players} of ${g.max} players, ${g.playing ? 'playing - you join the next round' : 'waiting in the room'}`);
       b.addEventListener('click', () => joinGame(b.dataset.code));
       li.append(b);
       box.append(li);
     }
-    if (held) (box.querySelector(`[data-code="${held}"]`) || box.querySelector('button') || $('btn-find-host')).focus?.();
+    if (held) (box.querySelector(`[data-code="${held}"]`) || box.querySelector('button') || $('btn-create')).focus?.();
   }
-  $('find-none').hidden = n > 0;
+  $('find-none').hidden = n > 0 || !socket.connected;
   $('find-lead').textContent = socket.connected ? '' : 'Waking up the server - this can take up to a minute...';
-  if (findFresh) {
-    findFresh = false;
-    focusFirst(box.querySelector('button') || $('btn-find-host'));
-  }
-}
-
-function openFind() {
-  $('find-error').textContent = '';
-  gamesSig = '';
-  findFresh = true;
-  show('home', 'find');
-  paintGames(); // what we already know, straight away...
-  findFresh = true;
-  watchGames(); // ...then the latest
 }
 async function joinGame(roomCode) {
   sfx.play('click');
   const ok = await enterRoom('join', { code: roomCode, name: myName }, $('find-error'));
-  if (!ok && panel === 'find') refreshGames(); // it filled up, or it is gone
+  if (!ok && panel === 'rooms') refreshGames(); // it filled up, or it is gone
 }
-$('btn-find').addEventListener('click', openFind);
-$('btn-find-back').addEventListener('click', () => openRooms(code));
-$('btn-find-host').addEventListener('click', () => hostGame($('find-error'), true));
+// P: the keyboard goes to the list (or, with nothing in it, to hosting an open room)
+const toOpenRooms = () => focusFirst($('games').querySelector('button') || $('btn-find-host'));
 
 // ---------------------------------------------------------------------------
-// Match setup: an online room, or practice
+// The room: online, or practice
 // ---------------------------------------------------------------------------
-// The screen reads top to bottom, in the order you decide things: what game
-// (one match or a tournament, and which game), who is in it (a list - or, for
-// a team battle, the two sides), where it is played (an arena and a style; a
-// tournament has one of each per round), and a last few switches beside Start.
+// A room is first of all something to read: what is being played (Game),
+// where (Stage), by which rules (Rules) and who is in it (Players, with Start
+// underneath). The host's controls sit in those same places; a guest sees the
+// same card without them. Choosing the stage has a sheet of its own, with
+// room for proper pictures (see "The stage sheet" below).
 //
-// Every row below writes one setting (`key`) - or says how with `set`. `box`
-// is where it is drawn, `show` when, `hot` the key that steps it.
-const MODE_ICON = { potato: 'flame', time: 'glass', team: 'bomb' };
+// Every entry of OPTIONS writes one setting (`key`) - or says how with `set`.
+// `box` is where it is drawn and `type` how (a row of words unless it says
+// otherwise), `show` when, `hot` the key that steps it.
+const MODE_LINE = { potato: "Don't be the oni when time runs out", time: 'Least time as the oni wins', team: 'Two sides: hold the flags, pass the bombs' };
+const CUP_LINE = { potato: 'Everyone for themselves: least time as the oni scores', team: 'Two sides all the way: their points add up' };
 const OPTIONS = [
   { id: 'game', key: 'game', hot: 'g', label: 'Format', only: 'online', box: 'opt-format', values: [['quick', 'One match'], ['cup', 'Tournament']] },
   { id: 'rounds', key: 'rounds', hot: 'n', label: 'Rounds', only: 'online', box: 'opt-format', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup' },
-  { id: 'mode', key: 'mode', hot: 'r', label: 'Game', box: 'opt-mode', icon: (v) => MODE_ICON[v], values: MODES.map((m) => [m.id, m.name]), show: (s) => s.game !== 'cup' },
+  { id: 'mode', key: 'mode', hot: 'r', label: 'Game', type: 'modes', box: 'opt-mode', values: MODES.map((m) => [m.id, m.name]), line: (v) => MODE_LINE[v], icon: (v) => MODE_ICON[v], show: (s) => s.game !== 'cup' },
   // a tournament is scored on time as the oni (everyone for themselves), or played as a team battle
-  { id: 'sides', key: 'mode', hot: 'r', label: 'Game', only: 'online', box: 'opt-mode', icon: (v) => (v === 'team' ? 'bomb' : 'crowd'), values: [['potato', 'Free-for-all'], ['team', 'Team Bomb']], on: (s, v) => (v === 'team') === (s.mode === 'team'), show: (s) => s.game === 'cup' },
-  { id: 'arena', hot: 'a', type: 'cards', box: 'arena-cards', values: [...ARENAS.map((a) => [a.id, a.name]), ['random', 'Random']], on: (s, v) => stageValue('arena') === v, set: (v) => setStage('arena', v) },
-  { id: 'theme', hot: 's', type: 'cards', box: 'style-cards', values: [...THEMES.map((t) => [t.id, t.name]), ['random', 'Random']], on: (s, v) => stageValue('theme') === v, set: (v) => setStage('theme', v) },
-  { id: 'bots', key: 'bots', hot: 'b', label: 'Bots', only: 'practice', box: 'options', values: [1, 2, 3, 5, 7, 9].map((n) => [n, String(n)]) },
-  { id: 'duration', key: 'duration', hot: 'l', label: 'Round', box: 'options', values: DURATIONS.map((d) => [d, `${d} s`]) },
+  { id: 'sides', key: 'mode', hot: 'r', label: 'Game', type: 'modes', only: 'online', box: 'opt-mode', values: [['potato', 'Free-for-all'], ['team', 'Team Bomb']], line: (v) => CUP_LINE[v], icon: (v) => (v === 'team' ? 'bomb' : 'crowd'), on: (s, v) => (v === 'team') === (s.mode === 'team'), show: (s) => s.game === 'cup' },
+  { id: 'arena', hot: 'a', label: 'Arena', type: 'cards', box: 'arena-cards', values: [...ARENAS.map((a) => [a.id, a.name]), ['random', 'Random']], on: (s, v) => stageValue('arena') === v, set: (v) => setStage('arena', v) },
+  { id: 'theme', hot: 's', label: 'Style', type: 'cards', box: 'style-cards', values: [...THEMES.map((t) => [t.id, t.name]), ['random', 'Random']], on: (s, v) => stageValue('theme') === v, set: (v) => setStage('theme', v) },
+  { id: 'duration', key: 'duration', hot: 'l', label: 'Round time', box: 'options', values: DURATIONS.map((d) => [d, `${d} s`]) },
   { id: 'powerups', key: 'powerups', hot: 'p', label: 'Lucky boxes', box: 'options', values: [[true, 'On'], [false, 'Off']] },
+  { id: 'bots', key: 'bots', hot: 'b', label: 'Bots', only: 'practice', box: 'opt-bots', values: [1, 2, 3, 5, 7, 9].map((n) => [n, String(n)]) },
 ];
+const optionById = (id) => OPTIONS.find((o) => o.id === id);
 const settings = () => (kind === 'practice' ? practice : room.settings);
 const locked = () => kind === 'online' && !amHost();
 const isOn = (o, s, value) => (o.on ? o.on(s, value) : String(s[o.key]) === String(value));
 const isCup = () => kind === 'online' && room.settings.game === 'cup';
+// the room is in front (with or without the stage sheet over it)
+const inRoom = () => panel === 'lobby' && (!overlay || overlay === 'stage');
 
 // (see the 'room' handler: how a host's own changes are kept from being undone by late echoes)
 const SETTLE_MS = 450;
@@ -691,7 +696,7 @@ function settle() {
   if (!room || !echoed || performance.now() - settingsAt < SETTLE_MS) return;
   room.settings = echoed;
   echoed = null;
-  if (panel === 'lobby' && kind === 'online' && !overlay) renderLobby();
+  if (inRoom() && kind === 'online') renderLobby();
 }
 const touched = () => {
   settingsAt = performance.now();
@@ -712,18 +717,19 @@ function changeSetting(patch) {
     socket.emit('settings', patch);
     touched();
   }
-  syncOptions();
+  // (whether there are two sides decides how the players are shown)
+  if ('mode' in patch || 'game' in patch || 'bots' in patch) renderLobby();
+  else syncOptions();
 }
 
 // --- the stage: an arena and a style. A tournament has one of each for every
-// round; `stageSel` says which round the picture cards are for right now.
+// round; `stageSel` says which round a choice is for right now.
 let stageSel = 'all'; // 'all', or a round of the tournament (0 = the first)
-const planNow = () => room.settings.plan.slice(0, isCup() ? room.settings.rounds : 1);
+const planNow = () => (kind === 'practice' ? [{ arena: practice.arena, theme: practice.theme }] : room.settings.plan.slice(0, isCup() ? room.settings.rounds : 1));
 
-// What the cards should show as chosen: the selected round's pick - for "all
-// rounds", the pick they all share ('' if they do not).
+// What counts as chosen: the selected round's pick - for "every round", the
+// pick they all share ('' if they do not).
 function stageValue(what) {
-  if (kind === 'practice') return practice[what];
   const plan = planNow();
   if (stageSel !== 'all' && isCup()) return plan[Math.min(stageSel, plan.length - 1)][what];
   return plan.every((st) => st[what] === plan[0][what]) ? plan[0][what] : '';
@@ -743,46 +749,61 @@ function setStage(what, value) {
   s[what] = s.plan[0][what];
   syncOptions();
 }
-const stageName = (what, id) => (id === 'random' ? 'Surprise' : (what === 'arena' ? ARENAS : THEMES).find((x) => x.id === id)?.name || id);
+const stageList = (what) => (what === 'arena' ? ARENAS : THEMES);
+const stageName = (what, id, short) => (id === 'random' ? (short ? 'Random' : `Random ${what === 'arena' ? 'arena' : 'style'}`) : stageList(what).find((x) => x.id === id)?.name || id);
+const stageBlurb = (what, id) => (id === 'random' ? (what === 'arena' ? 'Drawn before every round: you find out when it starts.' : 'Drawn before every round.') : stageList(what).find((x) => x.id === id)?.blurb || '');
+// the style a picture is painted in while the real one is still to be drawn
+const paintIn = (theme) => (!theme || theme === 'random' ? DEFAULT_THEME : theme);
 
-// A tournament: one slot per round (and one for all of them at once).
-function renderRounds() {
-  const strip = $('round-strip');
-  const cup = isCup();
-  strip.hidden = !cup;
-  if (!cup) {
-    stageSel = 'all';
-    strip.textContent = '';
-    return;
-  }
-  const plan = planNow();
-  if (stageSel !== 'all' && stageSel >= plan.length) stageSel = 'all';
-  const sig = JSON.stringify([plan, stageSel]);
-  if (strip.dataset.sig === sig) return;
-  strip.dataset.sig = sig;
-  const held = strip.contains(document.activeElement) ? document.activeElement.dataset.i : null;
-  strip.textContent = '';
-  const add = (value, title, st) => {
-    const b = el('button', 'slot');
-    b.type = 'button';
-    b.dataset.i = String(value);
-    b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', String(stageSel === value));
-    b.append(el('b', '', title));
-    // (a round's slot says what it is played on: the arena, and under it the style)
-    if (st) b.append(el('span', st.arena === 'random' ? 'any' : '', stageName('arena', st.arena)), el('span', st.theme === 'random' ? 'any st' : 'st', stageName('theme', st.theme)));
-    else b.title = 'One arena and one style for every round';
-    b.addEventListener('click', () => pickRound(value));
-    strip.append(b);
+// Pictures are painted one at a time between frames, so the screen never
+// stalls, and remembered, so one that has been shown comes back at once.
+// (240 px wide ones are shared with the draw before a round.)
+const painted = new Map();
+const picKey = (arena, theme, w) => `${arena}/${theme}/${w}`;
+function paintQueue(jobs, live) {
+  const next = async () => {
+    const job = jobs.shift();
+    if (!job || !live()) return;
+    await loadTheme(job[0]);
+    if (!live()) return;
+    job[1]();
+    setTimeout(next, 0);
   };
-  add('all', 'All');
-  plan.forEach((st, i) => add(i, String(i + 1), st));
-  if (held != null) strip.querySelector(`[data-i="${held}"]`)?.focus();
+  next();
 }
-function pickRound(value) {
-  stageSel = value;
-  sfx.play('click');
-  syncOptions();
+// the picture of a stage, w px wide: an arena in a style, or the "?" of one that is still to be drawn
+function stagePic(arena, theme, w) {
+  const box = el('span', 'pic');
+  if (!arena || arena === 'random') {
+    box.classList.add('any');
+    box.textContent = '?';
+    return box;
+  }
+  const img = el('img');
+  img.alt = '';
+  Object.assign(img.dataset, { arena, theme: paintIn(theme), w });
+  const key = picKey(arena, img.dataset.theme, w);
+  if (painted.has(key)) {
+    img.src = painted.get(key);
+    img.dataset.key = key;
+  }
+  box.append(img);
+  return box;
+}
+function paintPics(root, live) {
+  const jobs = [];
+  for (const img of root.querySelectorAll('img[data-arena]')) {
+    const { arena, theme } = img.dataset;
+    const w = Number(img.dataset.w);
+    const key = picKey(arena, theme, w);
+    if (img.dataset.key === key) continue;
+    jobs.push([theme, () => {
+      if (!painted.has(key)) painted.set(key, scenePreview(arena, theme, w, Math.round((w * 9) / 16)));
+      img.src = painted.get(key);
+      img.dataset.key = key;
+    }]);
+  }
+  paintQueue(jobs, live);
 }
 
 // Every choice is a real radio button underneath, so the arrow keys work for free.
@@ -792,19 +813,21 @@ function radio(o, value, i) {
   inp.name = `opt-${o.id}`;
   inp.value = String(value);
   inp.dataset.i = i;
-  inp.addEventListener('change', () => (o.set ? o.set(value) : changeSetting({ [o.key]: value })));
+  inp.addEventListener('change', () => {
+    sfx.play('click');
+    if (o.set) o.set(value);
+    else changeSetting({ [o.key]: value });
+  });
   return inp;
 }
 
 function buildOptions() {
-  for (const id of ['options', 'opt-format', 'opt-mode']) $(id).textContent = '';
+  for (const id of ['options', 'opt-format', 'opt-mode', 'opt-bots', 'arena-cards', 'style-cards']) $(id).textContent = '';
   for (const o of OPTIONS) {
     if (o.only && o.only !== kind) continue;
+    const box = $(o.box);
     if (o.type === 'cards') {
-      // picture cards: one per arena / art style, in a single row, painted a moment later
-      const grid = $(o.box);
-      grid.textContent = '';
-      grid.style.setProperty('--cols', o.values.length);
+      // the stage sheet: a picture card for every arena and every art style
       o.values.forEach(([value, text], i) => {
         const card = el('label', 'card');
         let pic;
@@ -815,61 +838,70 @@ function buildOptions() {
           pic.dataset.id = value;
         }
         card.append(radio(o, value, i), pic, el('span', 'cap', text));
-        grid.append(card);
+        // pointing at a card shows it large before it is chosen (once the pointer
+        // moves: a card that merely opened under it is not being pointed at)
+        card.addEventListener('pointermove', () => (hovered && hovered[0] === o.id && hovered[1] === value) || preview([o.id, value]));
+        card.addEventListener('pointerleave', () => hovered && preview(null));
+        box.append(card);
       });
       continue;
     }
-    const row = el('div', o.icon ? 'opt modes' : 'opt');
-    row.dataset.id = o.id;
+    if (o.type === 'modes') {
+      // the games: a card each, with its sign and what it is about in a line
+      const group = el('div', 'rm-modes');
+      group.dataset.opt = o.id;
+      group.dataset.group = '';
+      group.setAttribute('role', 'radiogroup');
+      group.setAttribute('aria-label', o.label);
+      o.values.forEach(([value, text], i) => {
+        const card = el('label', 'rm-mode');
+        const words = el('span', 'words');
+        words.append(el('b', '', text), el('small', '', o.line(value)));
+        card.append(radio(o, value, i));
+        card.insertAdjacentHTML('beforeend', `<span class="crest">${svg(o.icon(value))}</span>`);
+        card.append(words);
+        group.append(card);
+      });
+      box.append(group);
+      continue;
+    }
+    // a short row of words: the chosen one gets a stroke of ink
+    const row = el('div', 'opt');
+    row.dataset.opt = o.id;
     const lab = el('span', 'lab', o.label);
     lab.append(el('kbd', '', o.hot.toUpperCase()));
-    row.append(lab);
     const seg = el('div', 'seg');
+    seg.dataset.group = '';
     seg.setAttribute('role', 'radiogroup');
     seg.setAttribute('aria-label', o.label);
     o.values.forEach(([value, text], i) => {
       const item = el('label');
-      const face = el('span', '', text);
-      if (o.icon) face.insertAdjacentHTML('afterbegin', `<svg class="ic" aria-hidden="true"><use href="#i-${o.icon(value)}" /></svg>`);
-      item.append(radio(o, value, i), face);
+      item.append(radio(o, value, i), el('span', '', text));
       seg.append(item);
     });
-    row.append(seg);
-    $(o.box).append(row);
+    row.append(lab, seg);
+    box.append(row);
   }
-  // practice has no format to choose: the games stand alone under the heading, which then carries their key
-  const solo = !$('opt-format').childElementCount;
-  $('opt-format').hidden = solo;
-  document.querySelector('.blk.what').classList.toggle('solo', solo);
-  const head = document.querySelector('.blk.what h3');
-  head.textContent = 'Game';
-  if (solo) head.append(el('kbd', '', 'R'));
 }
 
 function syncOptions() {
   const s = settings();
   const lock = locked();
-  renderRounds();
-  for (const id of ['options', 'opt-format', 'opt-mode', 'arena-cards', 'style-cards']) $(id).classList.toggle('locked', lock);
-  for (const inp of $('s-lobby').querySelectorAll('input[type="radio"]')) {
-    const o = OPTIONS.find((x) => x.id === inp.name.slice(4));
-    inp.checked = isOn(o, s, o.values[inp.dataset.i][0]);
-    inp.disabled = lock;
-    inp.parentElement.classList.toggle('on', inp.checked);
+  $('s-lobby').classList.toggle('guest', lock);
+  for (const id of ['options', 'opt-format', 'opt-mode', 'opt-bots', 'arena-cards', 'style-cards']) $(id).classList.toggle('locked', lock);
+  for (const root of [$('s-lobby'), $('s-stage')]) {
+    for (const inp of root.querySelectorAll('input[type="radio"]')) {
+      const o = optionById(inp.name.slice(4));
+      inp.checked = isOn(o, s, o.values[inp.dataset.i][0]);
+      inp.disabled = lock;
+      inp.parentElement.classList.toggle('on', inp.checked);
+    }
   }
-  for (const row of $('s-lobby').querySelectorAll('.opt')) {
-    const o = OPTIONS.find((x) => x.id === row.dataset.id);
+  for (const row of $('s-lobby').querySelectorAll('[data-opt]')) {
+    const o = optionById(row.dataset.opt);
     row.hidden = !!o.show && !o.show(s);
   }
-  // one line about the game that is chosen - no more
-  const cup = isCup();
-  $('mode-note').textContent = cup
-    ? s.mode === 'team'
-      ? 'The sides stay together and their points add up. The last round counts double.'
-      : 'Points each round for the least time as the oni. The last round counts double.'
-    : MODES.find((m) => m.id === s.mode)?.blurb || '';
-  $('stage-title').textContent = cup ? (stageSel === 'all' ? 'Stage - every round' : `Stage - round ${stageSel + 1}`) : 'Stage';
-  for (const key of ['A', 'S', ...(cup ? ['T'] : [])]) $('stage-title').append(el('kbd', '', key));
+  renderStage();
   // who can come in
   const sw = $('btn-open');
   sw.hidden = kind !== 'online';
@@ -877,9 +909,10 @@ function syncOptions() {
     sw.setAttribute('aria-checked', String(!!s.open));
     sw.disabled = lock;
     $('open-label').textContent = s.open ? 'Public' : 'Private';
-    sw.title = s.open ? 'Public: anyone can find this game' : 'Private: only people with the code can come in';
+    sw.title = s.open ? 'Public: anyone can find this room' : 'Private: only people with the code can come in';
   }
-  paintCards();
+  paintFaces();
+  if (overlay === 'stage') syncSheet();
 }
 $('btn-open').addEventListener('click', () => {
   if (kind !== 'online' || !amHost()) return;
@@ -891,36 +924,212 @@ $('btn-open').addEventListener('click', () => {
 // the focus there, so the arrow keys carry on from it.
 function hotOption(letter, back) {
   const s = settings();
+  const sheet = overlay === 'stage';
   if (letter === 't' && isCup()) {
-    // which round the arena and style are for: all, 1, 2, ...
-    const order = ['all', ...planNow().map((_, i) => i)];
-    pickRound(order[(order.indexOf(stageSel) + (back ? -1 : 1) + order.length) % order.length]);
-    $('round-strip').querySelector('[aria-checked="true"]')?.focus();
+    if (sheet) {
+      // which round the arena and style are for: every round, 1, 2, ...
+      const order = ['all', ...planNow().map((_, i) => i)];
+      pickRound(order[(order.indexOf(stageSel) + (back ? -1 : 1) + order.length) % order.length]);
+      $('round-strip').querySelector('[aria-checked="true"]')?.focus();
+    } else {
+      // along the rounds of the tournament
+      const tiles = [...$('stage-view').querySelectorAll('button.rm-round')];
+      const i = tiles.indexOf(document.activeElement);
+      tiles[i < 0 ? (back ? tiles.length - 1 : 0) : (i + (back ? -1 : 1) + tiles.length) % tiles.length]?.focus();
+    }
     return true;
   }
   if (locked()) return false;
   // (the switch is not focused: Enter must still start the match right after)
-  if (letter === 'v' && kind === 'online') return $('btn-open').click(), true;
+  if (letter === 'v' && kind === 'online' && !sheet) return $('btn-open').click(), true;
   const o = OPTIONS.find((x) => x.hot === letter && (!x.only || x.only === kind) && (!x.show || x.show(s)));
-  if (!o) return false;
+  if (!o || (sheet && o.type !== 'cards')) return false;
+  // from the room itself, A and S are for the round whose tile has the focus - or for every round
+  const tile = !sheet && o.type === 'cards' ? document.activeElement?.closest?.('.rm-round') : null;
+  if (!sheet) stageSel = tile && isCup() ? Number(tile.dataset.i) : 'all';
   const i = o.values.findIndex(([v]) => isOn(o, s, v));
   const next = o.values[(i + (back ? -1 : 1) + o.values.length) % o.values.length][0];
   if (o.set) o.set(next);
   else changeSetting({ [o.key]: next });
-  $('s-lobby').querySelector(`input[name="opt-${o.id}"]:checked`)?.focus();
+  if (!sheet) stageSel = 'all';
+  if (sheet || o.type !== 'cards') (sheet ? $('s-stage') : $('s-lobby')).querySelector(`input[name="opt-${o.id}"]:checked`)?.focus();
   sfx.play('click');
   return true;
 }
 
-// Paint the pictures one at a time between frames, so the screen never stalls:
-// each arena in the chosen style, then one still per art style. Everything is
-// cached, so this is instant the second time (and the draw before a round
-// borrows the same pictures).
+// --- the stage, as the room shows it. One match: a large picture of the
+// arena in its style, with what it is. A tournament: its rounds in order,
+// each with its own picture (the last one counts double; every second one
+// has a twist). For the host each of them opens the stage sheet.
+function renderStage() {
+  const box = $('stage-view');
+  const cup = isCup();
+  const host = !locked();
+  const plan = planNow();
+  const sig = JSON.stringify([kind, cup, host, plan]);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  const act = document.activeElement;
+  const held = box.contains(act) ? act.dataset.i ?? 'hero' : null;
+  box.textContent = '';
+  box.className = cup ? `rm-prog n${plan.length}` : 'rm-stage';
+  box.toggleAttribute('data-group', cup);
+  plan.forEach((st, i) => box.append(cup ? roundTile(st, i, plan.length, host) : stageHero(st, host)));
+  if (held != null) (held === 'hero' ? box.querySelector('button') : box.querySelector(`[data-i="${held}"]`))?.focus();
+  paintPics(box, () => panel === 'lobby');
+}
+function stageHero(st, host) {
+  const hero = el(host ? 'button' : 'div', 'rm-hero');
+  if (host) {
+    hero.type = 'button';
+    hero.id = 'btn-stage';
+    hero.setAttribute('aria-label', `Stage: ${stageName('arena', st.arena)}, ${stageName('theme', st.theme)}. Change it`);
+    hero.addEventListener('click', () => openStage('all'));
+  }
+  const info = el('span', 'info');
+  const style = el('span', 'style');
+  style.append(el('small', 'kicker', 'Style'), el('b', '', stageName('theme', st.theme)));
+  info.append(el('b', 'name', stageName('arena', st.arena)), el('span', 'blurb', stageBlurb('arena', st.arena)), style);
+  if (host) {
+    const go = el('span', 'change', 'Change stage');
+    go.insertAdjacentHTML('beforeend', svg('right'));
+    info.append(go);
+  }
+  hero.append(stagePic(st.arena, st.theme, 480), info);
+  return hero;
+}
+function roundTile(st, i, n, host) {
+  const tile = el(host ? 'button' : 'div', 'rm-round');
+  tile.dataset.i = i;
+  if (host) {
+    tile.type = 'button';
+    tile.setAttribute('aria-label', `Round ${i + 1}: ${stageName('arena', st.arena)}, ${stageName('theme', st.theme)}. Change it`);
+    tile.addEventListener('click', () => openStage(i));
+  }
+  const cap = el('span', 'cap');
+  cap.append(el('span', 'name', stageName('arena', st.arena, true)), el('small', '', stageName('theme', st.theme, true)));
+  tile.append(stagePic(st.arena, st.theme, 240), el('b', 'no', String(i + 1)), cap);
+  // what is special about this round
+  if (i === n - 1) tile.append(el('i', 'mark x2', 'x2'));
+  else if (i % 2 === 1) tile.append(el('i', 'mark', 'Twist'));
+  return tile;
+}
+
+// --- the stage sheet: every arena and every art style as a picture, beside
+// a large view of what is chosen (or pointed at). A choice counts at once,
+// for everyone in the room; Done only closes the sheet. In a tournament the
+// tabs at the top say which round the choice is for.
+let hovered = null; // the card under the pointer: [what, value]
+let viewRun = 0;
+function openStage(sel = 'all') {
+  if (locked() || panel !== 'lobby') return;
+  stageSel = isCup() ? sel : 'all';
+  hovered = null;
+  sfx.play('click');
+  setOverlay('stage');
+  syncOptions();
+  focusFirst($('arena-cards').querySelector('input:checked') || $('arena-cards').querySelector('input'));
+}
+function closeStage() {
+  if (overlay !== 'stage') return;
+  const from = stageSel;
+  stageSel = 'all';
+  setOverlay('');
+  focusFirst((from !== 'all' && $('stage-view').querySelector(`[data-i="${from}"]`)) || $('stage-view').querySelector('button'));
+}
+$('btn-stage-back').addEventListener('click', closeStage);
+$('btn-stage-done').addEventListener('click', () => {
+  sfx.play('click');
+  closeStage();
+});
+// a click on the dark around the sheet closes it too
+$('s-stage').addEventListener('click', (e) => e.target === e.currentTarget && closeStage());
+
+function syncSheet() {
+  renderRounds();
+  showView();
+  paintCards();
+}
+function preview(what) {
+  hovered = what;
+  if (overlay === 'stage') showView();
+}
+// the large view: the arena in the style - what is chosen, or what the pointer is on
+function showView() {
+  const of = (what) => (hovered && hovered[0] === what ? hovered[1] : stageValue(what));
+  const arena = of('arena');
+  const theme = of('theme');
+  // ('' : the rounds of the tournament do not share one)
+  $('pk-arena').textContent = arena ? stageName('arena', arena) : 'A different arena each round';
+  $('pk-arena-blurb').textContent = arena ? stageBlurb('arena', arena) : 'Pick a round at the top to see it, or choose here to set them all.';
+  $('pk-style').textContent = theme ? stageName('theme', theme) : 'A different style each round';
+  $('pk-style-blurb').textContent = theme ? stageBlurb('theme', theme) : '';
+  const img = $('pk-img');
+  const run = ++viewRun;
+  const put = (url) => {
+    if (url) img.src = url;
+    img.hidden = !url;
+    $('pk-any').hidden = !!url;
+  };
+  // a real arena: the arena. None yet, but a style: a corner of a match in that style. Neither: a question mark.
+  const real = arena && arena !== 'random';
+  const styled = theme && theme !== 'random';
+  if (!real && !styled) return put('');
+  const t = paintIn(theme);
+  const key = real ? picKey(arena, t, 480) : `still/${t}/480`;
+  if (painted.has(key)) return put(painted.get(key));
+  loadTheme(t).then(() => {
+    if (run !== viewRun || overlay !== 'stage') return;
+    painted.set(key, real ? scenePreview(arena, t, 480, 270) : styleStill(t, 480, 270));
+    put(painted.get(key));
+  });
+}
+
+// A tournament: one tab per round, and one for all of them at once.
+function renderRounds() {
+  const strip = $('round-strip');
+  const cup = isCup();
+  strip.hidden = !cup;
+  if (!cup) {
+    stageSel = 'all';
+    strip.textContent = '';
+    delete strip.dataset.sig;
+    return;
+  }
+  const plan = planNow();
+  if (stageSel !== 'all' && stageSel >= plan.length) stageSel = 'all';
+  const sig = JSON.stringify([plan.length, stageSel]);
+  if (strip.dataset.sig === sig) return;
+  strip.dataset.sig = sig;
+  const held = strip.contains(document.activeElement) ? document.activeElement.dataset.i : null;
+  strip.textContent = '';
+  const add = (value, text, title) => {
+    const b = el('button', 'tab', text);
+    b.type = 'button';
+    b.dataset.i = String(value);
+    b.title = title;
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(stageSel === value));
+    b.addEventListener('click', () => pickRound(value));
+    strip.append(b);
+  };
+  add('all', 'Every round', 'One arena and one style for every round');
+  plan.forEach((_, i) => add(i, String(i + 1), `Round ${i + 1} only`));
+  strip.prepend(el('kbd', '', 'T'));
+  if (held != null) strip.querySelector(`[data-i="${held}"]`)?.focus();
+}
+function pickRound(value) {
+  stageSel = value;
+  sfx.play('click');
+  syncOptions();
+}
+
+// The cards' pictures: each arena in the chosen style, then one still per art
+// style. (Painted between frames and cached, like every other picture.)
 let paintRun = 0;
 function paintCards() {
   const run = ++paintRun;
-  const chosen = stageValue('theme');
-  const themeId = !chosen || chosen === 'random' ? DEFAULT_THEME : chosen;
+  const themeId = paintIn(stageValue('theme'));
   const jobs = [];
   for (const img of $('arena-cards').querySelectorAll('img')) {
     if (img.dataset.in === themeId) continue;
@@ -928,57 +1137,110 @@ function paintCards() {
   }
   for (const img of $('style-cards').querySelectorAll('img')) if (!img.dataset.done) jobs.push([img.dataset.id, () => ((img.src = styleStill(img.dataset.id)), (img.dataset.done = '1'))]);
   jobs.push([themeId, () => (cardTheme = themeId)]);
-  const live = () => run === paintRun && panel === 'lobby';
-  const next = async () => {
-    const job = jobs.shift();
-    if (!job || !live()) return;
-    await loadTheme(job[0]);
-    if (!live()) return;
-    job[1]();
-    setTimeout(next, 0);
-  };
-  next();
+  paintQueue(jobs, () => run === paintRun && overlay === 'stage');
+}
+// (the fonts arrived, or the window changed: everything painted so far is stale)
+function repaintPictures() {
+  painted.clear();
+  for (const img of document.querySelectorAll('#s-stage .card img, #stage-view img')) for (const k of ['in', 'done', 'key']) delete img.dataset[k];
+  for (const f of $('s-lobby').querySelectorAll('.face')) delete f.dataset.in;
+  if (panel !== 'lobby') return;
+  $('stage-view').dataset.sig = '';
+  syncOptions();
 }
 
 function openLobby() {
   show('home', 'lobby');
   buildOptions();
+  $('stage-view').dataset.sig = '';
   renderLobby();
   focusFirst();
+}
+
+// --- who is in it. A seat is a player's character as it will look in the
+// room's style (a square of their colour until it has been painted), their
+// name, and what they are here.
+function seat(p) {
+  const li = el('li', `rm-seat${p.you ? ' me' : ''}${p.bot ? ' bot' : ''}`);
+  const f = el('i', 'face');
+  f.dataset.ci = p.ci;
+  f.style.setProperty('--c', INK_COLORS[p.ci]);
+  li.append(f, el('span', 'nm', p.name));
+  if (p.you) li.title = 'You';
+  if (p.host) li.append(el('span', 'tag', 'Host'));
+  if (p.bot) li.append(el('span', 'tag bot', 'Bot'));
+  if (p.score) li.append(el('span', 'score', p.score));
+  return li;
+}
+let faceRun = 0;
+function paintFaces() {
+  const run = ++faceRun;
+  const themeId = paintIn(planNow()[0].theme);
+  const faces = [...$('s-lobby').querySelectorAll('.face[data-ci]')].filter((f) => f.dataset.in !== themeId);
+  if (!faces.length) return;
+  loadTheme(themeId).then((theme) => {
+    const next = () => {
+      const f = faces.shift();
+      if (!f || run !== faceRun || panel !== 'lobby') return;
+      const ci = Number(f.dataset.ci);
+      const url = art.playerPortrait(theme.id, ci, { size: 44 });
+      f.style.setProperty('--c', theme.colors?.[ci] || INK_COLORS[ci]);
+      if (url) {
+        const img = f.querySelector('img') || f.appendChild(el('img'));
+        img.alt = '';
+        img.src = url;
+      }
+      f.dataset.in = themeId;
+      setTimeout(next, 0);
+    };
+    next();
+  });
+}
+// (a seat that is rebuilt gets the picture it had, without a blink)
+function faceNow(f) {
+  const themeId = paintIn(planNow()[0].theme);
+  if (!art.styleReady(themeId)) return;
+  const url = art.playerPortrait(themeId, Number(f.dataset.ci), { size: 44, peek: true });
+  if (!url) return;
+  const img = f.appendChild(el('img'));
+  img.alt = '';
+  img.src = url;
+  f.style.setProperty('--c', THEME_MAP[themeId]?.colors?.[Number(f.dataset.ci)] || INK_COLORS[Number(f.dataset.ci)]);
+  f.dataset.in = themeId;
 }
 
 function renderLobby() {
   const online = kind === 'online';
   $('lobby-title').textContent = online ? 'Room' : 'Practice';
-  $('lobby-code').hidden = !online;
   $('btn-copy').hidden = !online;
-  $('btn-leave').setAttribute('aria-label', online ? 'Leave room' : 'Back (Esc)');
-  const list = $('players');
-  list.textContent = '';
+  $('btn-leave').setAttribute('aria-label', online ? 'Leave the room' : 'Back (Esc)');
+  $('opt-bots').hidden = online;
   // a team battle in a room shows the two sides instead of one list
   const sided = online && room.settings.mode === 'team';
+  const list = $('players');
   list.hidden = sided;
   $('squads').hidden = !sided;
+  $('btn-shuffle').hidden = !(sided && amHost());
+  list.textContent = '';
   if (sided) renderSquads();
-  const rows = sided
-    ? []
-    : online
-      ? room.players.slice().sort((a, b) => a.slot - b.slot).map((p) => ({ slot: p.slot, name: p.name, host: p.id === room.hostId, you: p.id === socket.id, score: p.wins ? `${p.wins} win${p.wins > 1 ? 's' : ''}` : '' }))
-      : [{ slot: 0, name: myName, you: true }, ...Array.from({ length: practice.bots }, (_, i) => ({ slot: i + 1, name: BOT_NAMES[i] || 'Bot', bot: true }))];
-  for (const r of rows) {
-    // your own name is underlined in red, here as on the team board and the results
-    const li = el('li', r.bot ? 'bot' : r.you ? 'me' : '');
-    const chip = el('i', 'chip');
-    chip.style.background = INK_COLORS[r.slot];
-    li.append(chip, el('span', 'nm', r.name));
-    if (r.you) li.title = 'You';
-    if (r.host) li.append(el('span', 'tag', 'HOST'));
-    if (r.bot) li.append(el('span', 'tag bot', 'BOT'));
-    if (r.score) li.append(el('span', 'score', r.score));
-    list.append(li);
+  else {
+    const rows = online
+      ? room.players.slice().sort((a, b) => a.slot - b.slot).map((p) => ({ ci: p.slot, name: p.name, host: p.id === room.hostId, you: p.id === socket.id, score: p.wins ? `${p.wins} win${p.wins > 1 ? 's' : ''}` : '' }))
+      : [{ ci: 0, name: myName, you: true }, ...Array.from({ length: practice.bots }, (_, i) => ({ ci: i + 1, name: BOT_NAMES[i] || 'Bot', bot: true }))];
+    for (const r of rows) list.append(seat(r));
+    // the seats still free: the first of them is the way to fill it
+    for (let k = rows.length; online && k < MAX_PLAYERS; k++) {
+      const li = el('li', 'rm-seat free');
+      if (k === rows.length) {
+        const b = el('button', 'invite', 'Invite a friend');
+        b.type = 'button';
+        b.addEventListener('click', copyInvite);
+        li.append(b);
+      }
+      list.append(li);
+    }
   }
-  // one "waiting" place, so it is plain that more can come
-  if (online && !sided && rows.length < MAX_PLAYERS) list.append(el('li', 'empty', 'waiting...'));
+  for (const f of $('s-lobby').querySelectorAll('.face[data-ci]')) faceNow(f);
 
   const start = $('btn-start');
   if (online) {
@@ -999,11 +1261,12 @@ function renderLobby() {
     start.disabled = false;
     setLabel(start, 'Start', 'Enter');
   }
+  const cup = isCup();
   setLegend(
     $('lobby-legend'),
     locked()
       ? [[['Esc', 'Esc'], 'leave the room'], [['C'], 'copy the invite link'], ...(sided ? [[['X'], 'change sides']] : [])]
-      : [[['↑', '↓'], 'move'], [['←', '→'], 'choose'], [['Enter'], 'start'], ...(sided ? [[['X'], 'change sides']] : []), [online ? ['Esc', 'Esc'] : ['Esc'], online ? 'leave the room' : 'back']],
+      : [[['↑', '↓'], 'move'], [['←', '→'], 'choose'], [['A'], 'arena'], [['S'], 'style'], ...(cup ? [[['T'], 'rounds']] : []), ...(sided ? [[['X'], 'change sides']] : []), [['Enter'], 'start'], [online ? ['Esc', 'Esc'] : ['Esc'], online ? 'leave' : 'back']],
   );
   // Where the keyboard starts: the start button; alone in a room, the invite
   // link. (A guest gets no starting point: Enter must not walk them out.)
@@ -1024,69 +1287,44 @@ function renderSquads() {
   const host = amHost();
   const sizes = [0, 1].map((t) => room.players.filter((p) => p.side === t).length);
   const fill = botFill(sizes, MAX_PLAYERS - room.players.length);
-  const held = box.contains(document.activeElement) ? document.activeElement.dataset.id || document.activeElement.id : '';
+  const held = box.contains(document.activeElement) ? document.activeElement.dataset.id : '';
   box.textContent = '';
   const taken = new Set(room.players.map((p) => p.name.toLowerCase()));
   const botNames = BOT_NAMES.filter((n) => !taken.has(n.toLowerCase()));
-  const seen = [0, 0];
-  const colour = (t) => INK_COLORS[TEAM_SLOTS[t][seen[t]++ % TEAM_SLOTS[t].length]];
   // (colours are handed out in the order people came in, bots last - the same way the server does it)
-  const chips = new Map(room.players.map((p) => [p.id, colour(p.side)]));
+  const seen = [0, 0];
+  const colour = (t) => TEAM_SLOTS[t][seen[t]++ % TEAM_SLOTS[t].length];
+  const cis = new Map(room.players.map((p) => [p.id, colour(p.side)]));
   [0, 1].forEach((t) => {
-    const side = el('section', 'squad');
+    const side = el('section', 'rm-team');
     side.style.setProperty('--side', TEAM_COLORS[t]);
-    side.classList.toggle('mine', !!mine && mine.side === t);
     const head = el('header');
     head.append(el('b', '', TEAM_NAMES[t]), el('span', 'n', `${sizes[t]}${fill[t] ? ` + ${fill[t]} bot${fill[t] > 1 ? 's' : ''}` : ''}`));
-    side.append(head);
-    const ul = el('ul', 'players');
+    if (mine && mine.side === t) head.append(el('em', '', 'Your side'));
+    const ul = el('ul', 'rm-seats');
     for (const p of room.players) {
       if (p.side !== t) continue;
       const you = p.id === socket.id;
-      const li = el('li', you ? 'me' : '');
-      const chip = el('i', 'chip');
-      chip.style.background = chips.get(p.id);
-      li.append(chip, el('span', 'nm', p.name));
-      if (p.id === room.hostId) li.append(el('span', 'tag', 'HOST'));
+      const li = seat({ ci: cis.get(p.id), name: p.name, host: p.id === room.hostId, you });
       if (you || host) {
         // across to the other side: your own arrow, and - for the host - everyone's
         const go = el('button', 'cross');
         go.type = 'button';
         go.dataset.id = p.id;
         go.setAttribute('aria-label', `Move ${you ? 'yourself' : p.name} to ${TEAM_NAMES[1 - t]}`);
-        go.innerHTML = `<svg class="ic" aria-hidden="true"><use href="#i-${t ? 'left' : 'right'}" /></svg>`;
+        go.innerHTML = svg(t ? 'left' : 'right');
         go.title = you ? 'Change sides (X)' : `Move ${p.name} to ${TEAM_NAMES[1 - t]}`;
         go.addEventListener('click', () => moveSide(p.id, 1 - t));
         li.append(go);
       }
       ul.append(li);
     }
-    for (let k = 0; k < fill[t]; k++) {
-      const li = el('li', 'bot');
-      const chip = el('i', 'chip');
-      chip.style.background = colour(t);
-      li.append(chip, el('span', 'nm', botNames.shift() || 'Bot'), el('span', 'tag bot', 'BOT'));
-      ul.append(li);
-    }
-    side.append(ul);
+    for (let k = 0; k < fill[t]; k++) ul.append(seat({ ci: colour(t), name: botNames.shift() || 'Bot', bot: true }));
+    if (!ul.childElementCount) ul.append(el('li', 'rm-seat none', 'Nobody yet'));
+    side.append(head, ul);
     box.append(side);
-    if (t === 0) {
-      const mid = el('div', 'mid');
-      mid.append(el('i', 'vs', 'vs'));
-      if (host) {
-        const sh = el('button', 'shuffle');
-        sh.type = 'button';
-        sh.id = 'btn-shuffle';
-        sh.setAttribute('aria-label', 'Shuffle the teams (Z)');
-        sh.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-shuffle" /></svg>';
-        sh.append(el('kbd', '', 'Z'));
-        sh.addEventListener('click', shuffleSides);
-        mid.append(sh);
-      }
-      box.append(mid);
-    }
   });
-  if (held) (box.querySelector(`[data-id="${held}"]`) || document.getElementById(held))?.focus();
+  if (held) box.querySelector(`[data-id="${held}"]`)?.focus();
 }
 function moveSide(id, to) {
   if (kind !== 'online' || !room || room.settings.mode !== 'team') return false;
@@ -1105,6 +1343,7 @@ function shuffleSides() {
   sfx.play('click');
   return true;
 }
+$('btn-shuffle').addEventListener('click', shuffleSides);
 
 function leaveRoom() {
   const wasOnline = kind === 'online';
@@ -1118,12 +1357,21 @@ $('btn-start').addEventListener('click', () => {
   if (kind === 'practice') play.practice(practice, myName);
   else socket.emit('start');
 });
+// The invite link: the wooden tag with the room's code copies it, and says so.
+let copiedTimer = 0;
 async function copyInvite() {
   if (!room) return;
   const link = `${location.origin}/?room=${room.code}`;
   try {
     await navigator.clipboard.writeText(link);
     toast('Invite link copied');
+    $('copy-label').textContent = 'Copied';
+    $('btn-copy').classList.add('done');
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      $('copy-label').textContent = 'Invite';
+      $('btn-copy').classList.remove('done');
+    }, 1600);
   } catch {
     toast(link);
   }
@@ -1140,10 +1388,7 @@ fonts.then(() => {
   clearPictures();
   if (renderer.arena) renderer.layout(true); // names and signs were drawn with a fallback font
   demos?.refresh();
-  if (panel === 'lobby') {
-    for (const img of $('style-cards').querySelectorAll('img')) delete img.dataset.done;
-    paintCards();
-  }
+  repaintPictures();
 });
 
 // ---------------------------------------------------------------------------
@@ -1474,10 +1719,13 @@ socket.on('room', (r) => {
   if (r.phase === 'lobby') {
     clearInterval(nextTimer);
     if ((panel === 'help' || panel === 'profile') && kind === 'online') renderLobby(); // reading How to play (or their profile) in a room: leave them to it
-    else if (panel !== 'lobby' || overlay || kind !== 'online') {
+    else if (!inRoom() || kind !== 'online') {
       kind = 'online';
       openLobby();
-    } else renderLobby();
+    } else {
+      if (overlay === 'stage' && locked()) closeStage(); // (no longer the host)
+      renderLobby();
+    }
   } else if (overlay === 'results') renderResultButtons();
 });
 
@@ -1510,6 +1758,7 @@ socket.on('q', (ack) => typeof ack === 'function' && ack()); // the server timin
 function goBack() {
   if (overlay === 'help') closeHelp();
   else if (overlay === 'pause') closePause();
+  else if (overlay === 'stage') closeStage();
   else if (overlay === 'results') {
     // straight back when it only changes screens; twice when it would leave a game
     const safe = kind === 'practice' || (amHost() && !(lastResults?.cup && !lastResults.cup.final));
@@ -1517,7 +1766,6 @@ function goBack() {
   } else if (screen === 'game') openPause();
   else if (panel === 'help') closeHelp();
   else if (panel === 'profile') closeProfile();
-  else if (panel === 'find') openRooms(code);
   else if (panel === 'rooms') closePanel();
   else if (panel === 'lobby') {
     if (kind === 'practice') closePanel();
@@ -1540,7 +1788,7 @@ function shortcut(key, e) {
   // every menu: how to play
   if (key === 'h' && at !== 'results') return at === 'help' ? closeHelp() : openHelp(), true;
 
-  if (at === 'home' || ((at === 'help' || at === 'profile' || at === 'find') && screen === 'home')) {
+  if (at === 'home' || ((at === 'help' || at === 'profile') && screen === 'home')) {
     // the title scroll's entries (digits are a room code while Play is open)
     if (key === '1') return $('btn-play').click(), true;
     if (key === '2') return $('btn-practice').click(), true;
@@ -1548,29 +1796,30 @@ function shortcut(key, e) {
   }
   // the tools under the menu sit in a row: left and right walk along it
   if ((key === 'arrowleft' || key === 'arrowright') && document.activeElement?.classList.contains('tool')) return moveFocus(key === 'arrowright' ? 1 : -1), true;
+  // inside a group of buttons (the rounds of a tournament, the two sides): left and right walk along it
+  const act = document.activeElement;
+  const group = act?.tagName === 'BUTTON' ? act.closest('[data-group]') : null;
+  if (group && (key === 'arrowleft' || key === 'arrowright')) {
+    const all = [...group.querySelectorAll('button:not(:disabled)')];
+    const to = all[all.indexOf(act) + (key === 'arrowright' ? 1 : -1)];
+    if (to) {
+      const i = to.dataset.i;
+      if (to.getAttribute('role') === 'radio') to.click(); // (a tab: being on it chooses it)
+      (i != null ? group.querySelector(`[data-i="${i}"]`) || to : to).focus();
+    }
+    return true;
+  }
   if (at === 'rooms') {
     if (/^\d$/.test(key)) return typeCode(code + key), true;
     if (key === 'backspace') return typeCode(code.slice(0, -1)), true;
     if (key === 'c') return $('btn-create').click(), true;
-    if (key === 'p') return openFind(), true;
+    if (key === 'p') return toOpenRooms(), true;
     // Enter on the code (or anywhere but a button, once the code is complete) tries it again
     if (key === 'enter' && code.length === CODE_LEN && (!onButton || document.activeElement === $('btn-join-go'))) return retryCode(), true;
     if (key === 'enter' && document.activeElement === $('digits')) return true;
-  } else if (at === 'find') {
-    if (key === 'c') return $('btn-find-host').click(), true;
   } else if (at === 'lobby') {
-    // along the rounds of a tournament: left and right pick the one before or after
-    const slot = document.activeElement?.classList.contains('slot') ? document.activeElement : null;
-    if (slot && (key === 'arrowleft' || key === 'arrowright')) {
-      const to = key === 'arrowright' ? slot.nextElementSibling : slot.previousElementSibling;
-      if (to) {
-        to.click();
-        $('round-strip').querySelector('[aria-checked="true"]')?.focus();
-      }
-      return true;
-    }
-    // Enter starts, also from a round's tile (which is already chosen once it has the focus)
-    if (key === 'enter' && (!onButton || slot)) {
+    // Enter starts the match from anywhere but a button (a button does what it says)
+    if (key === 'enter' && !onButton) {
       if (!$('btn-start').hidden && !$('btn-start').disabled) $('btn-start').click();
       return true;
     }
@@ -1578,6 +1827,10 @@ function shortcut(key, e) {
     if (key === 'x' && switchSide()) return true;
     if (key === 'z' && shuffleSides()) return true;
     if (/^[a-z]$/.test(key)) return hotOption(key, e.shiftKey);
+  } else if (at === 'stage') {
+    // Enter is Done from anywhere but a button (a round's tab is already chosen once it has the focus)
+    if (key === 'enter' && (!onButton || act.getAttribute('role') === 'radio')) return closeStage(), true;
+    if (key === 'a' || key === 's' || key === 't') return hotOption(key, e.shiftKey);
   } else if (at === 'pause') {
     if (key === 'q') {
       if (twice('quit', 'Press Q again to leave the match')) leaveRoom();

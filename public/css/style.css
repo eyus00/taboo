@@ -17,6 +17,13 @@
   --indigo: #26324a;
   --gold: #b08a45;
   --hud: rgba(18, 16, 14, 0.78);
+  /* one scale for every gap, so the screens share a rhythm */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  /* a sheet of lighter paper with a ruled edge (name plates, cards, panels) and its "chosen" state */
+  --frame: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 4px rgba(28, 27, 31, 0.4);
+  --frame-red: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 4px var(--red);
+  /* the slightly crooked outline of a pressed seal */
+  --seal-cut: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%);
   --brush: 'Kaushan Script', 'Brush Script MT', cursive;
   --serif: 'Shippori Mincho', Georgia, 'Times New Roman', serif;
   --kana: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif CJK JP', serif;
@@ -26,6 +33,7 @@
   --stroke-deep: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'%3E%3Cpath d='M6 33C3 18 12 8 30 8L262 5c18-1 31 7 33 21 2 15-8 26-26 27L34 56C16 57 8 47 6 33Z' fill='%23a32a22'/%3E%3Cpath d='M214 14l74 4v2l-70-2zM196 45l88-5v2l-84 6zM228 29l64 1v1.6h-62z' fill='%23f3ead6' opacity='.55'/%3E%3C/svg%3E");
   /* the same stroke without the dry streaks at its end, for rows with words all the way across */
   --stroke-red-plain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'%3E%3Cpath d='M6 33C3 18 12 8 30 8L262 5c18-1 31 7 33 21 2 15-8 26-26 27L34 56C16 57 8 47 6 33Z' fill='%23c8372d'/%3E%3C/svg%3E");
+  --stroke-deep-plain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'%3E%3Cpath d='M6 33C3 18 12 8 30 8L262 5c18-1 31 7 33 21 2 15-8 26-26 27L34 56C16 57 8 47 6 33Z' fill='%23a32a22'/%3E%3C/svg%3E");
   --stroke-ink: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 60' preserveAspectRatio='none'%3E%3Cpath d='M6 33C3 18 12 8 30 8L262 5c18-1 31 7 33 21 2 15-8 26-26 27L34 56C16 57 8 47 6 33Z' fill='%231c1b1f'/%3E%3Cpath d='M214 14l74 4v2l-70-2zM196 45l88-5v2l-84 6zM228 29l64 1v1.6h-62z' fill='%23f3ead6' opacity='.55'/%3E%3C/svg%3E");
   --line-ink: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 10' preserveAspectRatio='none'%3E%3Cpath d='M2 6C30 2 70 3 120 4s60-2 76 1c2 2 0 4-4 4C150 8 90 9 40 8 20 8 6 9 2 6Z' fill='%231c1b1f'/%3E%3C/svg%3E");
   --line-red: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 10' preserveAspectRatio='none'%3E%3Cpath d='M2 6C30 2 70 3 120 4s60-2 76 1c2 2 0 4-4 4C150 8 90 9 40 8 20 8 6 9 2 6Z' fill='%23c8372d'/%3E%3C/svg%3E");
@@ -273,66 +281,6 @@ body.in-game .conn { display: none; }
 .conn.say .conn-note, .conn.open .conn-note, .lantern:hover + .conn-note, .lantern:focus-visible + .conn-note { opacity: 1; transform: none; }
 .conn.open .conn-note small, .lantern:hover + .conn-note small, .lantern:focus-visible + .conn-note small, .conn.bad .conn-note small { display: block; }
 
-/* play: three ways in, one under the other - host, public, private (with the code typed right there) */
-.ways { gap: 4px; }
-.ways .entry { min-height: 86px; padding-right: 18px; }
-.ways .entry::before { background-image: var(--stroke-red-plain); }
-.ways .entry b { font-size: 35px; }
-.ways .entry > span { margin-right: 0; min-width: 138px; }
-.ways .entry em { margin-left: auto; padding: 4px 10px 3px; font: 800 12.5px/1 var(--serif); letter-spacing: 0.06em; font-style: normal; color: var(--paper); background: var(--ink); transform: rotate(-3deg); }
-.ways .entry em:empty { display: none; }
-.ways .entry:hover em, .ways .entry:focus-visible em { color: var(--red-deep); background: #fff3e0; }
-.ways .entry > kbd { min-width: 30px; }
-.ways .error { padding-left: 54px; }
-.ways .error:empty { display: none; }
-.entry.bycode { cursor: default; flex-wrap: wrap; row-gap: 8px; }
-.entry.bycode:focus-within { color: #fff3e0; transform: translateX(8px); }
-.entry.bycode:focus-within::before { opacity: 1; transform: none; }
-.field { margin-left: auto; display: flex; align-items: center; gap: 10px; color: var(--ink); }
-.field .go {
-  height: 54px; padding: 0 18px 2px; font: 400 23px/1 var(--brush); color: var(--paper); background: var(--ink);
-  border: 2px solid var(--ink); box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 3px rgba(243, 234, 214, 0.5);
-}
-.field .go:disabled { opacity: 0.35; }
-.field .go:focus-visible { outline: 3px solid var(--paper-lit); outline-offset: 2px; }
-.ways .digits { cursor: text; }
-.ways .digits span { width: 44px; height: 54px; font-size: 29px; color: var(--ink); }
-.ways .digits:focus-visible { outline: none; }
-/* the code is being typed: a caret in the next square */
-.digits span.next { position: relative; }
-.ways .digits:focus span.next::after, .ways .digits.open span.next::after { content: ''; position: absolute; left: 50%; top: 22%; width: 2px; height: 56%; margin-left: -1px; background: var(--ink); animation: caret 1s steps(2, jump-none) infinite; }
-@keyframes caret { from { opacity: 1; } to { opacity: 0; } }
-.entry.bycode:hover .digits span.next, .entry.bycode:focus-within .digits span.next { border-color: var(--ink); box-shadow: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 5px var(--ink); }
-.ways .numpad { grid-template-columns: repeat(6, 1fr); max-width: 396px; margin: 4px 8px 2px auto; }
-
-/* public games: one line each - whose game, what kind, how full */
-.games { display: flex; flex-direction: column; max-height: min(50vh, 400px); overflow: auto; margin: 0 -10px; padding: 2px 10px; }
-.games:empty { display: none; }
-.game {
-  position: relative; isolation: isolate; width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 4px 14px;
-  min-height: 62px; padding: 7px 16px 7px 8px; text-align: left; border: 0; border-bottom: 1.5px solid var(--faint); background: none; transition: transform 0.14s, color 0.1s;
-}
-.game::before {
-  content: ''; position: absolute; inset: 1px -8px; z-index: -1; background: var(--stroke-red-plain) center / 100% 100% no-repeat;
-  opacity: 0; transform: scaleX(0.55); transform-origin: 0 50%; transition: opacity 0.1s, transform 0.16s;
-}
-.game:hover, .game:focus-visible { color: #fff3e0; transform: translateX(6px); outline: none; border-bottom-color: transparent; }
-.game:hover::before, .game:focus-visible::before { opacity: 1; transform: none; }
-.game .seal { font-size: 19px; transform: rotate(-5deg); }
-.game:hover .seal, .game:focus-visible .seal { background: var(--ink); }
-.game .who { display: flex; flex-direction: column; min-width: 0; }
-.game .who b { font: 400 24px/1.12 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; }
-.game .who small { font-size: 13px; font-weight: 600; opacity: 0.82; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.game .count { font: 800 21px/1 var(--serif); font-variant-numeric: tabular-nums; }
-.game .state { font: 800 10.5px/1 var(--serif); letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 6px 3px; box-shadow: inset 0 0 0 1.5px currentColor; transform: rotate(-3deg); white-space: nowrap; }
-.game .state.on { color: var(--paper); background: var(--ink); box-shadow: none; }
-.game .join { font: 400 23px/1 var(--brush); white-space: nowrap; }
-.game .join::after { content: ' \203A'; }
-.none { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 10px 0 4px; }
-.none p { font-weight: 600; color: var(--soft); }
-.none b { color: var(--ink); }
-.find .error:empty { display: none; }
-
 /* profile: your seal, and your name on a brushed line */
 .idcard { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px clamp(20px, 4vw, 38px); padding: 8px 4px 6px 10px; }
 .idcard .sign { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
@@ -360,55 +308,6 @@ body.in-game .conn { display: none; }
 .numpad button:active { transform: translateY(3px); border-bottom-width: 2px; margin-bottom: 3px; background: #e6dcc4; }
 .numpad .go { background: var(--red); border-color: var(--red-deep); color: #fff3e0; font: 400 21px/1 var(--brush); }
 .numpad .go:disabled { opacity: 0.4; }
-
-/* match setup */
-.code {
-  font: 800 clamp(26px, 4.6vw, 34px)/1 var(--serif); letter-spacing: 0.2em; font-variant-numeric: tabular-nums; padding: 7px 4px 7px 14px;
-  background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 4px rgba(28, 27, 31, 0.45);
-}
-.roster { display: flex; flex-direction: column; gap: 6px; }
-.roster .note:empty { display: none; }
-.players { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 14px; } /* ten places: two rows of five */
-.players li { display: flex; align-items: center; gap: 0 8px; min-width: 0; min-height: 34px; padding: 2px 4px 2px 0; border-bottom: 1.5px solid var(--faint); }
-.players .chip { width: 9px; height: 22px; flex: none; }
-.players .nm { flex: 0 1 auto; min-width: 2.6em; font: 400 20px/1.1 var(--brush); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 7px 0 0; margin-right: -7px; } /* room for the brush letters' tails */
-.players .tag { font: 800 10px/1 var(--serif); letter-spacing: 0.1em; padding: 4px 5px 3px; background: var(--red); color: #fff1dc; transform: rotate(-4deg); flex: none; }
-.players li.me .nm { color: var(--red-deep); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
-.players .score { margin-left: auto; color: var(--soft); font-size: 13px; font-weight: 600; white-space: nowrap; }
-.players li.empty { color: #9b917f; font-style: italic; font-size: 13.5px; padding-left: 17px; }
-/* team battle: the two sides face to face, each under its own colour */
-.squads { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 0 12px; align-items: start; }
-.squad { --side: #777; min-width: 0; }
-.squad header { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 2px 12px 1px; color: #fff; background: var(--side); clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
-.squad header b { font: 400 21px/1 var(--brush); padding-top: 2px; }
-.squad header .n { font: 800 13px/1 var(--serif); opacity: 0.9; }
-.squad .players { gap: 0 10px; padding: 0 6px; }
-.squad .players li { min-height: 31px; }
-.squad .players:empty::after { content: 'nobody yet'; color: #9b917f; font-style: italic; font-size: 13.5px; padding: 6px 0 4px 6px; }
-.players li.bot .nm { color: var(--soft); }
-.tag.bot, .players .tag.bot { font: 800 9.5px/1 var(--serif); letter-spacing: 0.1em; padding: 3px 4px 2px; color: var(--soft); background: none; box-shadow: inset 0 0 0 1.5px currentColor; transform: none; margin-left: 6px; vertical-align: 3px; }
-.squads .mid { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 4px; }
-.squads .vs { font: 400 20px/1 var(--brush); color: var(--soft); }
-/* picture cards: every arena and every art style, like a stage-select screen */
-.cards { display: grid; gap: 11px 9px; }
-.cards.arenas { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
-.cards.styles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.card { position: relative; display: block; cursor: pointer; background: var(--ink); padding: 3px 3px 0; transition: transform 0.12s; }
-.card input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.card .pic { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #d9cdb2; }
-.card .pic.any { display: grid; place-items: center; font: 400 34px/1 var(--brush); color: var(--red-deep); background: var(--paper-lit); }
-.card .cap { display: block; padding: 4px 2px 3px; text-align: center; font-size: 12.5px; font-weight: 800; color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card:hover { transform: translateY(-3px); }
-.card.on { background: var(--red); transform: translateY(-3px); }
-.card.on::after {
-  content: ''; position: absolute; top: -8px; right: -7px; width: 24px; height: 24px; transform: rotate(8deg);
-  background: var(--tick) center / 15px no-repeat, var(--red-deep);
-  clip-path: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%);
-}
-.card input:focus-visible ~ .pic { outline: 3px solid var(--red); outline-offset: 5px; }
-.locked .card { cursor: default; transform: none; }
-.locked .card:not(.on) { opacity: 0.42; }
-.locked input { pointer-events: none; }
 
 /* rules: the chosen word gets a stroke of ink behind it */
 .options { display: flex; flex-direction: column; gap: 8px; }
@@ -545,82 +444,6 @@ body:not(.no-kbd) .touch-only { display: none; }
 @keyframes toast { 0% { opacity: 0; transform: translateY(8px); } 8%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; } }
 
 
-/* ------------------------------------------------------------ the room */
-/* Setting a match up reads top to bottom, in the order you decide things:
-   what game, who is in it, where it is played, go. */
-.room { gap: 10px; }
-.setup { display: flex; flex-direction: column; gap: 11px; }
-.blk { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.blk .note { min-height: 0; font-size: 13.5px; }
-.blk .note:empty { display: none; }
-
-/* game: one match or a tournament (and how many rounds) on the left, the games as picture buttons on the right */
-.pick { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 26px; align-items: end; }
-.pick .options { flex-direction: row; align-items: flex-end; gap: 16px; }
-.pick .opt { flex: 1 1 auto; }
-.pick .opt > .lab { font-size: 12px; }
-.what.solo .pick { grid-template-columns: minmax(0, 1fr); }
-.what.solo .opt.modes > .lab { display: none; }
-.opt.modes .seg { gap: 8px; }
-.opt.modes .seg span { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px 7px; font-size: 16px; }
-.opt.modes .seg .ic { font-size: 17px; }
-
-/* the switch: locked, or open to the world */
-.switch { display: inline-flex; align-items: center; gap: 8px; padding: 3px 2px; border: 0; background: none; color: var(--ink); font: 800 14px/1 var(--serif); }
-.switch .track { position: relative; width: 54px; height: 28px; flex: none; background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: inset 0 0 0 2px var(--paper-lit), inset 0 0 0 3px rgba(28, 27, 31, 0.3); transition: border-color 0.12s; }
-.switch .knob { position: absolute; top: 1px; left: 1px; width: 22px; height: 22px; display: grid; place-items: center; font-size: 12px; color: var(--paper); background: var(--ink); transition: transform 0.16s, background 0.16s; clip-path: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%); }
-.switch[aria-checked='true'] .knob { transform: translateX(26px); background: var(--red); }
-.switch .open, .switch[aria-checked='true'] .shut { display: none; }
-.switch[aria-checked='true'] .open { display: block; }
-.switch b { min-width: 50px; text-align: left; }
-.switch kbd { transform: none; opacity: 1; min-width: 21px; height: 21px; font-size: 11px; background: var(--paper-lit); }
-.switch:hover:not(:disabled) .track, .switch:focus-visible .track { border-color: var(--red); }
-.switch:focus-visible { outline: none; }
-.switch:focus-visible b { color: var(--red-deep); }
-.switch:disabled { cursor: default; }
-.switch:disabled kbd { display: none; }
-.room .bar .link { font-size: 13.5px; }
-
-/* team battle: the two sides, everyone with an arrow across (your own, or - for the host - anyone's) */
-.squad.mine header::after { content: 'your side'; margin-left: auto; font: 800 10.5px/1 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; }
-.squad .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.squad .players li { flex-wrap: nowrap; gap: 0 6px; }
-.squad .players .tag { font-size: 9px; padding: 3px 4px 2px; }
-.squad .cross { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 5px; border: 1.5px solid var(--faint); background: none; color: var(--soft); font-size: 12px; }
-.squad .cross:hover, .squad .cross:focus-visible { outline: none; color: #fff; background: var(--ink); border-color: var(--ink); }
-.squad .cross kbd { transform: none; opacity: 1; min-width: 17px; height: 17px; padding: 0 3px; font-size: 9.5px; border-width: 1.5px; }
-.squads .shuffle { position: relative; width: 40px; height: 40px; display: grid; place-items: center; border: 0; font-size: 17px; color: var(--ink); background: var(--enso) center / 100% 100% no-repeat; transition: transform 0.14s; }
-.squads .shuffle:hover, .squads .shuffle:focus-visible { outline: none; color: #fff3e0; background-image: var(--enso-red); transform: rotate(-12deg) scale(1.08); }
-.squads .shuffle kbd { position: absolute; right: -10px; top: -6px; min-width: 18px; height: 18px; padding: 0 3px; font-size: 10px; color: var(--ink); background: var(--paper-lit); opacity: 1; transform: rotate(6deg); }
-
-/* the stage: a tournament has a slot per round; the arena and style cards sit in one row each */
-.rounds { display: flex; gap: 6px; }
-.slot { flex: 1 1 0; min-width: 0; max-width: 176px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 6px; align-items: baseline; padding: 3px 8px 3px 7px; text-align: left; color: var(--ink); background: var(--paper-lit); border: 2px solid var(--ink); }
-.slot:first-child { flex: 0 0 auto; align-items: center; padding: 3px 12px; }
-.slot b { font: 400 19px/1 var(--brush); padding-top: 2px; }
-.slot span { font: 800 11.5px/1.3 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.slot span.st { grid-column: 1 / -1; font-weight: 600; opacity: 0.85; }
-.slot span.any { font-style: italic; color: var(--soft); }
-.slot[aria-checked='true'] { color: var(--paper); background: var(--ink); box-shadow: 0 0 0 2px var(--red); }
-.slot[aria-checked='true'] span.any { color: #cfc6b3; }
-.slot:hover, .slot:focus-visible { outline: none; border-color: var(--red); }
-.room .cards { gap: 6px; grid-template-columns: repeat(var(--cols, 7), minmax(0, 1fr)); }
-.room .card .cap { font-size: 11px; padding: 3px 1px 2px; }
-.room .card .pic.any { font-size: 24px; }
-.room .card:hover, .room .card.on { transform: translateY(-2px); }
-.room .card.on::after { top: -6px; right: -5px; width: 19px; height: 19px; background-size: 12px, auto; }
-.stage h3 kbd + kbd { margin-left: -6px; }
-
-/* go: the last few switches, and Start */
-.go { display: flex; align-items: flex-end; gap: 10px 22px; flex-wrap: wrap; padding-top: 2px; }
-.go .options { flex-direction: row; flex-wrap: wrap; gap: 8px 22px; }
-.go .opt > .lab { font-size: 12px; }
-.go .seg span { padding: 6px 12px 5px; }
-.go .note { min-height: 0; margin-left: auto; }
-.go .note:empty { display: none; }
-.go .btn.big { width: auto; flex: 0 1 300px; min-height: 58px; margin-left: auto; font-size: 27px; }
-.go .note + .btn.big { margin-left: 0; }
-
 /* ---------------------------------------------------------- the result */
 .outcome { gap: 12px; }
 .verdict { display: flex; align-items: center; gap: 16px; }
@@ -696,8 +519,6 @@ body:not(.no-kbd) .touch-only { display: none; }
   .scroll { gap: 11px; margin: 24px 0; padding-top: 18px; padding-bottom: 18px; }
   .seg span { padding-top: 6px; padding-bottom: 5px; }
   .btn.big { min-height: 56px; }
-  .room { gap: 8px; }
-  .setup { gap: 9px; }
 }
 @media (min-width: 1280px) and (max-height: 650px) {
   .home .legend { display: none; }
@@ -706,54 +527,21 @@ body:not(.no-kbd) .touch-only { display: none; }
 /* smaller screens */
 @media (max-width: 760px) {
   .screen.home { justify-items: center; padding-left: max(26px, env(safe-area-inset-left)); }
-  /* the room on a small screen: the pictures wrap, the choices stack, Start stays in reach */
-  .room .cards { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .pick { grid-template-columns: minmax(0, 1fr); }
-  .rounds { flex-wrap: wrap; }
-  .slot { flex: 1 1 30%; max-width: none; }
-  .go .btn.big { flex: 1 1 100%; position: sticky; bottom: 4px; }
   .board li, .board.cup li { gap: 6px; }
   .step .nm { font-size: 19px; }
-  .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .players li.empty ~ li.empty { display: none; } /* one "waiting..." is enough on a small screen */
-  .squad .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 620px) {
-  /* the three games stay on one line: tighter, and the name may break under its picture */
-  .opt.modes .seg { gap: 4px; }
-  .opt.modes .seg label { flex: 1 1 0; min-width: 0; }
-  .opt.modes .seg span { flex-direction: column; gap: 3px; padding: 7px 4px 6px; font-size: 14px; text-align: center; }
-  /* the ways to play: the note goes under the name, the code gets a line of its own */
-  .ways .entry { min-height: 74px; padding-right: 10px; }
-  .ways .entry b { font-size: 31px; }
-  .ways .entry > span { min-width: 0; }
 
-  .field { margin-left: 0; flex: 1 1 100%; justify-content: flex-start; }
-  .ways .numpad { max-width: none; margin: 2px 0; }
   .numpad button { height: 46px; }
-  .ways .error { padding-left: 0; }
-  /* public games: how full and what state sit one above the other, so the name has room */
-  .game { grid-template-columns: auto minmax(0, 1fr) auto; gap: 3px 10px; padding-right: 8px; }
-  .game .join { display: none; }
-  .game .seal, .game .who { grid-row: 1 / span 2; }
-  .game .count { grid-column: 3; grid-row: 1; justify-self: end; font-size: 19px; }
-  .game .state { grid-column: 3; grid-row: 2; }
-  .game .who b { font-size: 22px; }
-  .game .who small { white-space: normal; line-height: 1.25; }
   .idcard { grid-template-columns: minmax(0, 1fr); justify-items: center; padding: 4px 0; }
   .idcard .sign { align-items: stretch; width: 100%; }
   .idcard input[type='text'] { text-align: center; }
   .seal.hanko.huge { font-size: 52px; }
   .sides { grid-template-columns: minmax(0, 1fr); }
-  .squads { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .squads .mid { flex-direction: row; justify-content: center; gap: 14px; padding: 0; }
-  .squad .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sides .vs { display: none; }
   .powers { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 400px) {
-  .cards.arenas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .cards.styles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tool b { font-size: 10.5px; }
   .scroll { padding-left: 20px; padding-right: 20px; }
   h2 { font-size: 27px; }
@@ -761,8 +549,6 @@ body:not(.no-kbd) .touch-only { display: none; }
   .icon-btn { width: 38px; }
 }
 @media (max-width: 620px) and (max-height: 620px) {
-  /* a small phone held upright: only what is needed to get the code pad on the screen */
-  .ways .entry { min-height: 62px; }
   .numpad button { height: 40px; }
 }
 @media (max-height: 560px) {
@@ -778,13 +564,8 @@ body:not(.no-kbd) .touch-only { display: none; }
   .tool .ring { width: 40px; height: 40px; font-size: 17px; }
   .numpad button { height: 36px; font-size: 19px; }
   .digits span { height: 50px; width: 44px; font-size: 28px; }
-  .ways .entry { min-height: 60px; }
-  .ways .entry b { font-size: 29px; }
-  .ways .digits span, .field .go { height: 46px; }
-  .ways .digits span { width: 40px; font-size: 26px; }
   .plate { padding-top: 3px; padding-bottom: 3px; }
   .plate b { font-size: 21px; }
-  .games { max-height: none; }
   .seal.hanko.huge { font-size: 46px; }
   /* how to play: the picture beside its words */
   .lessons { grid-template-columns: minmax(0, 1fr); }
@@ -803,7 +584,7 @@ body:not(.no-kbd) .touch-only { display: none; }
 @media (prefers-reduced-motion: reduce) {
   #petals { display: none; }
   .digits.bad { animation-duration: 0.01s; }
-  .entry, .entry::before, .game, .game::before, .plate, .plate .seal, .btn, .card, .tool .ring { transition: none; }
+  .entry, .entry::before, .plate, .plate .seal, .btn, .tool .ring { transition: none; }
   .digits span.next::after { animation: none !important; }
   .lantern, .conn .glow, .conn .lantern svg { animation: none !important; }
   .conn.bad .glow, .conn.wait .glow { opacity: 0.35; }

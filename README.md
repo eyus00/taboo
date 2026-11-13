@@ -1,6 +1,6 @@
 # Onigokko
 
-*Onigokko* (鬼ごっこ) is Japanese for tag; whoever is it is the *oni*. This is real-time multiplayer tag for 2&ndash;10 players, in the browser. Everyone plays on their own device. **Host** a game, find a **Public** one in the list, or type the 4-digit code of a **Private** one (an invite link works too).
+*Onigokko* (鬼ごっこ) is Japanese for tag; whoever is it is the *oni*. This is real-time multiplayer tag for 2&ndash;10 players, in the browser. Everyone plays on their own device. **Host** a room, walk into one that is **open** to everyone, or type the 4-digit code of a friend's (an invite link works too).
 
 - **Three ways to play.** *Hot Potato* (whoever is the oni when the clock hits zero loses), *Least Time* (every second as the oni counts against you), and *Team Bomb* (two teams, flags to hold, and bombs that go off at the buzzer). Any of them as a quick match or a tournament of 3, 5 or 7 rounds.
 - **Lucky boxes.** Touch one and you get a random item to keep: set it off when it hurts most. A Blast that hurls everyone on screen away, a Swap that trades places with someone, a Storm that puts everyone else in slow motion, Goo to slip on, Frost, Ward, Swift and Spring. Nothing works in the last 10 seconds, so nobody can sit on one for the buzzer.
@@ -11,7 +11,7 @@
 - **A draw before every round**: three picture cards spin for the arena (shown in that round's style), the art style, and who starts as the oni (their character, in their colour).
 - **Seven art styles**: Ink & Sakura (the house style), Orbit, Xeno, Neon District, Nightmare, Sketchbook and Arcade.
 - **Practice against bots** (one to nine of them), including team battles.
-- Menus drawn like a game: brush lettering on hanging scrolls, picture cards for arenas and styles, and a how-to-play page where every picture is the real game playing itself. Everything works with the keyboard alone; phones get on-screen controls and a built-in number pad for the room code.
+- Menus drawn like a game: brush lettering on hanging scrolls, a room that reads like a match card, a stage-select sheet with a picture for every arena and style, and a how-to-play page where every picture is the real game playing itself. Everything works with the keyboard alone; phones get on-screen controls and a built-in number pad for the room code.
 - No accounts, no database, no API keys. One small Node server.
 
 ## Run it on your computer
@@ -61,8 +61,9 @@ Everything can be done without a mouse, and every screen shows its keys (on phon
 | Any menu | &uarr; / &darr; move, &larr; / &rarr; change the choice you are on, Enter choose, Esc back |
 | Anywhere | M sound on / off, F full screen |
 | Title screen | 1 play, 2 practice, 3 your profile (your name), H how to play |
-| Play | C host a game, P public games, or type the four digits of a private code (the fourth joins) |
-| Match setup | G one match or a tournament, N how many rounds, R which game, A next arena, S next style (Shift goes back), T which round of a tournament the arena and style are for, L round length, P lucky boxes, B bots (practice), X change sides, Z shuffle the sides (host), Enter start; in a room also C copy the invite link and V public or private |
+| Play | C host a room, P go to the open rooms, or type the four digits of a room's code (the fourth joins) |
+| In a room | G one match or a tournament, N how many rounds, R which game, A next arena, S next style (Shift goes back), T along the rounds of a tournament (A and S then change that round only), L round time, P lucky boxes, B bots (practice), X change sides, Z shuffle the sides (host), Enter start; also C copy the invite link and V public or private |
+| Choosing the stage | Enter on the stage (or on a round) opens every arena and style as pictures; there: arrows choose, A and S step, T picks which round the choice is for, Enter or Esc closes |
 | In a match | Esc pause menu; there: Esc resume, H how to play, M sound, F full screen, Q leave |
 | Results | Enter play again, Esc back |
 
@@ -75,8 +76,8 @@ Keys that would throw you out of a game (Esc in a room, Q in the pause menu, Esc
 - **Trampolines** launch you straight up; **launchers** (the pads with arrows) fling you up and across. **Updrafts** are columns of rising air: step in, let go and ride. **Thorns** sting: a short stun, and you are thrown back off them. There are few of them: a match gets a quarter of what an arena is drawn with, which in most arenas is none at all.
 - **Portals** come in coloured pairs: step into one and you fly to its partner as a spark, in an unhurried arc over the map (the view flies with you), safe from tags until you arrive. A portal with a small arrow badge lets you press jump to drop out wherever you are.
 - If you join while a round is running you watch it and play the next one.
-- The player who opened the room is the host (picks the game, style, arena and round length; starts it). If they leave, the next player becomes host. The room reads top to bottom in the order you decide things: what game, who is in it, where it is played, start.
-- A room starts **private**: only people with the code or the invite link get in. The host can switch it to **public**, and then it shows up under Play &rarr; Public for anyone to join until it is full.
+- The player who opened the room is the host (picks the game, stage and rules; starts it). If they leave, the next player becomes host. A room reads like a match card: on the left what is played (the game), where (the stage: a large picture of the arena in its style) and by which rules; on the right who is in it, with Start underneath. Guests see the same card without the controls.
+- A room starts **private**: only people with the code or the invite link get in (the wooden tag with the code copies the link). The host can switch it to **public**, and then it shows up under Play in the list of open rooms for anyone to walk into until it is full.
 
 ### Lucky boxes
 
@@ -97,7 +98,7 @@ You hold one item at a time and choose when to use it. Items stop working (and b
 
 ### Team Bomb
 
-- Two teams, Sun (warm colours) and Moon (cool colours), up to 5 v 5. The sides belong to the room: the lobby shows who is on which, anyone can cross over (X, or the arrow next to their name), the host can move anybody and shuffle (Z), and nothing is redrawn between rounds or matches. Once a match or a tournament is on, the sides are locked.
+- Two teams, Sun (warm colours) and Moon (cool colours), up to 5 v 5. The sides belong to the room: the room shows who is on which, anyone can cross over (X, or the arrow next to their name), the host can move anybody and shuffle (Z), and nothing is redrawn between rounds or matches. Once a match or a tournament is on, the sides are locked.
 - If one side is short, **bots fill in** for it: they play on the server like anyone else, and are marked BOT on the scoreboard.
 - You can tell friend from foe at a glance: every name sits on a plate in its side's colour (white edge: your side; dark edge: theirs; your own is white), everyone stands in a ring of their side's colour, and each side's names sit beside its own score at the top (Sun on the left, Moon on the right, a small bomb next to whoever carries one).
 - **Bombs.** One for every two players (1 to 5), handed out at GO starting with a random player of each team. A carrier gets rid of theirs by touching an **enemy** whose hands are free; team mates are safe and nobody carries two. The bombs burn for the whole round and all go off when the clock stops: each one scores 10 for the team that is *not* holding it.
@@ -110,7 +111,7 @@ You hold one item at a time and choose when to use it. Items stop working (and b
 - **Teams** (the default): Team Bomb every round, the sides stay together, points add up, and the last round counts double.
 - **Free-for-all**: each round players are ranked by time spent as the oni &ndash; least is best &ndash; and score one point for every player they beat (9 down to 0 with ten players; equal times share the better place). Everyone who is **not** the oni at the buzzer gets 1 more. From round 2 the leader starts as the oni. A tie at the end is broken by less total time as the oni.
 - Every second round has a twist: *Moon Gravity*, *Turbo* or *Item Frenzy*.
-- **Every round can have its own arena and style.** Above the pictures is a strip with one tile per round: pick a round (T, or click it) and the arena and style you choose are for that round only; pick *All* and they are for every round. A round left on Random gets a different arena from the round before.
+- **Every round can have its own arena and style.** A tournament's room shows its rounds in order, each with its own picture (and a mark on the ones with a twist, and on the last one, which counts double). Pick a round to choose its arena and style; on the stage sheet the tab *Every round* sets them all at once. A round left on Random gets a different arena from the round before.
 
 ## How it works
 
@@ -124,7 +125,8 @@ shared/              Code that runs on BOTH the server and the browser:
   nav.js, bots.js      route map of each arena and the computer players that use it
 public/
   index.html, css/     menus (hanging scrolls on an ink landscape), heads-up display, results
-  js/main.js           menus: screens, keyboard navigation, lobby, results
+  css/rooms.css        playing with others: Play, the room, the stage sheet (one spacing scale, one set of parts)
+  js/main.js           menus: screens, keyboard navigation, Play, the room and its stage sheet, results
   js/play.js           the match on screen: frame loop, heads-up display, minimap, game events
   js/spinner.js        the draw before each round
   js/demo.js           the live demos on the how-to-play page

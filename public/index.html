@@ -4,11 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <title>Onigokko - multiplayer tag</title>
-    <meta name="description" content="Onigokko: a fast game of tag for 2-10 players, right in the browser. Host a game, find a public one or join with a 4-digit code - and don't be the oni when the clock runs out." />
+    <meta name="description" content="Onigokko: a fast game of tag for 2-10 players, right in the browser. Host a room, walk into an open one or join with a 4-digit code - and don't be the oni when the clock runs out." />
     <meta name="theme-color" content="#e9dfc8" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M1.500 1l14.500-.500L30.500 1.500 31 16l-.500 14.500L16 31 1 30.500.500 16z' fill='%23c8372d'/%3E%3Cpath d='M8 5.500c.500 3 1.500 4.500 3.500 5.500M24 5.500c-.500 3-1.500 4.500-3.500 5.500' fill='none' stroke='%23fff1dc' stroke-width='2.600' stroke-linecap='round'/%3E%3Cpath d='M8.500 12.500h15l-1.200 9c-.400 2.600-2.800 4.500-6.300 4.500s-5.900-1.900-6.300-4.500z' fill='%23fff1dc'/%3E%3Cpath d='M11.500 16.500l3 1M20.500 16.500l-3 1M12.500 22h7' fill='none' stroke='%23c8372d' stroke-width='1.800' stroke-linecap='round'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/css/fonts.css" />
     <link rel="stylesheet" href="/css/style.css" />
+    <link rel="stylesheet" href="/css/rooms.css" />
     <link rel="stylesheet" href="/css/play.css" />
     <link rel="stylesheet" href="/css/spin.css" />
   </head>
@@ -36,6 +37,11 @@
         <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.200c4.300 2.300 8.300 4.900 12 7.800-3.700 2.900-7.700 5.500-12 7.800-.600-5.200-.600-10.400 0-15.600z" fill="currentColor" /></symbol>
         <symbol id="i-exit" viewBox="0 0 24 24"><path d="M10 4H5v16h5M10 12h10M16 7.500l4.500 4.500-4.500 4.500" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round" /></symbol>
         <symbol id="i-copy" viewBox="0 0 24 24"><path d="M9.500 13.500l5-5M8.200 10.300l-2 2a3.900 3.900 0 0 0 5.500 5.500l2-2M15.800 13.700l2-2a3.900 3.900 0 0 0-5.500-5.500l-2 2" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" /></symbol>
+        <!-- the multiplayer hub and the room -->
+        <symbol id="i-gate" viewBox="0 0 24 24"><path d="M2.600 6.200c6.200-1.700 12.600-1.700 18.800 0M5.400 10.600c4.400-.300 8.800-.300 13.200 0" fill="none" stroke="currentColor" stroke-width="2.700" stroke-linecap="round" /><path d="M7.300 6.800c.200 4.700.100 9.500-.300 14.200M16.700 6.800c-.200 4.700-.100 9.500.300 14.200M12 6.200v4" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" /></symbol>
+        <symbol id="i-key" viewBox="0 0 24 24"><path d="M7.600 7.700a4.300 4.300 0 1 1 0 8.600 4.300 4.300 0 0 1 0-8.600zM11.900 12c3.100-.200 6.200-.200 9.300 0M17.300 12.200v3.300M20.800 12.200v2.400" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><path d="M12 3c5.100 0 9 3.900 9 9s-3.900 9-9 9-9-3.900-9-9 3.900-9 9-9zM12 7.200V12l3.400 2.300" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-cup" viewBox="0 0 24 24"><path d="M7 4.200c3.300-.300 6.700-.300 10 0v4.300a5 5 0 0 1-10 0zM7.200 6H4.200c0 2.900 1.300 4.400 3.300 4.600M16.800 6h3c0 2.900-1.300 4.400-3.300 4.600M12 13.600v4M8.300 20.200c2.500-.300 4.900-.300 7.400 0" fill="none" stroke="currentColor" stroke-width="2.300" stroke-linecap="round" stroke-linejoin="round" /></symbol>
         <!-- items, the bomb and the flag (How to play, the draw, results) -->
         <symbol id="i-speed" viewBox="0 0 24 24"><path d="M14 2L5 13.500h6L8.500 22 19 9.800h-6z" fill="currentColor" /></symbol>
         <symbol id="i-jump" viewBox="0 0 24 24"><path d="M5 11l7-7 7 7M5 20l7-7 7 7" fill="none" stroke="currentColor" stroke-width="3.400" stroke-linecap="round" stroke-linejoin="round" /></symbol>
@@ -101,55 +107,55 @@
         </div>
       </section>
 
-      <!-- 3. play: host a game, find a public one, or enter the code of a private one -->
+      <!-- 3. play: the way in to every online game. Host a room of your own, type
+           the code a friend gave you, or walk into a room that is open to all. -->
       <section id="s-rooms" class="screen panel" hidden>
-        <div class="scroll mid rooms">
+        <div class="scroll hub">
           <header class="bar">
             <button class="icon-btn" id="btn-rooms-back" aria-label="Back (Esc)"><svg class="ic"><use href="#i-back" /></svg></button>
             <h2>Play</h2>
             <kbd>Esc</kbd>
           </header>
-          <nav class="menu ways" aria-label="Ways to play">
-            <button class="entry" id="btn-create" data-autofocus><kbd>C</kbd><span><b>Host</b></span></button>
-            <p class="error" id="create-error" role="alert"></p>
-            <button class="entry" id="btn-find"><kbd>P</kbd><span><b>Public</b></span><em id="find-count"></em></button>
-            <div class="entry bycode" id="way-code">
-              <kbd>0-9</kbd>
-              <span><b>Private</b></span>
-              <div class="field">
-                <div class="digits" id="digits" role="group" tabindex="0" aria-label="Room code"><span></span><span></span><span></span><span></span></div>
-                <button class="go" id="btn-join-go" disabled>Join</button>
+          <div class="hub-grid">
+            <div class="hub-do">
+              <!-- host: the one big thing on this screen -->
+              <button class="hub-host" id="btn-create" data-autofocus>
+                <span class="crest"><svg class="ic"><use href="#i-gate" /></svg></span>
+                <span class="words"><b>Host a room</b><small>Your room, your rules</small></span>
+                <kbd>C</kbd>
+              </button>
+              <p class="error" id="create-error" role="alert"></p>
+              <!-- a friend's room: the code is typed straight in -->
+              <section class="hub-code" id="way-code">
+                <h3><svg class="ic"><use href="#i-key" /></svg>Join with a code</h3>
+                <div class="hub-field">
+                  <div class="digits" id="digits" role="group" tabindex="0" aria-label="Room code"><span></span><span></span><span></span><span></span></div>
+                  <button class="hub-join" id="btn-join-go" disabled>Join</button>
+                </div>
+                <p class="error" id="join-error" role="alert"></p>
+                <!-- our own little number pad: opens under the code when you tap it -->
+                <div class="numpad" id="numpad" hidden>
+                  <button data-d="1">1</button><button data-d="2">2</button><button data-d="3">3</button><button data-d="4">4</button><button data-d="5">5</button>
+                  <button data-d="back" aria-label="Delete"><svg class="ic"><use href="#i-erase" /></svg></button>
+                  <button data-d="6">6</button><button data-d="7">7</button><button data-d="8">8</button><button data-d="9">9</button><button data-d="0">0</button>
+                  <button data-d="go" class="go" id="btn-pad-go" disabled>Join</button>
+                </div>
+              </section>
+            </div>
+            <!-- rooms anyone may walk into: the list keeps itself up to date -->
+            <section class="hub-open" aria-labelledby="open-title">
+              <h3 id="open-title"><svg class="ic"><use href="#i-globe" /></svg>Open rooms<em id="find-count"></em></h3>
+              <p class="lead" id="find-lead"></p>
+              <ul class="hub-list" id="games"></ul>
+              <div class="hub-none" id="find-none" hidden>
+                <svg class="ic" aria-hidden="true"><use href="#i-globe" /></svg>
+                <p><b>No open rooms right now</b></p>
+                <button class="link" id="btn-find-host">Host one that is open to everyone</button>
               </div>
-            </div>
-            <p class="error" id="join-error" role="alert"></p>
-            <!-- our own little number pad: opens under the code when you tap it -->
-            <div class="numpad" id="numpad" hidden>
-              <button data-d="1">1</button><button data-d="2">2</button><button data-d="3">3</button><button data-d="4">4</button><button data-d="5">5</button>
-              <button data-d="back" aria-label="Delete"><svg class="ic"><use href="#i-erase" /></svg></button>
-              <button data-d="6">6</button><button data-d="7">7</button><button data-d="8">8</button><button data-d="9">9</button><button data-d="0">0</button>
-              <button data-d="go" class="go" id="btn-pad-go" disabled>Join</button>
-            </div>
-          </nav>
-          <p class="legend"><span><kbd>C</kbd>host a game</span><span><kbd>P</kbd>public games</span><span><kbd>0</kbd>-<kbd>9</kbd>type a code</span><span><kbd>&#9003;</kbd>delete</span><span><kbd>Esc</kbd>back</span></p>
-        </div>
-      </section>
-
-      <!-- 3b. public games: the list of games anyone can join -->
-      <section id="s-find" class="screen panel" hidden>
-        <div class="scroll mid find">
-          <header class="bar">
-            <button class="icon-btn" id="btn-find-back" aria-label="Back (Esc)"><svg class="ic"><use href="#i-back" /></svg></button>
-            <h2>Public games</h2>
-            <kbd>Esc</kbd>
-          </header>
-          <p class="lead" id="find-lead"></p>
-          <ul class="games" id="games"></ul>
-          <div class="none" id="find-none" hidden>
-            <p><b>No public games right now.</b></p>
-            <button class="btn primary" id="btn-find-host">Host a game <kbd>C</kbd></button>
+              <p class="error" id="find-error" role="alert"></p>
+            </section>
           </div>
-          <p class="error" id="find-error" role="alert"></p>
-          <p class="legend"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd>move</span><span><kbd>Enter</kbd>join</span><span><kbd>C</kbd>host your own</span><span><kbd>Esc</kbd>back</span></p>
+          <p class="legend"><span><kbd>C</kbd>host</span><span><kbd>0</kbd>-<kbd>9</kbd>type a code</span><span><kbd>P</kbd>open rooms</span><span><kbd>&uarr;</kbd><kbd>&darr;</kbd>move</span><span><kbd>Enter</kbd>choose</span></p>
         </div>
       </section>
 
@@ -174,15 +180,19 @@
         </div>
       </section>
 
-      <!-- 4. match setup: an online room, or practice. Top to bottom, in the order
-           you decide things: what game, who is in it, where it is played, go. -->
+      <!-- 4. the room (online, or practice). First of all something to read: what
+           is played, where, by which rules, and who is in it - with Start under
+           the players. The host's controls sit in the same places. -->
       <section id="s-lobby" class="screen panel" hidden>
-        <div class="scroll wide room">
-          <header class="bar">
+        <div class="scroll rm">
+          <header class="bar rm-top">
             <button class="icon-btn" id="btn-leave" aria-label="Leave"><svg class="ic"><use href="#i-back" /></svg></button>
             <h2 id="lobby-title">Room</h2>
-            <div class="code" id="lobby-code" aria-label="Room code"></div>
-            <button class="link" id="btn-copy"><kbd>C</kbd><svg class="ic"><use href="#i-copy" /></svg>Invite link</button>
+            <!-- the room's code on a wooden tag; pressing it copies the invite link -->
+            <button class="rm-tag" id="btn-copy" aria-label="Copy the invite link (C)">
+              <span class="code" id="lobby-code"></span>
+              <span class="say"><svg class="ic"><use href="#i-copy" /></svg><b id="copy-label">Invite</b><kbd>C</kbd></span>
+            </button>
             <!-- who can come in: a switch, locked or open to the world -->
             <button class="switch" id="btn-open" role="switch" aria-checked="false" hidden>
               <span class="track"><span class="knob"><svg class="ic shut"><use href="#i-lock" /></svg><svg class="ic open"><use href="#i-globe" /></svg></span></span>
@@ -190,39 +200,69 @@
             </button>
           </header>
 
-          <div class="setup">
-            <section class="blk what">
-              <h3>Game</h3>
-              <div class="pick">
-                <div class="options" id="opt-format"></div>
-                <div class="options" id="opt-mode"></div>
-              </div>
-              <p class="note" id="mode-note"></p>
-            </section>
+          <div class="rm-body">
+            <div class="rm-match">
+              <section class="rm-sec" id="sec-game">
+                <h3>Game</h3>
+                <div class="rm-opts" id="opt-format"></div>
+                <div id="opt-mode"></div>
+              </section>
+              <section class="rm-sec" id="sec-stage">
+                <h3 id="stage-title">Stage</h3>
+                <!-- one match: a picture of where it is played. A tournament: its rounds, in order -->
+                <div id="stage-view"></div>
+              </section>
+              <section class="rm-sec" id="sec-rules">
+                <h3>Rules</h3>
+                <div class="rm-opts" id="options"></div>
+              </section>
+            </div>
 
-            <section class="blk who">
-              <h3 id="players-title">Players</h3>
-              <ul class="players" id="players"></ul>
+            <aside class="rm-people" aria-labelledby="players-title">
+              <header>
+                <h3 id="players-title">Players</h3>
+                <div class="rm-opts" id="opt-bots"></div>
+                <button class="rm-shuffle" id="btn-shuffle" aria-label="Shuffle the teams (Z)" title="Shuffle the teams" hidden><svg class="ic"><use href="#i-shuffle" /></svg><kbd>Z</kbd></button>
+              </header>
+              <ul class="rm-seats" id="players"></ul>
               <!-- team battle: the two sides face to face -->
-              <div class="squads" id="squads" hidden></div>
-              <p class="note" id="lobby-note"></p>
-            </section>
-
-            <section class="blk stage">
-              <h3 id="stage-title">Stage</h3>
-              <!-- a tournament: one slot per round, each with its own arena and style -->
-              <div class="rounds" id="round-strip" role="radiogroup" aria-label="Which round" hidden></div>
-              <div class="cards arenas" id="arena-cards" role="radiogroup" aria-label="Arena"></div>
-              <div class="cards styles" id="style-cards" role="radiogroup" aria-label="Art style"></div>
-            </section>
-
-            <footer class="go">
-              <div class="options" id="options"></div>
-              <p class="note" id="start-note"></p>
-              <button class="btn primary big" id="btn-start">Start</button>
-            </footer>
+              <div class="rm-teams" id="squads" hidden></div>
+              <footer class="rm-go">
+                <p class="note" id="lobby-note"></p>
+                <p class="note" id="start-note"></p>
+                <button class="btn primary big" id="btn-start">Start</button>
+              </footer>
+            </aside>
           </div>
           <p class="legend" id="lobby-legend"></p>
+        </div>
+      </section>
+
+      <!-- 4b. choosing the stage: every arena and every art style as a picture,
+           beside a large view of what is chosen. Opens over the room. -->
+      <section id="s-stage" class="screen over" hidden>
+        <div class="scroll pk">
+          <header class="bar">
+            <button class="icon-btn" id="btn-stage-back" aria-label="Back to the room (Esc)"><svg class="ic"><use href="#i-back" /></svg></button>
+            <h2>Stage</h2>
+            <!-- a tournament: which round the choice is for -->
+            <div class="pk-rounds" id="round-strip" role="radiogroup" aria-label="Which round" data-group hidden></div>
+            <button class="btn primary" id="btn-stage-done">Done <kbd>Enter</kbd></button>
+          </header>
+          <div class="pk-body">
+            <div class="pk-lists">
+              <h3>Arena<kbd>A</kbd></h3>
+              <div class="cards" id="arena-cards" role="radiogroup" aria-label="Arena" data-group></div>
+              <h3>Style<kbd>S</kbd></h3>
+              <div class="cards" id="style-cards" role="radiogroup" aria-label="Art style" data-group></div>
+            </div>
+            <aside class="pk-view" aria-live="polite">
+              <figure class="pk-pic"><img id="pk-img" alt="" hidden /><span class="any" id="pk-any">?</span></figure>
+              <b class="pk-name" id="pk-arena"></b>
+              <p class="pk-blurb" id="pk-arena-blurb"></p>
+              <p class="pk-style"><small class="kicker">Style</small><b id="pk-style"></b><span id="pk-style-blurb"></span></p>
+            </aside>
+          </div>
         </div>
       </section>
 
@@ -351,10 +391,10 @@
                 <li><span><kbd>Enter</kbd></span> Choose - in a room it starts the match</li>
                 <li><span><kbd>Esc</kbd></span> Back - during a match it opens the pause menu</li>
                 <li><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span> Title screen: play, practice, your profile</li>
-                <li><span><kbd>C</kbd> <kbd>P</kbd> <kbd>0</kbd>-<kbd>9</kbd></span> Play: host a game, public games, type a private code</li>
-                <li><span><kbd>G</kbd> <kbd>R</kbd> <kbd>N</kbd></span> Match setup: one match or a tournament, which game, how many rounds</li>
-                <li><span><kbd>A</kbd> <kbd>S</kbd> <kbd>T</kbd></span> Match setup: next arena, next style (with Shift: previous); in a tournament, T picks which round they are for</li>
-                <li><span><kbd>L</kbd> <kbd>P</kbd> <kbd>B</kbd></span> Match setup: round length, lucky boxes, bots</li>
+                <li><span><kbd>C</kbd> <kbd>P</kbd> <kbd>0</kbd>-<kbd>9</kbd></span> Play: host a room, go to the open rooms, type a room's code</li>
+                <li><span><kbd>G</kbd> <kbd>R</kbd> <kbd>N</kbd></span> In a room: one match or a tournament, which game, how many rounds</li>
+                <li><span><kbd>A</kbd> <kbd>S</kbd> <kbd>T</kbd></span> In a room: next arena, next style (with Shift: previous); in a tournament, T walks along the rounds. Enter on the stage opens every arena and style as pictures</li>
+                <li><span><kbd>L</kbd> <kbd>P</kbd> <kbd>B</kbd></span> In a room: round time, lucky boxes, bots (practice)</li>
                 <li><span><kbd>C</kbd> <kbd>V</kbd></span> In a room: copy the invite link, make the room public or private</li>
                 <li><span><kbd>X</kbd> <kbd>Z</kbd></span> Team battle, in a room: change sides; the host shuffles the teams</li>
                 <li><span><kbd>H</kbd></span> Menus: how to play</li>
