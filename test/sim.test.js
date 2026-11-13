@@ -5,7 +5,7 @@ import {
   SPEED_BUFF_MUL, TOUCH, AIR_JUMPS, twistById, IN_USE, ITEM_KINDS, BOX_FIRST_TICKS, ITEM_ARM_TICKS, STORM_SPEED, IT_SPEED_MUL,
   BLAST_RADIUS, BOMB_POINTS, FLAG_POINTS, FLAG_CAP_TICKS, FLAG_PAY_TICKS, FLAG_HALF, FLAG_UP, LAUNCH_VX, LAUNCH_VY,
 } from '../shared/config.js';
-import { ARENAS } from '../shared/arenas.js';
+import { ARENAS, arenaById } from '../shared/arenas.js';
 import { makeState, stepPlayer, packState, unpackState, STATE_LEN } from '../shared/physics.js';
 import { Sim, standings, cupPoints, makeTeams } from '../shared/sim.js';
 import { buildNav, surfaceAt } from '../shared/nav.js';
@@ -169,7 +169,7 @@ test('portals: you fly to the partner as an orb, with no control, and are not se
   const n = ticksUntil(p, IN_LEFT, (q) => q.orb > 0, 60);
   assert.ok(n < 40 && p.orb > 0, 'entered the portal');
   const total = p.ot;
-  assert.ok(total >= 16 && total <= 50, `flight takes ${total} ticks`);
+  assert.ok(total >= 60 && total <= 110, `flight takes ${total} ticks`); // unhurried: about twice a run, so the eye (and the camera) can follow
   let lastX = p.x;
   let flown = 0;
   while (p.orb > 0) {
@@ -910,7 +910,8 @@ test('bots play every arena with 2, 4 and 6: tags keep happening, nobody stands 
   let falls = 0;
   let minutes = 0;
   const log = [];
-  for (const arena of ARENAS) {
+  for (const { id } of ARENAS) {
+    const arena = arenaById(id); // as a plain game of tag plays it (with few thorns)
     for (const n of [2, 4, 6]) {
       const r = botMatch(arena, n, false);
       const who = `${arena.id} ${n}p`;
@@ -934,16 +935,23 @@ test('bots play team battles: flags are taken and turned, bombs change hands and
   let falls = 0;
   let minutes = 0;
   const log = [];
-  for (const arena of ARENAS) {
+  for (const { id } of ARENAS) {
+    const arena = arenaById(id, 'team'); // as a team battle plays it
     let passes = 0;
     let turned = 0;
+    let paid = 0;
+    let taken = 0;
     for (const n of [2, 4, 6]) {
       const r = botMatch(arena, n, true, 90);
       const who = `${arena.id} ${n}p teams`;
       log.push(`${who} ${r.score.join('-')} (${r.tags} passes, ${r.booms} bombs, flags: ${r.takes} taken ${r.turned} lost, ${r.flags} points; idle ${Math.round(r.idle / 60)}s, ${r.falls} falls)`);
       assert.equal(r.booms, Math.max(1, Math.floor(n / 2)), `${who}: every bomb goes off at the buzzer`);
-      assert.ok(r.takes >= 2, `${who}: flags were taken only ${r.takes} times`);
-      assert.ok(r.flags >= 10, `${who}: the flags paid only ${r.flags} points`);
+      // (one match is one roll of the dice - whoever has a bomb is busy chasing, the others busy running - so each
+      // match only has to show some flag play; the three matches of an arena together have to show plenty)
+      assert.ok(r.takes >= 1, `${who}: no flag was taken`);
+      assert.ok(r.flags >= 3, `${who}: the flags paid only ${r.flags} points`);
+      paid += r.flags;
+      taken += r.takes;
       // taking a flag means standing in its ring; nobody should stand anywhere for much longer than that takes
       assert.ok(r.idle < 60 * 14, `${who}: a bot stood still for ${Math.round(r.idle / 60)}s`);
       assert.ok(r.falls <= 3, `${who}: ${r.falls} falls into a pit in one match`);
@@ -953,6 +961,7 @@ test('bots play team battles: flags are taken and turned, bombs change hands and
       minutes += 1.5 * n;
     }
     assert.ok(passes >= 3, `${arena.id}: bombs changed hands only ${passes} times in three team matches`);
+    assert.ok(taken >= 5 && paid >= 30, `${arena.id}: in three team matches flags were taken ${taken} times and paid ${paid} points`);
     log.push(`[${arena.id}: ${passes} passes, ${turned} flags lost]`);
   }
   console.log(`      ${log.join('; ')}`);

@@ -459,6 +459,38 @@ export function rampY(r, x) {
 export const ARENAS = MAPS.map(parse);
 export const ARENA_IDS = ARENAS.map((a) => a.id);
 
-export function arenaById(id) {
-  return ARENAS.find((a) => a.id === id) || ARENAS[0];
+// Thorns. The maps are drawn with plenty of them, but a match only gets some:
+// a plain game of tag a quarter of them (in most arenas that is none at all),
+// a team battle half. Mirror-image pairs stay together, so both sides of an
+// arena always get the same.
+const THORN_SHARE = { tag: 0.25, team: 0.5 };
+function thinThorns(arena, share) {
+  const groups = new Map();
+  for (const z of arena.spikes) {
+    const side = Math.round(Math.min(z.x, arena.w - z.x - z.w)); // the same for a patch and its mirror image
+    const key = `${String(z.y).padStart(6, '0')}/${String(side).padStart(6, '0')}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(z);
+  }
+  const keep = [];
+  [...groups.keys()].sort().forEach((key, i) => {
+    if (Math.floor((i + 1) * share) > Math.floor(i * share)) keep.push(...groups.get(key));
+  });
+  return keep;
+}
+
+// The arena as a match plays it. mode: 'team' for a team battle; anything
+// else is a plain game of tag. (ARENAS holds the maps as drawn.)
+const played = new Map();
+export function arenaById(id, mode) {
+  const base = ARENAS.find((a) => a.id === id) || ARENAS[0];
+  const kind = mode === 'team' ? 'team' : 'tag';
+  const key = `${base.id}/${kind}`;
+  let arena = played.get(key);
+  if (!arena) {
+    // (nav: the bots' route map is worked out per version, since thorns are in the way of some routes)
+    arena = { ...base, spikes: thinThorns(base, THORN_SHARE[kind]), kind, nav: undefined };
+    played.set(key, arena);
+  }
+  return arena;
 }

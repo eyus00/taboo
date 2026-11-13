@@ -11,7 +11,7 @@
 //
 // Costs are in ticks, so the shortest route is the quickest one.
 
-import { PW, PH, MOVE_SPEED, AIR_TURN, LAUNCH_VX, LAUNCH_VY, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN } from './config.js';
+import { PW, PH, MOVE_SPEED, AIR_TURN, LAUNCH_VX, LAUNCH_VY, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, ORB_MAX_TICKS } from './config.js';
 import { rampY } from './arenas.js';
 import { RAMP_LIP, makeState, stepPlayer } from './physics.js';
 
@@ -344,6 +344,8 @@ export function buildNav(arena) {
       if (p.orb > 0) {
         if (e.type !== 'portal') return null;
         left = true;
+        top = p.y; // (a flight between portals is not "hanging about in the air", however long it takes)
+        topT = t;
         continue;
       }
       if (!p.ground) {
@@ -674,7 +676,7 @@ export function buildNav(arena) {
     for (const [a, dir] of beside(z)) {
       // you come out standing in the exit, a step from the ground on either side of it
       let got = null;
-      for (const [b] of outs) if ((got = attempt(a, b, { type: 'portal', x: p.cx, dir }, dir > 0 ? a.x1 - 4 : a.x0 + 4, 200))) break;
+      for (const [b] of outs) if ((got = attempt(a, b, { type: 'portal', x: p.cx, dir }, dir > 0 ? a.x1 - 4 : a.x0 + 4, ORB_MAX_TICKS + 130))) break; // (time to walk in, fly, and step out)
       if (!got) continue;
       for (const [b, side] of outs) add(a, b, { type: 'portal', x: p.cx, dir, exit: d.cx, cost: got.ticks + 6, land: side > 0 ? b.x1 : b.x0 });
     }

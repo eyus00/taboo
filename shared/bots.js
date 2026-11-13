@@ -5,7 +5,7 @@
 // stealing a flag - and then follows the route there one move at a time,
 // pressing the same buttons a person would.
 
-import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, FLAG_HALF, FLAG_UP, FLAG_CAP_TICKS } from './config.js';
+import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, FLAG_HALF, FLAG_UP, FLAG_CAP_TICKS, BLAST_RADIUS } from './config.js';
 import { buildNav, surfaceAt, surfaceNear, drive, walk } from './nav.js';
 
 function rng(seed) {
@@ -171,7 +171,7 @@ function wantsToUse(sim, me, mem) {
     // chasing: anything that slows them down or speeds us up, once someone is in reach
     if (kind === 'swap') return nearest > 500;
     if (kind === 'goo') return nearest < 200;
-    return nearest < (kind === 'blast' ? 600 : 480);
+    return nearest < (kind === 'blast' ? BLAST_RADIUS * 0.85 : 480);
   }
   const it = chaserOf(sim, me);
   let danger = it ? gap(it, me) : Infinity;
@@ -179,13 +179,13 @@ function wantsToUse(sim, me, mem) {
     // one of them is standing on a flag, and we are close enough to make use of the moment
     for (const f of sim.flags) {
       if (f.owner === 1 - me.team && Math.abs(f.m) >= FLAG_CAP_TICKS) continue; // theirs already, nothing to stop
-      if (Math.hypot(f.x - me.s.x, f.y - me.s.y) > 560) continue;
+      if (Math.hypot(f.x - me.s.x, f.y - me.s.y) > (kind === 'blast' ? BLAST_RADIUS * 0.85 : 560)) continue;
       if (sim.targets(me).some((o) => inRing(o, f))) return true;
     }
   }
   if (kind === 'swap') return danger < 200; // let someone else stand here
   if (kind === 'goo') return danger < 260;
-  return danger < (kind === 'storm' || kind === 'blast' ? 420 : 300);
+  return danger < (kind === 'storm' ? 420 : kind === 'blast' ? BLAST_RADIUS * 0.8 : 300);
 }
 
 // ----------------------------------------------------------------------------

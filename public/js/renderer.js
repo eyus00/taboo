@@ -120,7 +120,7 @@ export class Renderer {
     const bwCss = follow ? A.w * kCss : cssW;
     const bhCss = follow ? A.h * kCss + pad : cssH;
     const s = Math.min(dpr, Math.sqrt(MAX_BG_PIXELS / (bwCss * bhCss)), MAX_BG_SIDE / bwCss, MAX_BG_SIDE / bhCss);
-    const key = [cssW, cssH, s.toFixed(3), follow, this.q, this.theme.id, A.id].join();
+    const key = [cssW, cssH, s.toFixed(3), follow, this.q, this.theme.id, A.id, A.kind || ''].join();
     if (!force && key === this.key) return;
     this.key = key;
     this.cssW = cssW;
@@ -525,41 +525,65 @@ export class Renderer {
     }
   }
 
-  // an item going off: e = { slot, x, y, to }
+  // Everyone an item set off by this player lands on (for the pictures only:
+  // what really happens is the rules' business).
+  hitBy(pv, kind) {
+    const out = [];
+    if (!pv) return out;
+    for (const o of this.last) {
+      if (!o || o.id === pv.id) continue;
+      if (pv.team >= 0 ? o.team === pv.team : kind === 'freeze' && !pv.isIt && !o.isIt) continue;
+      out.push(o);
+    }
+    return out;
+  }
+
+  // An item going off: e = { slot, x, y, to }. Every effect is drawn where it
+  // happens and no bigger than it is - nothing washes over the whole screen.
   itemFx(e, kind) {
     const col = KIND_COLORS[kind] || '#ffffff';
     const pv = this.last[e.slot];
     if (kind === 'blast') {
-      // a shockwave across the whole screen
-      this.flash(col, 0.3);
-      this.shake(13);
-      for (let i = 0; i < 3; i++) this.emit({ x: e.x, y: e.y, life: 0.55 + i * 0.12, size: 20, grow: BLAST_RADIUS * (1.9 - i * 0.35), shape: 'ring', width: 9 - i * 2.5, color: i ? '#ffffff' : col });
-      for (let i = 0; i < 22; i++) {
-        const a = (i / 22) * 6.283;
-        this.emit({ x: e.x, y: e.y, vx: Math.cos(a) * 900, vy: Math.sin(a) * 900, drag: 2.2, life: 0.6, size: 4, color: i % 2 ? col : '#ffe9a8' });
+      // a shockwave that runs out exactly as far as it reaches
+      this.shake(7);
+      const T = 0.4;
+      this.emit({ x: e.x, y: e.y, life: T, size: 26, grow: (BLAST_RADIUS - 26) / T, shape: 'ring', width: 9, color: col });
+      this.emit({ x: e.x, y: e.y, life: T * 0.8, size: 12, grow: (BLAST_RADIUS * 0.7) / (T * 0.8), shape: 'ring', width: 3.5, color: '#ffffff' });
+      this.emit({ x: e.x, y: e.y, life: 0.2, size: 38, grow: 280, color: '#fff3c4', alpha: 0.8 });
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * 6.283 + Math.random() * 0.3;
+        const v = BLAST_RADIUS * (2.6 + Math.random());
+        this.emit({ x: e.x, y: e.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 4.2, life: 0.42, size: 3 + Math.random() * 2, color: i % 2 ? col : '#ffe9a8' });
       }
     } else if (kind === 'storm') {
-      this.flash('#3a2360', 0.34);
-      this.shake(5);
-      // a bolt down onto everyone it slows
-      for (const o of this.last) {
-        if (!o || o.id === e.slot) continue;
-        this.emit({ x: o.cx, y: o.y - 6, life: 0.35, fade: false, draw: (g, p, k) => {
+      this.shake(3);
+      if (pv) this.emit({ x: pv.cx, y: pv.y - 8, life: 0.45, size: 10, grow: 90, shape: 'ring', width: 3, color: col });
+      // a little cloud gathers over everyone it slows, and a bolt comes down
+      for (const o of this.hitBy(pv, kind)) {
+        for (let i = 0; i < 3; i++) this.emit({ x: o.cx - 15 + i * 15, y: o.y - 60 - (i === 1 ? 7 : 0), vy: -6, life: 0.75, size: 13 - Math.abs(i - 1) * 2.5, color: '#4a3a6e', alpha: 0.9 });
+        this.emit({ x: o.cx, y: o.y - 4, life: 0.32, fade: false, draw: (g, p, k) => {
           g.globalAlpha = k;
           g.strokeStyle = col;
-          g.lineWidth = 4;
+          g.lineWidth = 3.5;
           g.lineJoin = 'miter';
           g.beginPath();
-          g.moveTo(p.x - 14, p.y - 150);
-          g.lineTo(p.x + 8, p.y - 90);
-          g.lineTo(p.x - 8, p.y - 70);
-          g.lineTo(p.x, p.y);
+          g.moveTo(p.x - 6, p.y - 50);
+          g.lineTo(p.x + 6, p.y - 30);
+          g.lineTo(p.x - 5, p.y - 22);
+          g.lineTo(p.x + 1, p.y);
           g.stroke();
         } });
       }
     } else if (kind === 'freeze') {
-      this.flash('#c8f1ff', 0.26);
-      if (pv) this.emit({ x: pv.cx, y: pv.y + 20, life: 0.5, size: 20, grow: 700, shape: 'ring', width: 5, color: col });
+      if (pv) this.emit({ x: pv.cx, y: pv.y + 20, life: 0.4, size: 14, grow: 280, shape: 'ring', width: 4, color: col });
+      // ice snaps shut round everyone it stops
+      for (const o of this.hitBy(pv, kind)) {
+        this.emit({ x: o.cx, y: o.y + 20, life: 0.35, size: 8, grow: 110, shape: 'ring', width: 3, color: '#ffffff' });
+        for (let i = 0; i < 7; i++) {
+          const a = (i / 7) * 6.283;
+          this.emit({ x: o.cx, y: o.y + 20, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130 - 30, drag: 3, life: 0.5, size: 4, shape: 'square', rot: a, vr: 3, color: i % 2 ? '#ffffff' : col });
+        }
+      }
     } else if (kind === 'swap') {
       const o = this.last[e.to];
       if (pv) this.portalFx(pv.cx, pv.y + PH / 2, pv);
@@ -750,7 +774,12 @@ export class Renderer {
       cy = this.opts.focus.y;
     } else {
       const me = pvs.find((p) => p.local) || pvs.find((p) => p.isIt) || pvs[0];
-      if (me) {
+      this.flying = !!(me && me.orb);
+      if (me && me.orb) {
+        // in flight between portals: the spark stays in the middle of the view
+        cx = me.cx;
+        cy = me.y + PH / 2;
+      } else if (me) {
         cx = me.cx + clamp(me.vx * 0.3, -110, 110); // look a little ahead
         cy = me.y + PH / 2 - vh * 0.04;
         // lean towards whoever is it, without ever losing sight of yourself
@@ -768,7 +797,8 @@ export class Renderer {
       cam.fy = ty;
       cam.set = true;
     } else {
-      const k = 1 - Math.exp(-dt * (z === 1 ? 6 : 9));
+      // (flying between portals you move fast: the view keeps right with you)
+      const k = 1 - Math.exp(-dt * (this.flying ? 15 : z === 1 ? 6 : 9));
       cam.fx += (tx - cam.fx) * k;
       cam.fy += (ty - cam.fy) * k;
       // never show past the arena's edge while the zoom is still catching up

@@ -262,7 +262,7 @@ function startRound(room) {
   room.lastArena = arenaId;
   room.lastTheme = themeId;
 
-  const sim = new Sim(arenaById(arenaId));
+  const sim = new Sim(arenaById(arenaId, s.mode)); // (a plain game of tag has fewer thorns than a team battle)
   sim.powerups = s.powerups;
   let twist = 'none';
   let info = null;

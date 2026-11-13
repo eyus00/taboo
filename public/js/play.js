@@ -126,7 +126,7 @@ export const play = {
 
   // --- starting and stopping ----------------------------------------------------------
   async practice(s, name) {
-    const arena = arenaById(s.arena === 'random' ? pickRandom(ARENA_IDS) : s.arena);
+    const arena = arenaById(s.arena === 'random' ? pickRandom(ARENA_IDS) : s.arena, s.mode);
     const themeId = s.theme === 'random' ? pickRandom(THEMES).id : s.theme;
     await loadTheme(themeId);
     this.kind = 'practice';
@@ -136,7 +136,7 @@ export const play = {
 
   // 'round' from the server
   round(msg, mySlot) {
-    const arena = arenaById(msg.arena);
+    const arena = arenaById(msg.arena, msg.mode);
     this.net.onRound(msg, arena, mySlot);
     this.kind = 'online';
     this.game = this.net; // snapshots count from now, even while the art style is still loading
