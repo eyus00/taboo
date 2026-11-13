@@ -6,7 +6,7 @@ import {
   BLAST_RADIUS, BOMB_POINTS, FLAG_POINTS, FLAG_CAP_TICKS, FLAG_PAY_TICKS, FLAG_HALF, FLAG_UP, LAUNCH_VX, LAUNCH_VY,
   MAX_PLAYERS, PLAYER_COLORS, TEAM_SLOTS,
 } from '../shared/config.js';
-import { ARENAS, arenaById } from '../shared/arenas.js';
+import { ARENAS, arenaById, TILE, rampY } from '../shared/arenas.js';
 import { makeState, stepPlayer, packState, unpackState, STATE_LEN } from '../shared/physics.js';
 import { Sim, standings, cupPoints, makeTeams } from '../shared/sim.js';
 import { buildNav, surfaceAt } from '../shared/nav.js';
@@ -830,9 +830,9 @@ test('every arena: six of them, 64 x 36 tiles; starts, bases and boxes stand on 
     assert.ok(arena.portals.length === 4 || arena.portals.length === 6, `${arena.id}: ${arena.portals.length / 2} portal pairs`);
     for (const po of arena.portals) assert.equal(arena.portals[po.to].to, arena.portals.indexOf(po));
     assert.ok(arena.portals.some((po) => po.drop), `${arena.id}: a portal pair you can let go of`);
-    // the whole toolbox is in use
-    assert.ok(arena.tramps.some((t) => !t.vx) && arena.tramps.filter((t) => t.vx).length >= 4, `${arena.id}: trampolines and launchers`);
-    assert.ok(arena.lifts.length >= 2 && arena.spikes.length >= 4 && arena.ramps.length >= 4, `${arena.id}: updrafts, thorns, slopes`);
+    // the whole toolbox is in use (sparingly: see the next test for how much of it there may be)
+    assert.ok(arena.tramps.some((t) => !t.vx) && arena.tramps.filter((t) => t.vx).length >= 2, `${arena.id}: trampolines and launchers`);
+    assert.ok(arena.lifts.length >= 1 && arena.spikes.length >= 4 && arena.ramps.length >= 4, `${arena.id}: updrafts, thorns, slopes`);
 
     const t0 = performance.now();
     const nav = buildNav(arena);
@@ -859,6 +859,82 @@ test('every arena: six of them, 64 x 36 tiles; starts, bases and boxes stand on 
     assert.ok(Math.abs(there - back) < 0.1 * Math.max(there, back), `${arena.id}: base to base takes ${Math.round(there)} ticks one way, ${Math.round(back)} the other`);
   }
   console.log(`      route maps: ${times.join(', ')}`);
+});
+
+// Open ground. A tile of flat ground is "open" when nothing stands on it (a pad, thorns, a portal, the foot
+// of an updraft, a wall) and the five tiles of air above it are empty: no ledge, block, slope or updraft.
+// Returns { grid, floor, runs }: the tiles, a test for "is this tile ground", and the stretches of open tiles
+// as { row, c0, c1, len }.
+function openGround(arena, head = 5) {
+  const C = arena.w / TILE;
+  const R = arena.h / TILE;
+  const grid = Array.from({ length: R }, () => new Array(C).fill(0)); // 1 solid block, 2 thin ledge, 4 a gadget, 8 a slope
+  const mark = (x0, y0, x1, y1, bit) => {
+    for (let r = Math.max(0, Math.floor(y0 / TILE)); r <= Math.min(R - 1, Math.floor((y1 - 1) / TILE)); r++) {
+      for (let c = Math.max(0, Math.floor(x0 / TILE)); c <= Math.min(C - 1, Math.floor((x1 - 1) / TILE)); c++) grid[r][c] |= bit;
+    }
+  };
+  for (const p of arena.platforms) mark(p.x, p.y, p.x + p.w, p.y + (p.oneway ? 1 : p.h), p.oneway ? 2 : 1);
+  for (const z of [...arena.tramps, ...arena.spikes, ...arena.lifts, ...arena.portals]) mark(z.x + 3, z.y, z.x + z.w - 3, z.y + z.h, 4);
+  for (const s of arena.ramps) for (let x = s.x0; x < s.x1; x += 4) mark(x, rampY(s, x) - 2, x + 1, rampY(s, x) - 1, 8);
+  const floor = (r, c) => r > 0 && (grid[r][c] & 3) !== 0 && !(grid[r - 1][c] & 1);
+  const open = (r, c) => {
+    if (!floor(r, c)) return false;
+    for (let k = 1; k <= head; k++) if (r - k >= 0 && grid[r - k][c]) return false;
+    return true;
+  };
+  const runs = [];
+  for (let r = 1; r < R; r++) {
+    for (let c = 0; c < C; c++) {
+      if (!open(r, c)) continue;
+      const c0 = c;
+      while (c + 1 < C && open(r, c + 1)) c++;
+      runs.push({ row: r, c0, c1: c, len: c - c0 + 1 });
+    }
+  }
+  return { grid, floor, runs };
+}
+
+test('every arena has room to run: four clear flat stretches of 14 tiles (one of 24), a bottom floor that is mostly plain ground, few gadgets', () => {
+  const log = [];
+  for (const arena of ARENAS) {
+    const { grid, floor, runs } = openGround(arena);
+    const long = runs.filter((q) => q.len >= 14).map((q) => q.len).sort((a, b) => b - a);
+    log.push(`${arena.id} ${long.join('/')}`);
+    assert.ok(long.length >= 4, `${arena.id}: only ${long.length} clear stretches of 14 tiles or more (${long})`);
+    assert.ok(long[0] >= 24, `${arena.id}: the longest clear stretch is ${long[0]} tiles`);
+    // few gadgets
+    assert.ok(arena.tramps.length <= 8, `${arena.id}: ${arena.tramps.length} trampolines and launchers`);
+    assert.ok(arena.lifts.length <= 4, `${arena.id}: ${arena.lifts.length} updrafts`);
+    assert.ok(arena.spikes.length <= (arena.id === 'bramble' ? 12 : 8), `${arena.id}: ${arena.spikes.length} thorn patches`);
+    // the bottom floor is mostly plain ground: at most a quarter of it within two tiles of a pad, thorns, a portal or an updraft
+    const C = arena.w / TILE;
+    let bottom = 0;
+    for (let r = 1; r < grid.length; r++) if (grid[r].filter((_, c) => floor(r, c)).length >= 20) bottom = r;
+    let len = 0;
+    let near = 0;
+    for (let c = 0; c < C; c++) {
+      if (!floor(bottom, c)) continue;
+      len++;
+      for (let d = -2; d <= 2; d++) {
+        if (c + d >= 0 && c + d < C && (grid[bottom - 1][c + d] & 4 || grid[bottom][c + d] & 4)) {
+          near++;
+          break;
+        }
+      }
+    }
+    assert.ok(near <= len * 0.25, `${arena.id}: ${near} of the bottom floor's ${len} tiles are within two tiles of a gadget`);
+    // the flags have room: six clear tiles of flat ground around each, under three tiles of air
+    const roomy = openGround(arena, 3).runs;
+    for (const [x, y] of arena.bases) {
+      const at = roomy.find((q) => q.row === y / TILE && x / TILE >= q.c0 && x / TILE <= q.c1 + 1);
+      assert.ok(at && at.len >= 6, `${arena.id}: the flag at ${x},${y} stands on ${at ? at.len : 0} clear tiles`);
+    }
+    // and lucky boxes turn up out in the open too
+    const out = arena.pickups.filter((pt) => runs.some((q) => q.len >= 14 && q.row === Math.floor(pt.y / TILE) + 1 && pt.x / TILE >= q.c0 && pt.x / TILE <= q.c1 + 1)).length;
+    assert.ok(arena.pickups.length >= 12 && out >= 4, `${arena.id}: ${arena.pickups.length} box spots, ${out} of them on open ground`);
+  }
+  console.log(`      clear stretches of 14 tiles or more: ${log.join(', ')}`);
 });
 
 // A bot-only match. Returns what happened.

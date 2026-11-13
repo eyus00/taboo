@@ -6,10 +6,10 @@
 - **Lucky boxes.** Touch one and you get a random item to keep: set it off when it hurts most. A Blast that hurls everyone on screen away, a Swap that trades places with someone, a Storm that puts everyone else in slow motion, Goo to slip on, Frost, Ward, Swift and Spring. Nothing works in the last 10 seconds, so nobody can sit on one for the buzzer.
 - **Close-up camera** that follows you, with a minimap for everyone you cannot see. Each round opens on the whole arena, then zooms in on you.
 - **Movement with weight**: you build up speed, skid when you turn round, and jump in a floaty arc. Five actions &ndash; left, right, jump, down, use item.
-- **Six big arenas** full of slopes, trampolines, launchers, updrafts, thorns, pits and portals. A portal flies you over the map in an arc, and some let you drop out half way.
+- **Six big arenas with room to run.** Each is built around long stretches of plain open ground (at least four of 14 tiles or more, one of them 24 or more), with the slopes, trampolines, launchers, updrafts and portals at the ends and edges instead of in the way. A portal flies you over the map in an arc, and some let you drop out half way.
 - **A draw before every round**: reels spin for the arena, the art style and who starts as the oni.
 - **Seven art styles**: Ink & Sakura (the house style), Orbit, Xeno, Neon District, Nightmare, Sketchbook and Arcade.
-- **Practice against bots** (one to five of them), including team battles.
+- **Practice against bots** (one to nine of them), including team battles.
 - Menus drawn like a game: brush lettering on hanging scrolls, picture cards for arenas and styles, and a how-to-play page where every picture is the real game playing itself. Everything works with the keyboard alone; phones get on-screen controls and a built-in number pad for the room code.
 - No accounts, no database, no API keys. One small Node server.
 
@@ -155,7 +155,7 @@ test/                `npm test` - rules/physics checks and scripted online match
 ## Changing things
 
 - **Feel** &ndash; speeds, acceleration, jump, gravity, tag protection, item strength and timing are all in `shared/config.js`.
-- **Maps** &ndash; `shared/arenas.js` holds every arena as a grid of characters (`#` solid, `=` ledge, `^` trampoline, `<` `>` launchers, `u` updraft, `x` thorns, letters for portal pairs, `*` lucky-box spots, `1`&ndash;`6` starts, `7` `8` team bases) plus a list of slopes and of the portals you can drop out of. Edit one or add another and it shows up in the lobby; the bots work out their own routes. `npm test` checks that every surface can be reached and that bots can play it.
+- **Maps** &ndash; `shared/arenas.js` holds every arena as a grid of characters (`#` solid, `=` ledge, `^` trampoline, `<` `>` launchers, `u` updraft, `x` thorns, letters for portal pairs, `*` lucky-box spots, `1`&ndash;`6` starts, `7` `8` team bases) plus a list of slopes and of the portals you can drop out of. Edit one or add another and it shows up in the lobby; the bots work out their own routes. `npm test` checks that every surface can be reached, that there is enough open ground, and that bots can play it. `/_map.html?arena=hills&open=1` draws an arena as a plan with its open stretches shaded.
 - **New art style** &ndash; read `public/js/themes/README.md`, add a file next to the others and add it to `THEMES` in `shared/config.js`.
 
 Set `DEBUG_NET=1` when starting the server to print input-buffer statistics after each round.

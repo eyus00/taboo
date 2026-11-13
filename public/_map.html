@@ -1,6 +1,8 @@
 <!doctype html>
-<!-- Developer tool: a schematic of an arena.  /_map.html?arena=hills&nav=1&scale=0.7
-     nav=1 draws the bots' route map on top; nav=2 only the launcher / trampoline / updraft / portal routes. -->
+<!-- Developer tool: a schematic of an arena.  /_map.html?arena=hills&nav=1&scale=0.7&open=1
+     nav=1 draws the bots' route map on top; nav=2 only the launcher / trampoline / updraft / portal routes.
+     open=1 shades the open ground: flat stretches with nothing on them and five tiles of clear air above
+     (the same measure as the "room to run" test in test/sim.test.js); the long ones get their length. -->
 <meta charset="utf-8" />
 <title>Arena map</title>
 <style>
@@ -13,17 +15,19 @@
 <div id="bar"></div>
 <canvas id="c"></canvas>
 <script type="module">
-  import { ARENAS, arenaById, TILE } from '/shared/arenas.js';
+  import { ARENAS, arenaById, TILE, rampY } from '/shared/arenas.js';
   import { buildNav } from '/shared/nav.js';
 
   const q = new URLSearchParams(location.search);
   const arena = arenaById(q.get('arena') || ARENAS[0].id);
   const showNav = Number(q.get('nav') || 0);
+  const showOpen = Number(q.get('open') || 0);
   const k = Number(q.get('scale') || 0.7);
   const bar = document.getElementById('bar');
   bar.innerHTML =
-    ARENAS.map((a) => `<a class="${a === arena ? 'on' : ''}" href="?arena=${a.id}&nav=${showNav}&scale=${k}">${a.name}</a>`).join('') +
-    ` | <a href="?arena=${arena.id}&nav=${(showNav + 1) % 3}&scale=${k}">routes: ${['off', 'all', 'shortcuts'][showNav]}</a>` +
+    ARENAS.map((a) => `<a class="${a === arena ? 'on' : ''}" href="?arena=${a.id}&nav=${showNav}&open=${showOpen}&scale=${k}">${a.name}</a>`).join('') +
+    ` | <a href="?arena=${arena.id}&nav=${(showNav + 1) % 3}&open=${showOpen}&scale=${k}">routes: ${['off', 'all', 'shortcuts'][showNav]}</a>` +
+    ` <a href="?arena=${arena.id}&nav=${showNav}&open=${showOpen ? 0 : 1}&scale=${k}">open ground: ${showOpen ? 'on' : 'off'}</a>` +
     ` <b>${arena.name}</b> - ${arena.blurb} (${arena.w / TILE} x ${arena.h / TILE} tiles)`;
 
   const M = 22; // margin for the row / column numbers
@@ -54,6 +58,59 @@
   for (let r = 0; r < arena.h / TILE; r += 2) g.fillText(r, -4 / k, r * TILE + TILE * 0.7);
   g.textAlign = 'left';
   for (let r = 0; r < arena.h / TILE; r += 2) g.fillText(r, arena.w + 4 / k, r * TILE + TILE * 0.7);
+
+  // open ground: tiles of flat ground with nothing standing on them and `head` tiles of empty air above
+  // (the arena as drawn, with all its thorns - the same count the tests make)
+  function openGround(a, head = 5) {
+    const C = a.w / TILE;
+    const R = a.h / TILE;
+    const grid = Array.from({ length: R }, () => new Array(C).fill(0)); // 1 solid block, 2 thin ledge, 4 a gadget, 8 a slope
+    const mark = (x0, y0, x1, y1, bit) => {
+      for (let r = Math.max(0, Math.floor(y0 / TILE)); r <= Math.min(R - 1, Math.floor((y1 - 1) / TILE)); r++) {
+        for (let c = Math.max(0, Math.floor(x0 / TILE)); c <= Math.min(C - 1, Math.floor((x1 - 1) / TILE)); c++) grid[r][c] |= bit;
+      }
+    };
+    for (const p of a.platforms) mark(p.x, p.y, p.x + p.w, p.y + (p.oneway ? 1 : p.h), p.oneway ? 2 : 1);
+    for (const z of [...a.tramps, ...a.spikes, ...a.lifts, ...a.portals]) mark(z.x + 3, z.y, z.x + z.w - 3, z.y + z.h, 4);
+    for (const s of a.ramps) for (let x = s.x0; x < s.x1; x += 4) mark(x, rampY(s, x) - 2, x + 1, rampY(s, x) - 1, 8);
+    const open = (r, c) => {
+      if (r < 1 || !(grid[r][c] & 3) || grid[r - 1][c] & 1) return false;
+      for (let n = 1; n <= head; n++) if (r - n >= 0 && grid[r - n][c]) return false;
+      return true;
+    };
+    const runs = [];
+    for (let r = 1; r < R; r++) {
+      for (let c = 0; c < C; c++) {
+        if (!open(r, c)) continue;
+        const c0 = c;
+        while (c + 1 < C && open(r, c + 1)) c++;
+        runs.push({ row: r, c0, c1: c, len: c - c0 + 1 });
+      }
+    }
+    return runs;
+  }
+  if (showOpen) {
+    const HEAD = 5;
+    const runs = openGround(ARENAS.find((a) => a.id === arena.id) || arena, HEAD);
+    const long = runs.filter((r) => r.len >= 14).map((r) => r.len).sort((a, b) => b - a);
+    bar.innerHTML += ` | open ground: ${long.length} stretches of 14 tiles or more (${long.join(', ')})`;
+    for (const r of runs) {
+      if (r.len < 6) continue;
+      const big = r.len >= 14;
+      g.fillStyle = big ? 'rgba(60,190,90,0.20)' : 'rgba(60,190,90,0.08)';
+      g.fillRect(r.c0 * TILE, (r.row - HEAD) * TILE, r.len * TILE, HEAD * TILE);
+      if (!big) continue;
+      g.strokeStyle = 'rgba(30,140,60,0.55)';
+      g.lineWidth = 2;
+      g.setLineDash([10, 8]);
+      g.strokeRect(r.c0 * TILE + 1, (r.row - HEAD) * TILE + 1, r.len * TILE - 2, HEAD * TILE - 2);
+      g.setLineDash([]);
+      g.fillStyle = 'rgba(20,110,45,0.85)';
+      g.font = `bold ${15 / k}px system-ui`;
+      g.textAlign = 'center';
+      g.fillText(`${r.len} tiles clear`, (r.c0 + r.len / 2) * TILE, (r.row - HEAD) * TILE + 22 / k);
+    }
+  }
 
   // updrafts
   for (const z of arena.lifts) {
