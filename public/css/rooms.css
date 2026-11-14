@@ -1,254 +1,359 @@
-/* Onigokko - playing with others: the way in (Play), the room, and the stage
-   sheet that opens over it.
+/* Onigokko - playing with others: the way in (Play), the room, and the
+   popups that open over them (the stage, open rooms, your profile, a question).
 
-   These three screens are one place, and they are built from a handful of
-   parts that keep meaning the same thing wherever they turn up:
+   They are one place, built from a handful of parts that keep meaning the
+   same thing wherever they turn up:
 
      a sheet of lighter paper with a ruled edge   something to read or to choose
      a red ruled edge + a pressed seal            the one that is chosen (cards)
      a stroke of black ink behind a word          the one that is chosen (words)
      a brush circle with a drawing in it          what kind of thing it is
      a stroke of red ink                          the one thing to do next
-     a small red heading with an ink line         a group of things that belong together
+     small red capitals                           the name of what is under them
      a red outline                                where the keyboard is
      a small lift                                 where the pointer is
+     a slow shimmer on grey paper                 something that is still coming
 
    Every gap comes from one scale (--s1 ... --s6 in style.css): tight inside a
    group, generous between two. The few sizes that are not gaps are named just
    below. The layouts are grids that fold as the screen narrows; nothing is
-   placed by hand. */
+   placed by hand. Anything that reacts to the pointer does so only where
+   there is one ((hover: hover), at the foot of each part), anything that
+   moves does so only if motion is welcome, and a press is felt at once. */
 
-.hub, .rm, .pk {
-  --do: 320px; /* Play: the column of things to do (four code squares and Join fit in it) */
+.hub, .rm, .modal {
   --face: 36px; /* a player's picture in a seat */
   --seat: 48px; /* a seat: a face, a name, a line under it */
   --tile: 92px; /* the least a game card is tall: a brush circle and two lines */
   --edge: 0 0 0 3px var(--ink); /* the black edge of a picture */
+  --press: 0.96; /* how far a pressed thing gives */
+  --quick: 150ms ease-out; /* how fast it answers */
 }
-.scroll.hub { max-width: 880px; gap: var(--s5); }
-.scroll.rm, .scroll.pk { max-width: 1200px; gap: var(--s4); }
+.scroll.hub { max-width: 540px; gap: var(--s5); }
+.scroll.rm { max-width: 1200px; gap: var(--s4); }
 
-/* a scroll opens by unrolling, wherever you came from */
-.screen.panel > .scroll, .screen.over > .scroll.pk { animation: rm-unroll 0.24s cubic-bezier(0.2, 0.75, 0.25, 1) backwards; }
+/* a scroll opens by unrolling, wherever you came from (if motion is welcome; if not, it is simply there) */
+@media (prefers-reduced-motion: no-preference) {
+  .screen.panel > .scroll { animation: rm-unroll 0.24s cubic-bezier(0.2, 0.75, 0.25, 1) backwards; }
+}
 @keyframes rm-unroll { from { clip-path: inset(-24px -24px 100% -24px); } to { clip-path: inset(-24px -24px -70px -24px); } }
-#s-stage { animation: rm-dim 0.18s backwards; }
-@keyframes rm-dim { from { background-color: rgba(20, 16, 10, 0); } }
 
-/* a small heading may start with a drawing and end with a count */
-.hub h3 .ic { font-size: 15px; color: var(--ink); }
-.hub h3 em { order: 1; padding: 3px 7px 2px; font: 800 12px/1 var(--serif); letter-spacing: 0.04em; font-style: normal; color: var(--paper); background: var(--ink); transform: rotate(-4deg); }
-.hub h3 em:empty { display: none; }
-
-/* the key for something, beside it: one size and one weight wherever it turns up on these screens */
-.rm .lab kbd, .rm-tag kbd, .switch kbd, .rm-shuffle kbd, .pk h3 kbd, .pk-rounds kbd, .pk .bar .btn kbd {
-  transform: none; min-width: 20px; height: 20px; padding: 0 3px; margin: 0; font-size: 10.5px; letter-spacing: 0; border-width: 1.5px; opacity: 0.8; color: inherit; background: none;
+/* the name of something, over it: small red capitals (and, beside them, its key) */
+.lab { display: flex; align-items: center; gap: var(--s2); margin: 0; font: 800 12px/1.2 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; color: var(--red-deep); white-space: nowrap; }
+h3.lab::after { display: none; }
+.lab kbd, .rm-icon kbd, .rm-door kbd, .pk-rounds kbd, .modal .btn kbd, .hub-tile kbd {
+  transform: none; min-width: 20px; height: 20px; padding: 0 3px; margin: 0; font-size: 11px; letter-spacing: 0; border-width: 1.5px; opacity: 0.85; color: var(--ink); background: none;
 }
+.modal .btn.primary kbd { color: inherit; }
+
+/* something that is still coming: grey paper with a slow shimmer across it */
+.sk, .rm .pic:has(img:not([src])), .pk .card img.pic:not([src]) {
+  background: linear-gradient(100deg, rgba(28, 27, 31, 0.1) 40%, rgba(28, 27, 31, 0.04) 50%, rgba(28, 27, 31, 0.1) 60%) 0 0 / 250% 100%, #e6dcc5;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sk, .rm .pic:has(img:not([src])), .pk .card img.pic:not([src]) { animation: rm-shimmer 1.5s linear infinite; }
+}
+@keyframes rm-shimmer { from { background-position: 100% 0, 0 0; } to { background-position: -150% 0, 0 0; } }
+/* a button that has been pressed and is waiting for the server */
+[aria-busy='true'] { cursor: progress; pointer-events: none; opacity: 0.6; }
+@media (prefers-reduced-motion: no-preference) {
+  button[aria-busy='true'] { animation: rm-busy 0.8s ease-in-out infinite alternate; }
+}
+@keyframes rm-busy { from { opacity: 0.85; } to { opacity: 0.45; } }
 
 /* ============================================================== Play ===== */
-/* Two columns of the same height: what you do (host, or type a code) and
-   where you could go (rooms that are open to everyone). The list scrolls
-   inside its column, so the screen stays the size it is however many rooms
-   there are. */
-.hub-grid { display: grid; grid-template-columns: minmax(0, var(--do)) minmax(0, 1fr); gap: var(--s6); align-items: stretch; }
+/* Three ways in, one under the other: host (the big one), the open rooms,
+   a friend's code. */
 .hub-do { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
 .hub .error:empty { display: none; }
+.hub h3 .ic { font-size: 15px; color: var(--ink); }
 
 /* host: a broad stroke of red with the gate you open */
 .hub-host {
   position: relative; isolation: isolate; display: flex; align-items: center; gap: var(--s4); width: 100%; min-height: 112px;
-  padding: var(--s3) var(--s5) var(--s3) var(--s4); border: 0; background: none; color: #fff3e0; text-align: left; transition: transform 0.14s;
+  padding: var(--s3) var(--s5) var(--s3) var(--s4); border: 0; background: none; color: #fff3e0; text-align: left; transition: translate var(--quick), scale var(--quick);
 }
 .hub-host::before { content: ''; position: absolute; inset: 0 calc(-1 * var(--s2)); z-index: -1; background: var(--stroke-red-plain) center / 100% 100% no-repeat; }
-.hub-host .crest { width: 62px; height: 62px; flex: none; display: grid; place-items: center; font-size: 30px; color: var(--red-deep); background: #fff3e0; border-radius: 47% 53% 50% 50% / 52% 48% 53% 47%; transition: transform 0.16s; }
-.hub-host .words { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-right: auto; }
+.hub-host .crest { width: 62px; height: 62px; flex: none; display: grid; place-items: center; font-size: 30px; color: var(--red-deep); background: #fff3e0; border-radius: 47% 53% 50% 50% / 52% 48% 53% 47%; transition: rotate var(--quick); }
+.hub-host .words, .hub-tile .words { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-right: auto; }
 .hub-host b { font: 400 34px/1.05 var(--brush); white-space: nowrap; }
-.hub-host small { font-size: 13.5px; font-weight: 600; opacity: 0.9; }
+.hub-host small { font-size: 13.5px; font-weight: 600; }
 .hub-host kbd { opacity: 0.85; }
-.hub-host:hover, .hub-host:focus-visible { outline: none; transform: translateX(6px); }
-.hub-host:hover::before, .hub-host:focus-visible::before { background-image: var(--stroke-deep-plain); }
-.hub-host:hover .crest, .hub-host:focus-visible .crest { transform: rotate(-8deg) scale(1.06); }
-.hub-host:active { transform: translateX(6px) scale(0.985); }
+.hub-host:focus-visible { outline: none; translate: 6px 0; }
+.hub-host:focus-visible::before { background-image: var(--stroke-deep-plain); }
 /* (where the keyboard is: a pointer of ink, as on every red button) */
 .hub-host:focus-visible::after { content: ''; position: absolute; left: -22px; top: 50%; margin-top: -9px; border: 9px solid transparent; border-left: 13px solid var(--ink); }
+.hub-host:active { scale: var(--press); }
+
+/* open rooms: how many there are right now, and the way to them */
+.hub-tile {
+  display: flex; align-items: center; gap: var(--s4); width: 100%; min-height: 84px; padding: var(--s3) var(--s4); text-align: left; color: var(--ink);
+  background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); transition: translate var(--quick), scale var(--quick);
+}
+.hub-tile .crest { width: 46px; height: 46px; flex: none; display: grid; place-items: center; font-size: 20px; background: var(--enso) center / 100% 100% no-repeat; transition: rotate var(--quick); }
+.hub-tile b { font: 400 27px/1.05 var(--brush); white-space: nowrap; }
+.hub-tile small { min-height: 1.45em; font-size: 13.5px; font-weight: 600; color: var(--soft); }
+.hub-tile small.sk { width: 9em; height: 0.9em; min-height: 0; margin: 0.3em 0 0.25em; }
+.hub-tile .go { font-size: 15px; color: var(--soft); }
+.hub-tile:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+.hub-tile:active { scale: var(--press); }
 
 /* a friend's code: four squares to type into, and Join */
 .hub-code { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s4); background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); }
 .hub-field { display: flex; align-items: stretch; gap: var(--s2); }
 .hub-field .digits { justify-content: flex-start; gap: var(--s2); cursor: text; }
-.hub-field .digits span { width: 44px; height: 56px; font-size: 30px; }
+.hub-field .digits span { width: 48px; height: 56px; font-size: 30px; }
 .hub-field .digits:focus-visible { outline: none; }
 .hub-join {
   flex: 1 1 0; min-width: 60px; padding: 0 var(--s2) 2px; font: 400 23px/1 var(--brush); color: var(--paper); background: var(--ink);
-  border: 2px solid var(--ink); box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 3px rgba(243, 234, 214, 0.5); transition: background 0.12s, opacity 0.12s;
+  border: 2px solid var(--ink); box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 3px rgba(243, 234, 214, 0.5); transition: background-color var(--quick), opacity var(--quick), scale var(--quick);
 }
-.hub-join:disabled { opacity: 0.28; }
-.hub-join:hover:not(:disabled), .hub-join:focus-visible { outline: none; background: var(--red); border-color: var(--red-deep); box-shadow: inset 0 0 0 2px var(--red), inset 0 0 0 3px rgba(243, 234, 214, 0.6); }
+.hub-join:not(.ready) { opacity: 0.45; } /* (the code is not whole yet: Join will say so) */
+.hub-join:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; opacity: 1; }
+.hub-join:active { scale: var(--press); }
 /* the code is being typed: a caret in the next square */
 .hub-code .digits span.next { position: relative; }
-.hub-code .digits:focus span.next::after, .hub-code .digits.open span.next::after { content: ''; position: absolute; left: 50%; top: 22%; width: 2px; height: 56%; margin-left: -1px; background: var(--ink); animation: caret 1s steps(2, jump-none) infinite; }
+.hub-code .digits:focus span.next::after, .hub-code .digits.open span.next::after { content: ''; position: absolute; left: 50%; top: 22%; width: 2px; height: 56%; margin-left: -1px; background: var(--ink); }
+@media (prefers-reduced-motion: no-preference) {
+  .hub-code .digits:focus span.next::after, .hub-code .digits.open span.next::after { animation: caret 1s steps(2, jump-none) infinite; }
+}
 @keyframes caret { from { opacity: 1; } to { opacity: 0; } }
 /* (a phone's number pad has a Join of its own) */
 .hub-code .digits.open + .hub-join { display: none; }
 .hub-code .numpad { grid-template-columns: repeat(6, 1fr); max-width: none; }
 .hub-code .numpad .go { font-size: 17px; }
 
-/* open rooms: whose room, what it is playing, how full */
-.hub-open { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; min-height: 0; }
-.hub-list {
-  flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden auto; margin: 0 calc(-1 * var(--s4)); padding: 0 var(--s4) var(--s5);
-  scrollbar-width: thin; scrollbar-color: var(--ink) transparent;
-  /* (more below: the last row in view fades out) */
-  -webkit-mask-image: linear-gradient(#000 calc(100% - 26px), transparent); mask-image: linear-gradient(#000 calc(100% - 26px), transparent);
+@media (hover: hover) {
+  .hub-host:hover { translate: 6px 0; }
+  .hub-host:hover::before { background-image: var(--stroke-deep-plain); }
+  .hub-host:hover .crest, .hub-tile:hover .crest { rotate: -8deg; }
+  .hub-tile:hover { translate: 0 -2px; }
+  .hub-tile:hover .go { color: var(--ink); }
+  .hub-join.ready:hover { background: var(--red); border-color: var(--red-deep); box-shadow: inset 0 0 0 2px var(--red), inset 0 0 0 3px rgba(243, 234, 214, 0.6); }
 }
-.hub-list:empty { display: none; }
+
+/* ============================================================ popups ===== */
+/* A sheet of paper laid over whatever is open. What is behind it goes dark
+   and cannot be reached; its cross, Esc or a click on the dark closes it.
+   It fades in (and, if motion is welcome, settles 12px into place), and goes
+   faster than it came. */
+.modal {
+  --w: 720px;
+  inset: 0; margin: auto; padding: 0; width: min(var(--w), 100vw - 2 * var(--s3)); max-width: none; max-height: min(100dvh - 2 * var(--s3), 860px);
+  flex-direction: column; overflow: hidden; color: var(--ink); zoom: var(--zoom, 1); pointer-events: auto; /* (also over a match, where the menus' layer lets the pointer through) */
+  background: var(--tex, linear-gradient(transparent, transparent)), linear-gradient(#f9f2e1, #efe6d0);
+  border: 2px solid var(--ink); box-shadow: inset 0 0 0 3px #f6eedb, inset 0 0 0 4px rgba(28, 27, 31, 0.4), 0 26px 60px rgba(30, 18, 4, 0.5);
+  opacity: 0; transition: opacity 150ms ease-out, display 150ms allow-discrete, overlay 150ms allow-discrete;
+}
+.modal.sm { --w: 460px; }
+.modal.lg { --w: 980px; }
+.modal[open] { display: flex; opacity: 1; transition-duration: 300ms; }
+.modal::backdrop { background: rgba(20, 16, 10, 0.58); opacity: 0; transition: opacity 150ms ease-out, display 150ms allow-discrete, overlay 150ms allow-discrete; }
+.modal[open]::backdrop { opacity: 1; transition-duration: 300ms; }
+@starting-style {
+  .modal[open], .modal[open]::backdrop { opacity: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .modal { translate: 0 12px; transition-property: opacity, translate, display, overlay; }
+  .modal[open] { translate: 0 0; }
+  @starting-style {
+    .modal[open] { translate: 0 12px; }
+  }
+}
+.m-top { display: flex; align-items: center; gap: var(--s3) var(--s4); padding: var(--s4) var(--s4) var(--s2) var(--s5); }
+.m-top h2 { margin-right: auto; font-size: clamp(27px, 4vw, 34px); }
+/* the cross: a comfortable target in the corner */
+.m-x { width: 44px; height: 44px; flex: none; display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--ink); font-size: 19px; transition: scale var(--quick); }
+.m-x:focus-visible { outline: none; color: #fff3e0; background: var(--enso-red) center / 40px 40px no-repeat; }
+.m-x:active { scale: var(--press); }
+.m-body { flex: 1 1 auto; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; padding: var(--s2) var(--s5) var(--s4); scrollbar-width: thin; scrollbar-color: var(--ink) transparent; }
+.m-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2) var(--s4); padding: var(--s2) var(--s5) var(--s4); }
+.m-foot .btn { min-height: 46px; padding: 6px var(--s5); font-size: 21px; transition: scale var(--quick); }
+.m-foot .btn:not(:disabled):active { scale: var(--press); }
+/* (a small red button with its key on it: the stroke without the dry streaks that would cross the key) */
+.modal .btn.primary::before { background-image: var(--stroke-red-plain); }
+.modal .btn.primary:focus-visible::before { background-image: var(--stroke-deep-plain); }
+.modal .error:empty, .modal .lead:empty { display: none; }
+@media (hover: hover) {
+  .m-x:hover { color: var(--red); }
+  .modal .btn.primary:hover::before { background-image: var(--stroke-deep-plain); }
+}
+
+/* a question: what will happen, and two buttons that say what each does */
+.ask .m-body { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s5); }
+.ask h2 { font-size: clamp(26px, 5vw, 32px); line-height: 1.1; text-wrap: balance; }
+.ask p { font-size: 15px; font-weight: 600; color: var(--soft); text-wrap: pretty; overflow-wrap: anywhere; user-select: text; }
+
+/* your profile: your seal, and your name on a brushed line */
+.modal .idcard { padding-top: var(--s3); }
+.modal .idcard .lab { margin-bottom: 2px; }
+
+/* --- open rooms: narrow them down, then pick one ------------------------- */
+.fd { display: flex; flex-direction: column; gap: var(--s3); }
+.fd-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s5); }
+.fd-filters .seg { flex: 0 1 auto; }
+/* a tick box: a small square that takes a seal when it is on */
+.fd-check { display: inline-flex; align-items: center; gap: var(--s2); min-height: 36px; font-size: 14.5px; font-weight: 800; cursor: pointer; }
+.fd-check input { appearance: none; width: 22px; height: 22px; margin: 0; flex: none; background: var(--paper-lit); border: 2px solid var(--ink); cursor: pointer; transition: background-color var(--quick); }
+.fd-check input:checked { background: var(--tick) center / 15px no-repeat, var(--red-deep); border-color: var(--red-deep); }
+.fd-check input:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+/* the list keeps its height, however many rooms there are: the popup does not jump as you narrow it down */
+.hub-list, .fd .hub-none { height: min(44dvh, 336px); }
+.hub-list { display: flex; flex-direction: column; overflow: hidden auto; overscroll-behavior: contain; margin: 0 calc(-1 * var(--s3)); padding: 0 var(--s3); scrollbar-width: thin; scrollbar-color: var(--ink) transparent; }
+.hub-list:empty, .hub-list:has(+ .hub-none:not([hidden])) { display: none; }
 .hub-room {
   position: relative; isolation: isolate; flex: none; width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-rows: auto auto; align-items: center; gap: 0 var(--s3);
-  min-height: 64px; padding: var(--s2); text-align: left; border: 0; border-bottom: 1.5px solid var(--faint); background: none; transition: transform 0.14s, color 0.1s;
+  min-height: 64px; padding: var(--s2); text-align: left; border: 0; border-bottom: 1.5px solid var(--faint); background: none; transition: color 100ms, scale var(--quick);
 }
-.hub-room::before { content: ''; position: absolute; inset: 1px calc(-1 * var(--s2)); z-index: -1; background: var(--stroke-red-plain) center / 100% 100% no-repeat; opacity: 0; transform: scaleX(0.55); transform-origin: 0 50%; transition: opacity 0.1s, transform 0.16s; }
-.hub-room:hover, .hub-room:focus-visible { color: #fff3e0; transform: translateX(4px); outline: none; border-bottom-color: transparent; }
-.hub-room:hover::before, .hub-room:focus-visible::before { opacity: 1; transform: none; }
-.hub-room:active { transform: translateX(4px) scale(0.99); }
-.hub-room .seal { grid-row: 1 / span 2; font-size: 20px; transform: rotate(-5deg); transition: background 0.1s; }
-.hub-room:hover .seal, .hub-room:focus-visible .seal { background: var(--ink); }
+.hub-room::before { content: ''; position: absolute; inset: 1px calc(-1 * var(--s2)); z-index: -1; background: var(--stroke-red-plain) center / 100% 100% no-repeat; opacity: 0; transition: opacity 100ms; }
+.hub-room:focus-visible { color: #fff3e0; outline: none; border-bottom-color: transparent; }
+.hub-room:focus-visible::before { opacity: 1; }
+button.hub-room:active { scale: 0.99; }
+.hub-room .seal { grid-row: 1 / span 2; font-size: 20px; transform: rotate(-5deg); }
+.hub-room:focus-visible .seal { background: var(--ink); }
 .hub-room .who { grid-row: 1 / span 2; display: flex; flex-direction: column; min-width: 0; }
 .hub-room .who b { font: 400 21px/1.2 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: var(--s2); }
-.hub-room .who small { display: block; font-size: 13px; font-weight: 600; opacity: 0.88; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hub-room .who small { display: block; font-size: 13px; font-weight: 600; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hub-room .who .ic { display: inline-block; font-size: 12px; margin-right: 5px; vertical-align: -2px; }
 .hub-room .fill { grid-column: 3; grid-row: 1 / span 2; justify-self: end; font: 800 13px/1 var(--serif); font-variant-numeric: tabular-nums; }
 .hub-room .fill b { font-size: 21px; }
 /* (a room is waiting unless it says otherwise: only a round in progress is marked) */
 .hub-room .state { display: none; }
-.hub-room .state.on { display: block; grid-column: 3; grid-row: 2; justify-self: end; font: 800 9.5px/1 var(--serif); letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 5px 2px; color: var(--paper); background: var(--ink); white-space: nowrap; }
+.hub-room .state.on { display: block; grid-column: 3; grid-row: 2; justify-self: end; font: 800 11px/1 var(--serif); letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 5px 2px; color: var(--paper); background: var(--ink); white-space: nowrap; }
 .hub-room:has(.state.on) .fill { grid-row: 1; }
-.hub-room:hover .state.on, .hub-room:focus-visible .state.on { color: var(--red-deep); background: #fff3e0; }
+.hub-room:focus-visible .state.on { color: var(--red-deep); background: #fff3e0; }
 .hub-room .join { grid-column: 4; grid-row: 1 / span 2; font-size: 0; }
 .hub-room .join::after { content: '\203A'; font: 400 28px/1 var(--brush); opacity: 0.5; }
-.hub-room:hover .join::after, .hub-room:focus-visible .join::after { opacity: 1; }
-/* nobody has opened one: an empty frame, and the way to open yours */
-.hub-none { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s2); padding: var(--s5) var(--s4); text-align: center; border: 2px dashed var(--faint); }
+.hub-room:focus-visible .join::after { opacity: 1; }
+/* not heard from the server yet: the shape of the rows that are coming */
+.hub-room.sk-row { grid-template-columns: 34px minmax(0, 1fr) 44px; grid-template-rows: auto; gap: 0 var(--s3); }
+.sk-row .sk:nth-child(1) { width: 34px; height: 34px; }
+.sk-row .sk:nth-child(2) { width: min(62%, 220px); height: 18px; }
+.sk-row .sk:nth-child(3) { width: 44px; height: 18px; }
+.sk-row:nth-child(2) .sk:nth-child(2) { width: min(48%, 170px); }
+/* nothing to show: an empty frame that says why, and what to do about it */
+.hub-none { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s2); padding: var(--s5) var(--s4); text-align: center; border: 2px dashed var(--faint); }
 .hub-none > .ic { font-size: 46px; color: var(--soft); opacity: 0.45; margin-bottom: var(--s1); }
-.hub-none p { font-weight: 600; color: var(--soft); }
+.hub-none p { max-width: 34ch; font-weight: 600; color: var(--soft); text-wrap: balance; }
 .hub-none b { font-weight: 800; color: var(--ink); }
+@media (hover: hover) {
+  button.hub-room:hover { color: #fff3e0; border-bottom-color: transparent; }
+  button.hub-room:hover::before { opacity: 1; }
+  button.hub-room:hover .seal { background: var(--ink); }
+  button.hub-room:hover .state.on { color: var(--red-deep); background: #fff3e0; }
+  button.hub-room:hover .join::after { opacity: 1; }
+}
 
 /* ========================================================== the room ===== */
-/* Across the top: which room this is and who may come in. Underneath, two
-   columns: the match (game, stage, rules) and the people (with Start). */
+/* Across the top: which room this is, the way to pass it on, and who may
+   come in. Underneath, two columns: the match (format, game, stage, rules)
+   and the people (with Start). */
 .rm-top { gap: var(--s3) var(--s4); }
 .rm-top h2 { margin-right: 0; }
-.rm-top .switch { margin-left: auto; }
 
-/* the room's code on a wooden tag: press it and the invite link is copied */
-.rm-tag { display: inline-flex; align-items: stretch; padding: 0; border: 0; background: none; color: var(--ink); transition: transform 0.12s; }
-.rm-tag .code {
-  display: grid; place-items: center; padding: 6px var(--s2) 5px var(--s4); font: 800 clamp(24px, 3.4vw, 30px)/1 var(--serif); letter-spacing: 0.2em; font-variant-numeric: tabular-nums; color: #2c1b10;
+/* the room's code, on a wooden tag */
+.rm-code {
+  display: grid; place-items: center; padding: 6px var(--s2) 5px var(--s4); font: 800 clamp(24px, 3.4vw, 30px)/1 var(--serif); letter-spacing: 0.2em; font-variant-numeric: tabular-nums; color: #2c1b10; user-select: all;
   background: repeating-linear-gradient(91deg, rgba(92, 60, 32, 0) 0 9px, rgba(92, 60, 32, 0.12) 9px 10px), linear-gradient(#e6c896, #cba569);
   box-shadow: inset 0 0 0 2px #5a3c26, inset 0 0 0 3px rgba(255, 238, 205, 0.4);
 }
-.rm-tag .say { display: inline-flex; align-items: center; gap: var(--s2); padding: 0 var(--s3); font: 800 13px/1 var(--serif); letter-spacing: 0.04em; color: var(--paper); background: var(--ink); transition: background 0.12s; }
-.rm-tag .say .ic { font-size: 14px; }
-.rm-tag:hover { transform: translateY(-2px); }
-.rm-tag:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
-.rm-tag:active { transform: none; }
-.rm-tag.done .say { background: var(--red); }
+/* a round button with a drawing in it (pass the room on; shuffle the sides) */
+.rm-icon { position: relative; width: 44px; height: 44px; flex: none; display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--ink); transition: scale var(--quick); }
+.rm-icon .ring { position: relative; width: 40px; height: 40px; display: grid; place-items: center; font-size: 17px; background: var(--enso) center / 100% 100% no-repeat; transition: rotate var(--quick), color var(--quick); }
+.rm-icon .ring .ic { grid-area: 1 / 1; }
+.rm-icon kbd { position: absolute; right: -7px; top: -3px; background: var(--paper-lit); opacity: 1; }
+.rm-icon:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+.rm-icon:active { scale: var(--press); }
+/* done: the drawing gives way to a tick, in a red circle, for a moment */
+.rm-icon .ic.b { opacity: 0; scale: 0.25; }
+.rm-icon .ic.a, .rm-icon .ic.b { transition: opacity 300ms cubic-bezier(0.2, 0, 0, 1), scale 300ms cubic-bezier(0.2, 0, 0, 1); }
+.rm-icon.done .ring { color: #fff3e0; background-image: var(--enso-red); }
+.rm-icon.done .ic.a { opacity: 0; scale: 0.25; }
+.rm-icon.done .ic.b { opacity: 1; scale: 1; }
 
-/* the switch: locked, or open to the world. (A guest cannot turn it: for them it is just the seal and the word.) */
-.switch { display: inline-flex; align-items: center; gap: var(--s2); padding: 3px 2px; border: 0; background: none; color: var(--ink); font: 800 14px/1 var(--serif); }
-.switch .track { position: relative; width: 54px; height: 28px; flex: none; background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: inset 0 0 0 2px var(--paper-lit), inset 0 0 0 3px rgba(28, 27, 31, 0.3); }
-.switch .knob { position: absolute; top: 1px; left: 1px; width: 22px; height: 22px; display: grid; place-items: center; font-size: 12px; color: var(--paper); background: var(--ink); transition: transform 0.16s, background 0.16s; clip-path: var(--seal-cut); }
-.switch[aria-checked='true'] .knob { transform: translateX(26px); background: var(--red); }
-.switch .open, .switch[aria-checked='true'] .shut { display: none; }
-.switch[aria-checked='true'] .open { display: block; }
-.switch b { min-width: 50px; text-align: left; }
-.switch:hover:not(:disabled) .knob { background: var(--red-deep); }
-.switch:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
-.switch:disabled { cursor: default; }
-.switch:disabled .track { width: 26px; height: 26px; border: 0; background: none; box-shadow: none; }
-.switch:disabled .knob { position: static; transform: none; width: 26px; height: 26px; font-size: 13px; }
-.switch:disabled b { min-width: 0; }
-.switch:disabled kbd { display: none; }
+/* who can come in: one button that says which it is - a lock on ink, or the world on red */
+.rm-door {
+  margin-left: auto; display: inline-flex; align-items: center; gap: var(--s2); min-height: 44px; padding: var(--s1) var(--s3) var(--s1) var(--s2); color: var(--ink); font: 800 14.5px/1 var(--serif);
+  background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); transition: scale var(--quick);
+}
+.rm-door .mark { width: 28px; height: 28px; flex: none; display: grid; place-items: center; margin: 0; font-size: 14px; color: var(--paper); background: var(--ink); clip-path: var(--seal-cut); transition: background-color var(--quick); }
+.rm-door .open, .rm-door.on .shut { display: none; }
+.rm-door.on .open { display: block; }
+.rm-door.on .mark { background: var(--red); }
+.rm-door b { min-width: 3.6em; text-align: left; }
+.rm-door:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+.rm-door:not(:disabled):active { scale: var(--press); }
+/* (a guest cannot change it: for them it only says which it is) */
+.rm-door:disabled { cursor: default; background: none; border-color: transparent; box-shadow: none; padding-right: 0; }
+.rm-door:disabled b { min-width: 0; }
+.rm-door:disabled kbd { display: none; }
 
 .rm-body { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(310px, 1fr); gap: var(--s6); align-items: stretch; }
 .rm-match { display: flex; flex-direction: column; gap: var(--s5); min-width: 0; }
-.rm-sec { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
 
-/* a line of small choices: its name, then the words to choose from */
-.rm-opts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s5); }
+/* a setting: its name in small red capitals, and under it what to choose from */
+.rm-opts { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s4) var(--s6); }
 .rm-opts:empty { display: none; }
-.rm .opt { flex-direction: row; align-items: center; gap: var(--s3); }
-.rm .opt > .lab { display: inline-flex; align-items: center; gap: var(--s2); font-size: 13px; white-space: nowrap; }
+.rm .opt { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.rm .opt.wide { flex: 1 1 100%; }
 .rm .seg label { flex: 0 0 auto; }
 .rm .seg span { padding: 7px 13px 6px; }
-.locked .lab kbd { display: none; }
+.locked .lab kbd, .guest .lab kbd { display: none; }
 
 /* the games: a card each - its sign in a brush circle, its name, what it is about */
 .rm-modes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--s3); }
 .rm-mode {
   position: relative; display: flex; align-items: center; gap: var(--s3); min-height: var(--tile); padding: var(--s3); cursor: pointer;
-  background: var(--paper-lit); border: 2px solid rgba(28, 27, 31, 0.55); box-shadow: var(--frame); transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+  background: var(--paper-lit); border: 2px solid rgba(28, 27, 31, 0.55); box-shadow: var(--frame); transition: translate var(--quick), scale var(--quick), border-color var(--quick), box-shadow var(--quick);
 }
 .rm-mode input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.rm-mode .crest { width: 46px; height: 46px; flex: none; display: grid; place-items: center; font-size: 20px; color: var(--ink); background: var(--enso) center / 100% 100% no-repeat; transition: transform 0.14s; }
+.rm-mode .crest { width: 46px; height: 46px; flex: none; display: grid; place-items: center; font-size: 20px; color: var(--ink); background: var(--enso) center / 100% 100% no-repeat; transition: rotate var(--quick); }
 .rm-mode .words { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .rm-mode b { font: 400 23px/1.05 var(--brush); white-space: nowrap; }
-.rm-mode small { font-size: 12.5px; font-weight: 600; line-height: 1.3; color: var(--soft); }
-.rm-mode:hover { transform: translateY(-2px); }
-.rm-mode:active { transform: none; }
+.rm-mode small { font-size: 12.5px; font-weight: 600; line-height: 1.4; color: var(--soft); }
+.rm-mode:active { scale: var(--press); }
 .rm-mode.on { border-color: var(--red); box-shadow: var(--frame-red); }
-.rm-mode.on .crest { color: #fff3e0; background-image: var(--enso-red); transform: rotate(-7deg); }
+.rm-mode.on .crest { color: #fff3e0; background-image: var(--enso-red); rotate: -7deg; }
 .rm-mode:has(input:focus-visible) { outline: 3px solid var(--red); outline-offset: 3px; }
-/* chosen: a seal pressed on its corner (on a card here, and on a picture card on the stage sheet) */
+/* chosen: a seal pressed on its corner (on a card here, and on a picture card in the stage popup) */
 .rm-mode.on::after, .pk .card.on::after {
   content: ''; position: absolute; top: -9px; right: -8px; width: 25px; height: 25px; transform: rotate(8deg);
-  background: var(--tick) center / 15px no-repeat, var(--red-deep); clip-path: var(--seal-cut); animation: stamp 0.2s;
+  background: var(--tick) center / 15px no-repeat, var(--red-deep); clip-path: var(--seal-cut);
 }
 /* a guest sees what is chosen, not what could have been */
-.locked .rm-mode { cursor: default; }
-.locked .rm-mode:hover { transform: none; }
+.locked .rm-mode { cursor: default; scale: none; }
 .locked .rm-mode:not(.on) { display: none; }
 .locked .rm-mode.on { border-color: rgba(28, 27, 31, 0.55); box-shadow: var(--frame); }
 .locked .rm-mode.on::after { display: none; }
 .locked .rm-modes { grid-auto-columns: minmax(0, 340px); }
 
-/* --- the stage ----------------------------------------------------------- */
+/* --- the stage: one tile per round (one match is one round) ---------------- */
 /* a picture of an arena (or the "?" of one that is still to be drawn) */
-.rm .pic, .pk-pic { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; background: #d9cdb2; box-shadow: var(--edge); transition: transform 0.12s; }
-.rm .pic img, .pk-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.rm .pic.any, .pk-pic .any { display: grid; place-items: center; font: 400 64px/1 var(--brush); color: var(--red-deep); background: var(--enso) center / auto 74% no-repeat, var(--paper-lit); }
-/* one match: the picture, and beside it what it is */
-.rm-hero { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1fr); gap: var(--s5); align-items: center; width: 100%; padding: 3px; border: 0; background: none; text-align: left; color: inherit; }
-.rm-hero .info { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); min-width: 0; }
-.rm-hero .name { font: 400 clamp(27px, 2.9vw, 36px)/1.05 var(--brush); }
-.rm-hero .blurb { font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--soft); }
-.rm-hero .style { display: flex; align-items: baseline; gap: var(--s2); }
-.rm-hero .style b { font: 400 21px/1.1 var(--brush); }
-.rm-hero .change { display: inline-flex; align-items: center; gap: var(--s1); margin-top: var(--s1); padding-bottom: 2px; font: 800 13.5px/1.2 var(--serif); color: var(--red-deep); border-bottom: 2px solid currentColor; }
-.rm-hero .change .ic { font-size: 12px; transition: transform 0.14s; }
-button.rm-hero:hover .pic, button.rm-round:hover .pic { transform: translateY(-2px); }
-button.rm-hero:hover .change .ic, button.rm-hero:focus-visible .change .ic { transform: translateX(4px); }
-button.rm-hero:focus-visible, button.rm-round:focus-visible { outline: none; }
-button.rm-hero:focus-visible .pic, button.rm-round:focus-visible .pic { outline: 3px solid var(--red); outline-offset: 3px; }
-button.rm-hero:active .pic, button.rm-round:active .pic { transform: none; }
-/* a tournament: its rounds in order, each with its own picture. (As tall as
-   one match's picture, so the room does not jump when you change your mind.) */
-.rm-prog { display: grid; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); gap: var(--s3); align-content: start; padding: 3px; }
-.rm-round { position: relative; min-width: 0; display: flex; flex-direction: column; gap: var(--s2); padding: 0; border: 0; background: none; text-align: left; color: inherit; }
-.rm-round .pic.any { font-size: 34px; }
+.rm .pic { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; background: #d9cdb2; box-shadow: var(--edge); transition: translate var(--quick); }
+.rm .pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.rm .pic img:not([src]) { visibility: hidden; }
+.rm .pic.any, .pk .card .pic.any { display: grid; place-items: center; font: 400 38px/1 var(--brush); color: var(--red-deep); background: var(--enso) center / auto 74% no-repeat, var(--paper-lit); }
+/* Three to a row - so one match's tile is the size of a three-round tournament's - five for five rounds, and seven in two rows. */
+.rm-prog { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); align-content: start; padding: 3px; }
+.rm-prog.n5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.rm-prog.n7 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.rm-round { position: relative; min-width: 0; display: flex; flex-direction: column; gap: var(--s2); padding: 0; border: 0; background: none; text-align: left; color: inherit; transition: scale var(--quick); }
 .rm-round .cap { display: flex; flex-direction: column; min-width: 0; padding-left: 1px; }
-.rm-round .name { font: 800 13px/1.25 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rm-round small { font-size: 11.5px; font-weight: 600; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rm-round .name { font: 800 13.5px/1.25 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rm-round small { font-size: 12px; font-weight: 600; line-height: 1.4; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rm-prog.n7 small { display: none; } /* (the picture already shows the style) */
+button.rm-round:focus-visible { outline: none; }
+button.rm-round:focus-visible .pic { outline: 3px solid var(--red); outline-offset: 3px; }
+button.rm-round:active { scale: var(--press); }
 /* which round: a numeral pressed in the corner of its picture; and what is special about it - a twist, or double points */
 .rm-round .no { position: absolute; top: var(--s1); left: var(--s1); width: 23px; height: 23px; display: grid; place-items: center; padding: 2px 1px 0 0; font: 400 16px/1 var(--brush); color: #fff3e0; background: var(--ink); clip-path: var(--seal-cut); }
-.rm-round .flag { position: absolute; top: 5px; right: var(--s1); padding: 3px 5px 2px; font: 800 9px/1 var(--serif); letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper); background: var(--ink); }
+.rm-round .flag { position: absolute; top: 5px; right: var(--s1); padding: 3px 5px 2px; font: 800 10.5px/1 var(--serif); letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper); background: var(--ink); }
 .rm-round .flag.x2 { top: var(--s1); display: grid; place-items: center; width: 23px; height: 23px; padding: 0 0 1px; font-size: 11px; letter-spacing: 0; text-transform: none; background: var(--red); clip-path: var(--seal-cut); }
-/* seven of them: two rows, so each keeps a picture worth looking at (which already shows its style) */
-.rm-prog.n7 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.rm-prog.n7 small { display: none; }
 
 /* --- the people: a panel of their own, with Start at the foot of it ------- */
 .rm-people { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; padding: var(--s4); background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); }
-.rm-people > header { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s3); }
-.rm-people > header h3 { flex: 1 1 120px; }
+.rm-people > header { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2) var(--s4); min-height: 44px; }
+.rm-people > header .lab { margin-right: auto; }
 .rm-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s4); }
 /* a seat: the player's picture, their name with the width to itself, and under it what they are here */
 .rm-seat { display: flex; align-items: center; gap: var(--s2); min-width: 0; min-height: var(--seat); padding: var(--s1) 0; border-bottom: 1.5px solid var(--faint); }
@@ -257,16 +362,15 @@ button.rm-hero:active .pic, button.rm-round:active .pic { transform: none; }
 .rm-seat .nm { font: 400 21px/1.1 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 6px 0 0; } /* (room for the brush letters' tails) */
 .rm-seat.me .nm { color: var(--red-deep); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
 .rm-seat.bot .nm { color: var(--soft); }
-.rm-seat .role { font: 800 9.5px/1.25 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rm-seat .role { font: 800 11px/1.25 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rm-seat .role.host { color: var(--red-deep); }
 /* a seat nobody has taken: an outline - and the first of them is the way to fill it */
 .rm-seat.free { border-bottom-style: dashed; }
 .rm-seat.free::before { content: ''; width: var(--face); height: var(--face); flex: none; border: 1.5px dashed rgba(28, 27, 31, 0.28); }
 .rm-seat.free:has(.invite)::before { content: '+'; display: grid; place-items: center; font: 800 20px/1 var(--serif); color: var(--soft); }
-.rm-seat .invite { align-self: stretch; flex: 1; min-width: 0; padding: 0; border: 0; background: none; text-align: left; font: 600 14px/1.2 var(--serif); color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rm-seat .invite:hover { color: var(--ink); }
+.rm-seat .invite { align-self: stretch; flex: 1; min-width: 0; padding: 0; border: 0; background: none; text-align: left; font: 600 14px/1.2 var(--serif); color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 4px; }
 .rm-seat .invite:focus-visible { outline: 3px solid var(--red); outline-offset: -3px; color: var(--ink); }
-.rm-seat.none { color: #9b917f; font-style: italic; font-size: 13.5px; border-bottom: 0; }
+.rm-seat.none { color: var(--soft); font-style: italic; font-size: 13.5px; border-bottom: 0; }
 /* team battle: the two sides face to face, each under its own colour */
 .rm-teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s3); align-items: start; }
 .rm-team { --side: #777; --face: 28px; --seat: 44px; min-width: 0; }
@@ -274,101 +378,104 @@ button.rm-hero:active .pic, button.rm-round:active .pic { transform: none; }
 .rm-team > header { display: flex; align-items: baseline; gap: var(--s2); min-height: 32px; padding: 5px var(--s3) 2px; color: #fff; background: linear-gradient(rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.16)), var(--side); clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
 .rm-team header b { font: 400 22px/1 var(--brush); }
 .rm-team header .n { font: 800 12.5px/1 var(--serif); white-space: nowrap; }
-.rm-team header em { margin-left: auto; font: 800 10px/1 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; font-style: normal; white-space: nowrap; }
+.rm-team header em { margin-left: auto; font: 800 11px/1 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; font-style: normal; white-space: nowrap; }
 .rm-team .rm-seats { grid-template-columns: minmax(0, 1fr); padding: 0 2px; }
 .rm-team .rm-seat { gap: 6px; }
 .rm-team .rm-seat .nm { font-size: 18px; padding-right: 3px; }
-.rm-seat .cross { flex: none; width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; color: var(--soft); font-size: 12px; background: var(--enso) center / 100% 100% no-repeat; opacity: 0.75; transition: transform 0.14s, opacity 0.1s; }
-.rm-seat .cross:hover { opacity: 1; color: var(--ink); transform: scale(1.1); }
+/* across to the other side: an arrow in a brush circle */
+.rm-seat .cross { position: relative; flex: none; width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0; color: var(--soft); font-size: 12px; background: var(--enso) center / 100% 100% no-repeat; opacity: 0.75; transition: scale var(--quick), opacity var(--quick); }
+.rm-seat .cross::after { content: ''; position: absolute; inset: -9px; } /* (a target of 44px around a small drawing) */
 .rm-seat .cross:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; opacity: 1; color: var(--ink); }
-.rm-shuffle { position: relative; width: 38px; height: 38px; flex: none; display: grid; place-items: center; padding: 0; border: 0; font-size: 16px; color: var(--ink); background: var(--enso) center / 100% 100% no-repeat; transition: transform 0.14s; }
-.rm-shuffle:hover { transform: rotate(-12deg) scale(1.08); }
-.rm-shuffle:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
-.rm-shuffle kbd { position: absolute; right: -9px; top: -6px; background: var(--paper-lit); opacity: 1; }
+.rm-seat .cross:active { scale: var(--press); }
 /* go. (Should the room ever be taller than the screen, Start stays in view at the foot of the panel.) */
 .rm-go { position: sticky; bottom: var(--s2); margin-top: auto; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3) var(--s2) 0; background: var(--paper-lit); }
-.rm-go .note { min-height: 0; font-size: 13.5px; text-align: center; }
+.rm-go .note { min-height: 0; font-size: 13.5px; text-align: center; text-wrap: balance; }
 .rm-go .note:empty { display: none; }
 /* (for a guest, in place of Start: a ribbon of ink, as the notices at the foot of the screen are) */
 .rm-go #start-note { align-self: center; padding: var(--s2) var(--s5) 7px; font-weight: 800; color: var(--paper); background: var(--ink); clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
+.rm-go .btn:not(:disabled):active { scale: var(--press); }
 .rm .legend { gap: var(--s1) var(--s4); font-size: 12px; }
 
-/* ==================================================== the stage sheet ==== */
-/* On the left, every arena and every art style as a picture card. On the
-   right, a large view of what is chosen - or of the card under the pointer. */
-.pk .bar { flex-wrap: wrap; min-width: 0; }
-.pk .bar h2 { margin-right: 0; }
-.pk .bar .btn { margin-left: auto; min-height: 46px; padding: 6px var(--s5); font-size: 21px; }
-/* (a small red button with its key on it: the stroke without the dry streaks that would cross the key) */
-.pk .bar .btn.primary::before { background-image: var(--stroke-red-plain); }
-.pk .bar .btn.primary:hover::before, .pk .bar .btn.primary:focus-visible::before { background-image: var(--stroke-deep-plain); }
-.pk-rounds { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-left: var(--s4); min-width: 0; }
+@media (hover: hover) {
+  .rm-icon:hover .ring { rotate: -10deg; }
+  .rm-door:hover:not(:disabled) .mark { background: var(--red-deep); }
+  .rm-mode:hover { translate: 0 -2px; }
+  .locked .rm-mode:hover { translate: none; }
+  button.rm-round:hover .pic { translate: 0 -2px; }
+  .rm-seat .invite:hover { color: var(--ink); text-decoration-color: currentColor; }
+  .rm-seat .cross:hover { opacity: 1; color: var(--ink); }
+}
+
+/* ==================================================== the stage popup ==== */
+/* The art styles in one row (it scrolls sideways; the next one peeks in at
+   the edge), then every arena as a picture, and under them a line about the
+   one that is chosen. */
+.pk { display: flex; flex-direction: column; gap: var(--s3); }
+.pk > *, .fd > * { flex-shrink: 0; } /* (when there is not room for everything the popup scrolls; nothing in it is squeezed) */
+.pk .lab:not(:first-child) { margin-top: var(--s2); }
+.pk-rounds { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-right: auto; min-width: 0; }
 .pk-rounds kbd { margin-right: var(--s2); }
-.pk-rounds .tab { min-width: 36px; height: 36px; padding: 0 11px; border: 0; border-bottom: 2px solid var(--faint); background: none; font: 800 14.5px/1 var(--serif); white-space: nowrap; }
-.pk-rounds .tab:hover { color: var(--red-deep); }
+.pk-rounds .tab { min-width: 40px; height: 40px; padding: 0 var(--s3); border: 0; border-bottom: 2px solid var(--faint); background: none; font: 800 14.5px/1 var(--serif); white-space: nowrap; transition: scale var(--quick); }
 .pk-rounds .tab[aria-checked='true'] { color: #fff3e0; border-bottom-color: transparent; background: var(--stroke-ink) center / 100% 100% no-repeat; }
 .pk-rounds .tab:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
-.pk-body { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: var(--s6); align-items: start; }
-.pk-lists { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
-.pk-lists h3:not(:first-child) { margin-top: var(--s2); }
-.pk .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s3); padding: 3px; }
-.pk .card { position: relative; display: block; cursor: pointer; padding: 3px 3px 0; background: var(--ink); transition: transform 0.12s, background 0.12s; }
+.pk-rounds .tab:active { scale: var(--press); }
+.m-top:has(.pk-rounds:not([hidden])) h2 { margin-right: var(--s3); }
+.pk .card { position: relative; display: block; cursor: pointer; padding: 3px 3px 0; background: var(--ink); transition: translate var(--quick), scale var(--quick), background-color var(--quick); }
 .pk .card input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.pk .card .pic { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #d9cdb2; }
-.pk .card .pic.any { display: grid; place-items: center; font: 400 38px/1 var(--brush); color: var(--red-deep); background: var(--enso) center / auto 74% no-repeat, var(--paper-lit); }
-.pk .card .cap { display: block; padding: 5px 3px 4px; text-align: center; font-size: 13px; font-weight: 800; color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pk .card:hover { transform: translateY(-3px); }
-.pk .card:active { transform: none; }
-.pk .card.on { background: var(--red); transform: translateY(-3px); }
+.pk .card .pic { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background-color: #d9cdb2; }
+.pk .card .cap { display: block; padding: 5px 3px 4px; text-align: center; font-size: 13.5px; font-weight: 800; color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk .card:active { scale: var(--press); }
+.pk .card.on { background: var(--red); translate: 0 -3px; }
 .pk .card:has(input:focus-visible) { outline: 3px solid var(--red); outline-offset: 4px; }
-.pk-view { position: sticky; top: 0; display: flex; flex-direction: column; gap: var(--s2); min-width: 0; padding: 3px; }
-.pk-pic { margin: 0 0 var(--s2); }
-.pk-pic .any { width: 100%; height: 100%; font-size: 96px; }
-.pk-name { font: 400 clamp(28px, 3vw, 36px)/1.08 var(--brush); }
-.pk-blurb { font-size: 14px; font-weight: 600; line-height: 1.45; color: var(--soft); min-height: calc(3 * 1.45em); } /* (three lines, whichever arena it is: what is under them stays put) */
-.pk-style { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s2); padding-top: var(--s3); border-top: 1.5px solid var(--faint); }
-.pk-style b { font: 400 22px/1.1 var(--brush); }
-.pk-style span { flex-basis: 100%; font-size: 13.5px; font-weight: 600; color: var(--soft); min-height: 1.45em; }
+/* the styles: one row */
+.pk-row {
+  display: flex; gap: var(--s3); overflow: auto hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: var(--s5);
+  margin: 0 calc(-1 * var(--s5)); padding: 10px var(--s5) var(--s2); scrollbar-width: thin; scrollbar-color: var(--ink) transparent;
+}
+.pk-row .card { flex: 0 0 clamp(128px, 16%, 150px); scroll-snap-align: start; }
+/* the arenas: every one of them, large */
+.pk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s4) var(--s3); padding: 10px 3px 3px; }
+.pk-about { min-height: calc(2 * 1.45em); font-size: 14px; font-weight: 600; line-height: 1.45; color: var(--soft); text-wrap: pretty; }
+.pk-about b { margin-right: var(--s2); font: 400 20px/1 var(--brush); color: var(--ink); }
+.locked .card { cursor: default; }
+@media (hover: hover) {
+  .pk-rounds .tab:hover { color: var(--red-deep); }
+  .pk-rounds .tab[aria-checked='true']:hover { color: #fff3e0; }
+  .pk .card:hover { translate: 0 -3px; }
+}
 
 /* ============================================================ layouts ==== */
 /* a wide screen: a room has the whole of it (the title scroll steps aside) */
 @media (min-width: 1280px) {
   body.in-room .screen.home { display: none; }
   body.in-room .screen.panel { grid-column: 1 / -1; padding-left: clamp(40px, 5vw, 120px); padding-right: clamp(40px, 5vw, 120px); }
-  /* The stage is as tall for a tournament as for one match, and the room hangs
-     from where one match puts its top edge - so nothing you are about to press
-     moves when you change your mind (seven rounds make it longer, downwards). */
-  #stage-view { min-height: 186px; display: grid; align-content: center; }
-  #stage-view.rm-prog { align-content: start; }
+  /* The stage is as tall for one match as for three or five rounds, and the
+     room hangs from where one match puts its top edge - so nothing you are
+     about to press moves when you change your mind (seven rounds make it
+     longer, downwards). */
+  #stage-view { min-height: 164px; }
   #s-lobby { --room: 690px; align-items: start; padding-top: max(10px, calc((100vh - var(--room) * var(--zoom, 1)) / 2)); }
-}
-/* beside the title scroll on a screen that is only just wide enough: the two columns of Play move closer */
-@media (max-width: 1420px) {
-  .hub-grid { gap: var(--s5); }
-  .hub-room { column-gap: var(--s2); }
 }
 /* a short wide screen: the same room, a little closer together */
 @media (min-width: 981px) and (max-height: 800px) {
   .rm { --tile: 84px; --seat: 44px; }
   .rm-match { gap: var(--s4); }
-  .pk-lists h3:not(:first-child) { margin-top: 0; }
-  .scroll.pk { gap: var(--s3); }
-  .pk .cards { row-gap: var(--s2); }
+  .pk { gap: var(--s2); }
+  .pk-grid { row-gap: var(--s3); }
   .pk .card .cap { padding: 3px 3px 2px; }
-  .pk .bar .btn { min-height: 42px; }
 }
 /* two columns, but not wide ones: a game's sign sits above its name, the
-   people sit one under the other, seven rounds take two rows */
+   people sit one under the other */
 @media (min-width: 981px) and (max-width: 1279.98px) {
   .rm-mode { flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--s2); }
   .rm-seats, .rm-teams { grid-template-columns: minmax(0, 1fr); }
   .rm-seat.free:not(:has(.invite)) { display: none; }
+  .rm-prog.n5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 /* not wide enough for two columns: who is here, then the match - and Start
    stays in reach, in a bar along the foot of the screen */
 @media (max-width: 980px) {
-  .rm-body, .pk-body { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
-  .pk-view { display: none; } /* (the cards are the pictures here) */
+  .rm-body { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
   .rm-people { order: -1; }
   .rm-seat.free:not(:has(.invite)) { display: none; }
   .scroll.rm { margin-bottom: 120px; }
@@ -380,49 +487,59 @@ button.rm-hero:active .pic, button.rm-round:active .pic { transform: none; }
   .rm-go .note { font-size: 12.5px; }
   .rm-go .btn.big { min-height: 54px; font-size: 27px; }
   .rm .legend { display: none; }
+  .pk-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-@media (max-width: 820px) {
-  /* Play in one column: what you do, then where you could go */
-  .hub-grid { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
-  .hub-list { flex: none; overflow: visible; padding-bottom: 0; -webkit-mask-image: none; mask-image: none; }
-  .hub-none { min-height: 150px; }
-  .rm-top .switch { margin-left: 0; }
-  .rm-prog, .rm-prog.n7 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 760px) {
+  .rm-door { margin-left: 0; }
+  .rm-prog.n5, .rm-prog.n7 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rm-prog.n7 small { display: block; }
-  .pk-rounds { order: 3; flex-basis: 100%; margin-left: 0; }
-  .pk .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pk-row .card { flex-basis: 132px; }
+  .m-top { padding-left: var(--s4); }
+  .m-body, .m-foot { padding-left: var(--s4); padding-right: var(--s4); }
+  .pk-row { margin: 0 calc(-1 * var(--s4)); padding-left: var(--s4); padding-right: var(--s4); scroll-padding-inline: var(--s4); }
 }
 @media (max-width: 560px) {
-  /* a phone held upright: one game under the other, the picture above its words */
+  /* a phone held upright: one game under the other, two pictures to a row */
   .hub-host { min-height: 92px; }
   .hub-host b { font-size: 30px; }
   .hub-host .crest { width: 52px; height: 52px; font-size: 25px; }
+  .hub-field .digits span { width: 44px; }
   .rm { --tile: 72px; }
   .rm-modes { grid-auto-flow: row; }
-  .rm-hero { grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
-  .rm-prog, .rm-prog.n7 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rm-prog, .rm-prog.n5, .rm-prog.n7 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rm-seats, .rm-teams { grid-template-columns: minmax(0, 1fr); }
-  .rm .opt { flex-wrap: wrap; gap: var(--s1) var(--s3); }
-  .pk .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .pk .bar .btn { padding: 6px var(--s4); }
+  .pk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .m-foot .btn { flex: 1 1 auto; }
+}
+@media (max-width: 380px) {
+  /* the narrowest phones: the code's squares share the width, and Join goes under them */
+  .hub-host { gap: var(--s3); padding: var(--s3); }
+  .hub-host b { font-size: 26px; }
+  .hub-host .crest { width: 44px; height: 44px; font-size: 21px; }
+  .hub-tile { gap: var(--s3); padding: var(--s3); }
+  .hub-tile b { font-size: 24px; }
+  .hub-tile .go { display: none; }
+  .hub-code { padding: var(--s3); }
+  .hub-code h3 { letter-spacing: 0.12em; }
+  .hub-field { flex-wrap: wrap; }
+  .hub-field .digits { flex: 1 1 100%; }
+  .hub-field .digits span { flex: 1 1 0; width: auto; min-width: 0; }
+  .hub-join { flex-basis: 100%; min-height: 48px; }
+  .m-top h2 { font-size: 26px; }
 }
 @media (max-height: 560px) {
   /* a phone on its side */
-  .hub-host { min-height: 76px; }
+  .hub-host { min-height: 72px; }
   .hub-host b { font-size: 28px; }
   .hub-host .crest { width: 46px; height: 46px; font-size: 22px; }
+  .hub-tile { min-height: 64px; }
   .hub-field .digits span { height: 48px; font-size: 26px; }
-  .hub-none { min-height: 120px; padding: var(--s3); }
-  .hub-none > .ic { font-size: 34px; }
   .rm { --tile: 66px; --seat: 42px; --face: 30px; }
   .rm-mode { padding: var(--s2) var(--s3); }
   .rm-mode .crest { width: 38px; height: 38px; font-size: 17px; }
   .scroll.rm { margin-bottom: 96px; }
   .rm-go { flex-direction: row; align-items: center; justify-content: center; gap: var(--s4); }
   .rm-go .btn.big { width: auto; min-height: 48px; padding: 4px var(--s6); font-size: 25px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .screen.panel > .scroll, .screen.over > .scroll.pk, #s-stage, .rm-mode.on::after, .pk .card.on::after { animation: none; }
-  .hub-host, .hub-host .crest, .hub-room, .hub-room::before, .rm-mode, .rm-mode .crest, .rm .pic, .rm-hero .change .ic, .pk .card, .rm-tag, .rm-shuffle, .rm-seat .cross, .switch .knob { transition: none; }
-  .hub-code .digits span.next::after { animation: none !important; }
+  .hub-list, .fd .hub-none { height: min(48dvh, 336px); }
+  .m-top { padding-top: var(--s2); }
 }

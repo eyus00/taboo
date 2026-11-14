@@ -12,3 +12,8 @@
 @font-face { font-family: 'Permanent Marker'; src: url('/fonts/permanent-marker-400.woff2') format('woff2'); font-display: swap; }
 @font-face { font-family: 'Patrick Hand'; src: url('/fonts/patrick-hand-400.woff2') format('woff2'); font-display: swap; }
 @font-face { font-family: 'Press Start 2P'; src: url('/fonts/press-start-2p-400.woff2') format('woff2'); font-display: swap; }
+
+/* The mincho face draws an ellipsis the Japanese way, in the middle of the
+   line. In running English it sits on the baseline: for that one character,
+   a serif that is already on the machine. */
+@font-face { font-family: 'Baseline Dots'; src: local('Georgia'), local('Times New Roman'), local('Noto Serif'), local('DejaVu Serif'), local('Liberation Serif'); unicode-range: U+2026; }

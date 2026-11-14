@@ -237,11 +237,11 @@ export const play = {
       });
     }
     const mode = MODES.find((m) => m.id === info.mode)?.name || '';
-    let label = this.kind === 'practice' ? `Practice - ${mode}` : mode;
+    let label = this.kind === 'practice' ? `Practice · ${mode}` : mode;
     if (info.cup) {
       label = info.cup.double ? 'Final round - double points' : `Round ${info.cup.round} of ${info.cup.rounds}`;
-      if (team) label += ' - Team Bomb';
-      if (info.twist && info.twist !== 'none' && g.twist?.name) label += ` - ${g.twist.name}`;
+      if (team) label += ' · Team Bomb';
+      if (info.twist && info.twist !== 'none' && g.twist?.name) label += ` · ${g.twist.name}`;
     }
     E.roundLabel.textContent = label;
     // the first few matches start with a reminder of the controls (on the objective card)
@@ -492,7 +492,7 @@ export const play = {
       b.append(p);
     };
     const twist = info.twist && info.twist !== 'none' ? g.twist : null;
-    if (twist?.name) extra('twist', 'twist', `Twist: ${twist.name}`, ` - ${twist.blurb.toLowerCase()}`);
+    if (twist?.name) extra('twist', 'twist', `Twist: ${twist.name}`, `: ${twist.blurb.toLowerCase()}`);
     if (!team && info.cup && info.cup.leader >= 0) {
       if (info.cup.leader === me) extra('lead', 'crown', 'You lead', ', so you start as it');
       else extra('lead', 'crown', this.nameOf(info.cup.leader), ' leads, so starts as it');

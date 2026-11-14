@@ -25,7 +25,7 @@
   /* the slightly crooked outline of a pressed seal */
   --seal-cut: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%);
   --brush: 'Kaushan Script', 'Brush Script MT', cursive;
-  --serif: 'Shippori Mincho', Georgia, 'Times New Roman', serif;
+  --serif: 'Baseline Dots', 'Shippori Mincho', Georgia, 'Times New Roman', serif;
   --kana: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif CJK JP', serif;
   --ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   /* one stroke of a loaded brush, stretched to fit whatever it sits behind */
@@ -45,6 +45,15 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+h1, h2, h3 { text-wrap: balance; }
+p, li { text-wrap: pretty; }
+/* a press is felt at once: whatever can be pressed gives a little (0.96), unless it cannot be pressed right now */
+.btn, .entry, .plate, .tool, .icon-btn, .link { transition: scale 150ms ease-out, translate 150ms ease-out; }
+.btn:not(:disabled):active, .plate:active, .tool:active, .icon-btn:active { scale: 0.96; }
+.entry:active { scale: 0.98; }
+/* (pinch-zoom is the reader's to use in the menus; a double tap on a control is a tap, not a zoom) */
+button, input, label, [role='button'] { touch-action: manipulation; }
 body {
   font: 16px/1.45 var(--serif);
   color: var(--ink);
@@ -92,7 +101,7 @@ body.in-game #ui { pointer-events: none; overflow: hidden; }
   padding: max(10px, env(safe-area-inset-top)) max(26px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(26px, env(safe-area-inset-left));
 }
 .screen.home { justify-items: start; padding-left: clamp(26px, 9vw, 170px); }
-.screen.over { position: fixed; inset: 0; overflow: auto; background: rgba(20, 16, 10, 0.55); pointer-events: auto; z-index: 5; }
+.screen.over { position: fixed; inset: 0; overflow: auto; overscroll-behavior: contain; background: rgba(20, 16, 10, 0.55); pointer-events: auto; z-index: 5; }
 
 /* a hanging scroll: paper between two lacquered rods, brocade down the sides */
 .scroll {
@@ -152,7 +161,7 @@ kbd {
 .bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .bar h2 { margin-right: auto; }
 .icon-btn { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border: 0; background: none; font-size: 22px; }
-.icon-btn:hover { color: var(--red); }
+@media (hover: hover) { .icon-btn:hover { color: var(--red); } }
 .icon-btn:focus-visible { outline: none; color: #fff3e0; background: var(--enso-red) center / 40px 40px no-repeat; }
 
 /* buttons are brush strokes, not boxes */
@@ -163,13 +172,13 @@ kbd {
   font: 400 22px/1 var(--brush); white-space: nowrap; transition: transform 0.12s;
 }
 .btn::after { content: ''; position: absolute; left: 12%; right: 12%; bottom: 5px; height: 6px; background: var(--line-ink) center / 100% 100% no-repeat; }
-.btn:hover:not(:disabled) { color: var(--red-deep); }
-.btn:hover:not(:disabled)::after { background-image: var(--line-red); }
+@media (hover: hover) { .btn:hover:not(:disabled) { color: var(--red-deep); } }
+@media (hover: hover) { .btn:hover:not(:disabled)::after { background-image: var(--line-red); } }
 .btn.primary { color: #fff3e0; }
 .btn.primary::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--stroke-red) center / 100% 100% no-repeat; }
 .btn.primary::after { display: none; }
-.btn.primary:hover:not(:disabled) { color: #fff; transform: scale(1.04); }
-.btn.primary:hover:not(:disabled)::before { background-image: var(--stroke-deep); }
+@media (hover: hover) { .btn.primary:hover:not(:disabled) { color: #fff; transform: scale(1.04); } }
+@media (hover: hover) { .btn.primary:hover:not(:disabled)::before { background-image: var(--stroke-deep); } }
 .btn.big { min-height: 66px; font-size: 30px; width: 100%; }
 .btn:disabled { opacity: 0.4; }
 /* where you are: a pointer of ink beside the button instead of a box around it */
@@ -181,7 +190,7 @@ kbd {
 .btn.primary:focus-visible::before { background-image: var(--stroke-deep); }
 .btn.primary:focus-visible::after { display: block; left: -6px; right: auto; bottom: 50%; width: 0; height: 0; margin-bottom: -9px; background: none; border: 9px solid transparent; border-left: 13px solid var(--ink); }
 .link { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 5px 0 3px; color: var(--soft); font: 600 14px/1.2 var(--serif); border-bottom: 1.5px solid currentColor; }
-.link:hover { color: var(--red-deep); }
+@media (hover: hover) { .link:hover { color: var(--red-deep); } }
 .link:focus-visible { outline: none; color: var(--red-deep); background: linear-gradient(transparent 55%, rgba(200, 55, 45, 0.2) 55%); }
 .link b { color: var(--ink); font-weight: 800; }
 
@@ -190,7 +199,7 @@ input[type='text'] {
   width: 100%; border: 0; border-bottom: 3px solid var(--ink); background: transparent; border-radius: 0;
   font: 400 34px/1.2 var(--brush); color: var(--ink); text-align: center; padding: 4px 6px 2px;
 }
-input[type='text']::placeholder { color: rgba(28, 27, 31, 0.28); }
+input[type='text']::placeholder { color: rgba(28, 27, 31, 0.5); }
 input[type='text']:focus { border-bottom-color: var(--red); outline: none; }
 
 /* menu entries: a red stroke sweeps in behind the one you are on */
@@ -203,8 +212,10 @@ input[type='text']:focus { border-bottom-color: var(--red); outline: none; }
   content: ''; position: absolute; inset: 1px -8px; z-index: -1; background: var(--stroke-red) center / 100% 100% no-repeat;
   opacity: 0; transform: scaleX(0.55); transform-origin: 0 50%; transition: opacity 0.1s, transform 0.16s;
 }
-.entry:hover, .entry:focus-visible, .entry[aria-current] { color: #fff3e0; transform: translateX(8px); outline: none; }
-.entry:hover::before, .entry:focus-visible::before, .entry[aria-current]::before { opacity: 1; transform: none; }
+.entry:focus-visible, .entry[aria-current] { color: #fff3e0; transform: translateX(8px); outline: none; }
+@media (hover: hover) { .entry:hover { color: #fff3e0; transform: translateX(8px); outline: none; } }
+.entry:focus-visible::before, .entry[aria-current]::before { opacity: 1; transform: none; }
+@media (hover: hover) { .entry:hover::before { opacity: 1; transform: none; } }
 /* the one whose panel is open keeps a stroke of ink; red is where you are */
 .entry[aria-current]:not(:hover):not(:focus-visible)::before { background-image: var(--stroke-ink); }
 .entry span { display: flex; flex-direction: column; margin-right: auto; }
@@ -233,8 +244,10 @@ input[type='text']:focus { border-bottom-color: var(--red); outline: none; }
 .plate small { font: 800 10.5px/1.2 var(--serif); letter-spacing: 0.22em; text-transform: uppercase; color: var(--red-deep); }
 .plate b { font: 400 24px/1.15 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; }
 .plate kbd { min-width: 22px; height: 22px; font-size: 11px; }
-.plate:hover, .plate:focus-visible, .plate[aria-current] { outline: none; border-color: var(--red); box-shadow: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 4px var(--red); transform: translateX(6px); }
-.plate:hover .seal, .plate:focus-visible .seal, .plate[aria-current] .seal { transform: rotate(6deg) scale(1.08); }
+.plate:focus-visible, .plate[aria-current] { outline: none; border-color: var(--red); box-shadow: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 4px var(--red); transform: translateX(6px); }
+@media (hover: hover) { .plate:hover { outline: none; border-color: var(--red); box-shadow: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 4px var(--red); transform: translateX(6px); } }
+.plate:focus-visible .seal, .plate[aria-current] .seal { transform: rotate(6deg) scale(1.08); }
+@media (hover: hover) { .plate:hover .seal { transform: rotate(6deg) scale(1.08); } }
 .plate:focus-visible kbd { opacity: 1; }
 
 /* the settings under it: a brush drawing in an ink circle, its name, its key */
@@ -243,12 +256,15 @@ input[type='text']:focus { border-bottom-color: var(--red); outline: none; }
 .tool .ring { width: 48px; height: 48px; display: grid; place-items: center; font-size: 20px; color: var(--ink); background: var(--enso) center / 100% 100% no-repeat; transition: transform 0.14s; }
 .tool b { max-width: 100%; font: 800 11.5px/1.25 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tool kbd { position: absolute; top: -2px; left: calc(50% + 13px); min-width: 20px; height: 20px; padding: 0 3px; font-size: 10.5px; color: var(--ink); background: var(--paper-lit); opacity: 1; transform: rotate(6deg); }
-.tool:hover, .tool:focus-visible, .tool[aria-current] { color: var(--red-deep); outline: none; }
-.tool:hover .ring, .tool:focus-visible .ring, .tool[aria-current] .ring { color: #fff3e0; background-image: var(--enso-red); transform: rotate(-7deg) scale(1.08); }
+.tool:focus-visible, .tool[aria-current] { color: var(--red-deep); outline: none; }
+@media (hover: hover) { .tool:hover { color: var(--red-deep); outline: none; } }
+.tool:focus-visible .ring, .tool[aria-current] .ring { color: #fff3e0; background-image: var(--enso-red); transform: rotate(-7deg) scale(1.08); }
+@media (hover: hover) { .tool:hover .ring { color: #fff3e0; background-image: var(--enso-red); transform: rotate(-7deg) scale(1.08); } }
 .ic.off, body.muted .ic.on { display: none; }
 body.muted .ic.off { display: block; }
 body.muted #btn-sound .ring { color: var(--red-deep); }
-body.muted #btn-sound:hover .ring, body.muted #btn-sound:focus-visible .ring { color: #fff3e0; }
+body.muted #btn-sound:focus-visible .ring { color: #fff3e0; }
+@media (hover: hover) { body.muted #btn-sound:hover .ring { color: #fff3e0; } }
 
 /* the connection: a paper lantern hanging in the corner. Lit: the server is
    there. Flickering: it is being woken up. */
@@ -278,8 +294,10 @@ body.in-game .conn { display: none; }
   clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%); opacity: 0; transform: translateX(8px); transition: opacity 0.25s, transform 0.25s;
 }
 .conn-note small { display: none; font-size: 12px; font-weight: 600; opacity: 0.85; }
-.conn.say .conn-note, .conn.open .conn-note, .lantern:hover + .conn-note, .lantern:focus-visible + .conn-note { opacity: 1; transform: none; }
-.conn.open .conn-note small, .lantern:hover + .conn-note small, .lantern:focus-visible + .conn-note small, .conn.bad .conn-note small { display: block; }
+.conn.say .conn-note, .conn.open .conn-note, .lantern:focus-visible + .conn-note { opacity: 1; transform: none; }
+@media (hover: hover) { .lantern:hover + .conn-note { opacity: 1; transform: none; } }
+.conn.open .conn-note small, .lantern:focus-visible + .conn-note small, .conn.bad .conn-note small { display: block; }
+@media (hover: hover) { .lantern:hover + .conn-note small { display: block; } }
 
 /* profile: your seal, and your name on a brushed line */
 .idcard { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px clamp(20px, 4vw, 38px); padding: 8px 4px 6px 10px; }
@@ -307,7 +325,7 @@ body.in-game .conn { display: none; }
 }
 .numpad button:active { transform: translateY(3px); border-bottom-width: 2px; margin-bottom: 3px; background: #e6dcc4; }
 .numpad .go { background: var(--red); border-color: var(--red-deep); color: #fff3e0; font: 400 21px/1 var(--brush); }
-.numpad .go:disabled { opacity: 0.4; }
+.numpad .go:not(.ready) { opacity: 0.45; }
 
 /* rules: the chosen word gets a stroke of ink behind it */
 .options { display: flex; flex-direction: column; gap: 8px; }
@@ -321,7 +339,7 @@ body.in-game .conn { display: none; }
 .seg input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .seg span { display: block; padding: 8px 6px 7px; font-size: 15px; font-weight: 800; white-space: nowrap; border-bottom: 2px solid var(--faint); }
 .seg.wrap span { padding: 7px 10px 6px; }
-.seg label:hover span { color: var(--red-deep); }
+@media (hover: hover) { .seg label:hover span { color: var(--red-deep); } }
 .seg input:checked + span { color: #fff3e0; border-bottom-color: transparent; background: var(--stroke-ink) center / 100% 100% no-repeat; }
 .seg input:focus-visible + span { outline: 3px solid var(--red); outline-offset: 2px; }
 .locked .seg label:not(.on) { display: none; }
@@ -495,7 +513,8 @@ body:not(.no-kbd) .touch-only { display: none; }
 .paused .btn .ic { font-size: 18px; }
 .paused .note { min-height: 0; }
 .tool.danger .ring { color: var(--red-deep); }
-.tool.danger:hover .ring, .tool.danger:focus-visible .ring { color: #fff3e0; }
+.tool.danger:focus-visible .ring { color: #fff3e0; }
+@media (hover: hover) { .tool.danger:hover .ring { color: #fff3e0; } }
 
 /* ------------------------------------------------- a wide screen: side by side */
 @media (min-width: 1280px) {
@@ -593,8 +612,14 @@ body:not(.no-kbd) .touch-only { display: none; }
 @media (prefers-reduced-motion: reduce) {
   #petals { display: none; }
   .digits.bad { animation-duration: 0.01s; }
-  .entry, .entry::before, .plate, .plate .seal, .btn, .tool .ring { transition: none; }
+  .entry, .entry::before, .plate, .plate .seal, .btn, .tool, .tool .ring, .icon-btn, .link { transition: none; }
+  .btn:active, .plate:active, .tool:active, .icon-btn:active, .entry:active { scale: none; }
   .digits span.next::after { animation: none !important; }
   .lantern, .conn .glow, .conn .lantern svg { animation: none !important; }
   .conn.bad .glow, .conn.wait .glow { opacity: 0.35; }
+  /* a notice fades in where it is; a seal is simply there */
+  #toasts div { animation-name: toast-calm; }
+  .verdict .seal { animation: none; }
+}
+@keyframes toast-calm { 0% { opacity: 0; } 8%, 85% { opacity: 1; } 100% { opacity: 0; } }
 }

@@ -719,7 +719,7 @@ io.on('connection', (socket) => {
     if (!name) return ack({ error: 'Enter your name first.', needName: true });
     leaveRoom(socket);
     const code = makeCode();
-    if (!code) return ack({ error: 'Server is full, try again in a minute.' });
+    if (!code) return ack({ error: 'Every room code is in use. Try again in a minute.' });
     const room = {
       code,
       hostId: socket.id,
