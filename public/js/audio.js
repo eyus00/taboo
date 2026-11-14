@@ -128,8 +128,20 @@ export class Sfx {
         this.tone(300, 1200, 0.16, 0.12 * vol, 'sine');
         this.tone(1200, 300, 0.16, 0.12 * vol, 'sine', 0.1);
         break;
-      case 'goo':
-        this.tone(220, 90, 0.2, 0.16 * vol, 'sine');
+      case 'quake': // the ground heaves: a long low rumble and two thuds
+        this.noise(0.7, 0.6 * vol, 260);
+        this.tone(70, 34, 0.7, 0.34 * vol, 'sine');
+        this.tone(110, 45, 0.3, 0.22 * vol, 'triangle', 0.09);
+        break;
+      case 'warp': // sucked in, spat out
+        this.tone(240, 1900, 0.13, 0.13 * vol, 'sine');
+        this.noise(0.1, 0.25 * vol, 6000);
+        this.tone(1900, 420, 0.2, 0.12 * vol, 'triangle', 0.12);
+        break;
+      case 'eclipse': // the light goes out
+        this.tone(520, 130, 0.7, 0.16 * vol, 'sine');
+        this.tone(392, 98, 0.8, 0.12 * vol, 'triangle', 0.05);
+        this.noise(0.5, 0.18 * vol, 500);
         break;
       case 'tag':
         this.noise(0.18, 0.5, 2400);

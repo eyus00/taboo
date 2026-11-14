@@ -19,7 +19,7 @@
   //   /_theme.html?theme=ink&arena=hills            whole arena, as on a laptop
   //   ...&zoom=1.6&fx=820&fy=900                    fixed close-up centred on a world point
   //   ...&seed=3&names=0&freeze=5&players=6          different match / no names / stop the clock after 5 s / 2-10 bots
-  import { PW, PH } from '/shared/config.js';
+  import { PW, PH, ITEM_KINDS } from '/shared/config.js';
   import { arenaById } from '/shared/arenas.js';
   import { Sim } from '/shared/sim.js';
   import { makeBot, botThink } from '/shared/bots.js';
@@ -82,8 +82,7 @@
           if (e.type === 'tag') R.tagFx(e.from, e.to);
           else if (e.type === 'block') R.blockFx(e.from, e.to);
           else if (e.type === 'pick') R.pickFx(e.slot, e.kind);
-          else if (e.type === 'use') R.itemFx(e, ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'goo'][e.kind]);
-          else if (e.type === 'slip') R.slipFx(e);
+          else if (e.type === 'use') R.itemFx(e, ITEM_KINDS[e.kind]);
         }
         sim.events.length = 0;
       }

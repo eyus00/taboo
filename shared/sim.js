@@ -17,7 +17,6 @@ import {
   BOX_EVERY_TICKS,
   BOX_MAX,
   ITEM_ARM_TICKS,
-  ITEM_LOCK_TICKS,
   SPEED_BUFF_TICKS,
   JUMP_BUFF_TICKS,
   SHIELD_TICKS,
@@ -27,9 +26,11 @@ import {
   BLAST_STUN_TICKS,
   BLAST_KICK,
   STORM_TICKS,
-  GOO_TICKS,
-  GOO_MAX,
-  GOO_STUN_TICKS,
+  QUAKE_STUN_TICKS,
+  QUAKE_POP,
+  WARP_GAP,
+  WARP_DROP,
+  ECLIPSE_TICKS,
   BOMB_STUN_TICKS,
   BOMB_POINTS,
   FLAG_HALF,
@@ -40,7 +41,7 @@ import {
   FLAG_POINTS,
   SAFE_BONUS,
 } from './config.js';
-import { makeState, stepPlayer } from './physics.js';
+import { makeState, stepPlayer, isFree } from './physics.js';
 
 const HIST = 64; // ticks of position history kept for lag compensation
 const kindId = (name) => ITEM_KINDS.indexOf(name) + 1;
@@ -59,8 +60,6 @@ export class Sim {
     this.powerups = true;
     this.boxes = []; // indices into arena.pickups where a box is waiting
     this.nextBox = Infinity; // set by start()
-    this.goo = []; // puddles: { x, y, owner, until }
-    this.endsAt = Infinity; // the tick the round ends on (items lock shortly before)
     // team battle (null teams = everyone for themselves)
     this.teams = null; // team (0 or 1) of each slot
     this.score = [0, 0];
@@ -171,11 +170,6 @@ export class Sim {
     this.nextBox = this.tick + Math.round(BOX_FIRST_TICKS / this.twist.items);
   }
 
-  // true once the round is nearly over: no more boxes, and items stop working
-  locked() {
-    return this.tick > this.endsAt - ITEM_LOCK_TICKS;
-  }
-
   stepOne(slot, bits) {
     const pl = this.players[slot];
     if (!pl) return;
@@ -188,7 +182,6 @@ export class Sim {
   // Call once per tick after every player has been stepped.
   endTick() {
     this.updateBoxes();
-    this.updateGoo();
     if (!this.over) {
       this.checkTag();
       if (this.teams && this.live) this.updateFlags(); // nothing counts before GO
@@ -276,7 +269,7 @@ export class Sim {
         break;
       }
     }
-    if (!this.powerups || this.tick < this.nextBox || !pts.length || this.locked()) return;
+    if (!this.powerups || this.tick < this.nextBox || !pts.length || this.over) return; // (boxes keep coming right up to the buzzer)
     this.nextBox = this.tick + Math.round(BOX_EVERY_TICKS / this.twist.items);
     // (a crowd gets more boxes: one more for every two players beyond four)
     if (this.boxes.length >= BOX_MAX + (this.twist.items > 1 ? 2 : 0) + Math.floor(Math.max(0, this.active().length - 4) / 2)) return;
@@ -308,7 +301,7 @@ export class Sim {
 
   useItem(o) {
     const s = o.s;
-    if (!o.item || o.arm > 0 || this.locked() || s.dead > 0 || s.stun > 0 || s.frz > 0 || s.orb > 0) return false;
+    if (!o.item || o.arm > 0 || this.over || s.dead > 0 || s.stun > 0 || s.frz > 0 || s.orb > 0) return false; // (any time up to the buzzer)
     const kind = ITEM_KINDS[o.item - 1];
     o.item = 0;
     const cx = s.x + PW / 2;
@@ -358,36 +351,107 @@ export class Sim {
       }
     } else if (kind === 'storm') {
       for (const t of this.targets(o)) t.s.slw = STORM_TICKS;
-    } else if (kind === 'goo') {
-      this.goo.push({ x: cx, y: s.y + PH, owner: o.slot, until: this.tick + GOO_TICKS });
-      if (this.goo.length > GOO_MAX) this.goo.shift();
+    } else if (kind === 'quake') {
+      // the ground jumps under everyone else, wherever they are: straight up, and out of it for a moment
+      for (const t of this.targets(o)) {
+        if (t.s.orb > 0) continue; // (a spark between portals has no ground under it)
+        t.s.vy = Math.min(t.s.vy, -QUAKE_POP);
+        t.s.vx = Math.round(t.s.vx * 30) / 100; // up, not away: nobody is thrown off their ledge
+        t.s.ground = false;
+        t.s.coyote = 0;
+        t.s.nc = true; // (the same flag a trampoline sets: the throw is not cut short)
+        t.s.stun = Math.max(t.s.stun, QUAKE_STUN_TICKS);
+      }
+    } else if (kind === 'warp') {
+      const hop = this.warpFor(o);
+      if (hop) {
+        s.x = hop.x;
+        s.y = hop.y;
+        s.vx = s.vy = 0;
+        s.ground = false;
+        s.coyote = 0;
+        s.drop = 0;
+        s.tp = 1; // (a portal we land in leaves us be)
+        if (hop.to) s.face = hop.to.s.x + PW / 2 < s.x + PW / 2 ? -1 : 1;
+        ev.to = hop.to ? hop.to.slot : -1;
+        ev.tx = s.x + PW / 2; // where we came out (x, y is where we went in)
+        ev.ty = s.y + PH / 2;
+      }
+    } else if (kind === 'eclipse') {
+      for (const t of this.targets(o)) t.s.ecl = ECLIPSE_TICKS;
     }
     this.events.push(ev);
     return true;
   }
 
-  updateGoo() {
-    for (let k = this.goo.length - 1; k >= 0; k--) {
-      const g = this.goo[k];
-      if (this.tick >= g.until) {
-        this.goo.splice(k, 1);
-        continue;
+  // Warp. Where does this player come out?
+  //   whoever is it (or carries a bomb): right beside the nearest player they could tag
+  //   anyone else: on the standing spot furthest from whoever is after them
+  // Always somewhere a player can stand: see standsAt() and warpSpots().
+  // Returns { x, y, to: the player warped to, if any } or null (nobody to warp to or from).
+  warpFor(o) {
+    const arena = this.arena;
+    const s = o.s;
+    const foes = this.targets(o);
+    const far = (a, x, y) => Math.hypot(a.s.x - x, a.s.y - y);
+    if (this.isIt(o)) {
+      // (someone still protected after a tag only if there is nobody else; never a spark between portals)
+      const prey = foes.filter((t) => !t.bomb && t.s.orb === 0);
+      let best = null;
+      let bestD = Infinity;
+      for (const t of prey) {
+        const d = far(t, s.x, s.y) + (t.immune > 0 ? 1e6 : 0);
+        if (d < bestD) {
+          bestD = d;
+          best = t;
+        }
       }
-      for (const o of this.players) {
-        // whoever dropped it knows where it is; so do their team mates
-        if (!o || o.slot === g.owner || o.s.dead > 0 || o.s.orb > 0 || o.s.stun > 0) continue;
-        const owner = this.players[g.owner];
-        if (owner && !this.enemies(owner, o)) continue;
-        if (Math.abs(o.s.x + PW / 2 - g.x) > 30 || Math.abs(o.s.y + PH - g.y) > 16) continue;
-        o.s.stun = GOO_STUN_TICKS; // feet go from under you
-        o.s.vy = -300;
-        o.s.vx *= 0.4;
-        o.s.ground = false;
-        this.events.push({ type: 'slip', slot: o.slot, x: g.x, y: g.y });
-        this.goo.splice(k, 1);
-        break;
+      if (!best) return null;
+      const t = best.s;
+      // On the side they are running towards (standing still: the side we came from), else the
+      // other side, else right where they are. Level with them if they are on the ground; under
+      // them if they are in the air.
+      const ahead = t.vx > 40 ? 1 : t.vx < -40 ? -1 : s.x < t.x ? -1 : 1;
+      const step = PW + WARP_GAP;
+      let pick = null;
+      let least = Infinity;
+      for (const [dx, cost] of [[ahead * step, 0], [-ahead * step, 1], [0, t.ground ? WARP_DROP + 2 : 2]]) {
+        const at = t.ground ? standsAt(arena, t.x + dx, t.y, WARP_DROP, 28, 24) : standsAt(arena, t.x + dx, t.y, 420, 90);
+        if (!at) continue;
+        const score = Math.abs(at[1] - t.y) + cost;
+        if (score < least) {
+          least = score;
+          pick = at;
+        }
+      }
+      if (!pick) {
+        // they are over a pit, in thorns, on a trampoline...: the standing spot nearest to them
+        let d0 = Infinity;
+        for (const sp of warpSpots(arena)) {
+          const d = far(best, sp[0], sp[1]);
+          if (d < d0) {
+            d0 = d;
+            pick = sp;
+          }
+        }
+      }
+      return pick ? { x: pick[0], y: pick[1], to: best } : null;
+    }
+    // running away: from every enemy who could tag us (failing that - a team game with all the bombs on our side - from every enemy)
+    let threats = foes.filter((t) => this.isIt(t));
+    if (!threats.length) threats = foes;
+    if (!threats.length) return null;
+    let pick = null;
+    let most = -1;
+    for (const sp of warpSpots(arena)) {
+      let d = Infinity;
+      for (const t of threats) d = Math.min(d, far(t, sp[0], sp[1]));
+      if (d > most) {
+        most = d;
+        pick = sp;
       }
     }
+    return pick ? { x: pick[0], y: pick[1], to: null } : null;
   }
 
   // --- team battle -----------------------------------------------------------------
@@ -462,6 +526,44 @@ export class Sim {
 // within TOUCH pixels of each other.
 export function touching(ax, ay, bx, by) {
   return ax - TOUCH < bx + PW && ax + PW + TOUCH > bx && ay - TOUCH < by + PH && ay + PH + TOUCH > by;
+}
+
+// Would a player put down at (x, y) simply stand there? Tried with the real
+// physics rather than worked out: a body is put there and has to come to rest
+// unhurt - not in a wall, not over a pit, not in thorns, a portal, an updraft or
+// on a trampoline - having dropped no more than `drop` px. `lift` starts it a
+// little higher (ground that rises to one side of somebody).
+// Returns where it stands, [x, y], or null.
+export function standsAt(arena, x, y, drop = 4, ticks = 20, lift = 0) {
+  const p = makeState(x, y);
+  if (lift && isFree({ x, y: y - lift }, arena)) p.y = y - lift;
+  if (!isFree(p, arena)) return null;
+  let still = 0;
+  for (let i = 0; i < ticks; i++) {
+    stepPlayer(p, 0, arena);
+    if (p.dead > 0 || p.stun > 0 || p.orb > 0 || p.vy < 0 || Math.abs(p.x - x) > 0.5) return null;
+    if (!p.ground) still = 0;
+    else if (++still >= 3) return p.y - y <= drop ? [p.x, p.y] : null;
+  }
+  return null;
+}
+
+// Places in an arena where a player is known to stand: the starts, the respawn
+// points, the flag stands and the ground under every lucky-box spot - each one
+// tried out (see above), since thorns differ from match to match.
+export function warpSpots(arena) {
+  if (arena.warp && arena.warp.spawns === arena.spawns) return arena.warp.spots;
+  const spots = [];
+  const add = (x, y, drop) => {
+    const at = standsAt(arena, x, y, drop, 40);
+    if (at && !spots.some((q) => Math.abs(q[0] - at[0]) < 8 && Math.abs(q[1] - at[1]) < 8)) spots.push(at);
+  };
+  for (const [x, y] of arena.spawns) add(x, y, 4);
+  for (const [x, y] of arena.respawns) add(x, y, 4);
+  for (const [x, y] of arena.bases) add(x - PW / 2, y - PH, 4);
+  for (const pt of arena.pickups) add(pt.x - PW / 2, pt.y - PH, 80); // (a box floats a little above the ground)
+  arena.warp = { spawns: arena.spawns, spots };
+  return spots;
 }
 
 // Final standings.

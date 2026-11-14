@@ -80,8 +80,11 @@ squash (-0.2 stretch .. 0.3 squash; use squashAt(g, cx, feet, pv.squash) from ut
 blink (1 -> 0 during a blink), seed (stable per player)
 ```
 
-The renderer draws on top of your player: the frozen ice block, the shield
-ring, the name, the IT marker, and the orb while travelling through a portal.
+The renderer draws your 32 x 40 player `BODY_SCALE` (1.25) times larger, scaled
+about the middle of the feet - draw at natural size, as if the box were 32 x 40;
+the hitbox stays 32 x 40. It also draws on top of your player: the frozen ice
+block, the shield ring, the storm cloud, the black sun of an eclipse, the name,
+the IT marker, and the orb while travelling through a portal.
 Whoever `isIt` should still look different in your own drawing (angry eyes, a
 glow sprite, a tint...) - it is the most important thing on screen.
 

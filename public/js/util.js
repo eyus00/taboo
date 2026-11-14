@@ -94,7 +94,7 @@ export function fitText(ctx, text, maxWidth) {
 // ---------------------------------------------------------------------------
 // Power-up icons, shared by every art style so they are always recognisable.
 // ---------------------------------------------------------------------------
-export const KIND_COLORS = { speed: '#ffb020', jump: '#3ecf6e', shield: '#4aa3ff', freeze: '#8fe6ff', blast: '#ff6b3d', swap: '#c77dff', storm: '#ffe14d', goo: '#7ed957', box: '#ffc83d' };
+export const KIND_COLORS = { speed: '#ffb020', jump: '#3ecf6e', shield: '#4aa3ff', freeze: '#8fe6ff', blast: '#ff6b3d', swap: '#c77dff', storm: '#ffe14d', quake: '#d9a05b', warp: '#3fe0c5', eclipse: '#8a7bf0', box: '#ffc83d' };
 
 // Draws the icon for a power-up centred on (cx, cy), fitting a circle of radius r.
 export function drawIcon(g, kind, cx, cy, r, color) {
@@ -181,14 +181,44 @@ export function drawIcon(g, kind, cx, cy, r, color) {
     g.lineTo(r * 0.15, r * 0.55);
     g.lineTo(-r * 0.15, r);
     g.stroke();
-  } else if (kind === 'goo') {
-    // a drop
+  } else if (kind === 'quake') {
+    // the ground, heaving: a jagged line, and a crack under it
+    g.lineWidth = r * 0.28;
     g.beginPath();
-    g.moveTo(0, -r);
-    g.quadraticCurveTo(r * 0.9, r * 0.1, r * 0.62, r * 0.5);
-    g.arc(0, r * 0.38, r * 0.63, 0.19, Math.PI - 0.19);
-    g.quadraticCurveTo(-r * 0.9, r * 0.1, 0, -r);
-    g.fill();
+    g.moveTo(-r, r * 0.15);
+    g.lineTo(-r * 0.6, -r * 0.5);
+    g.lineTo(-r * 0.28, -r * 0.02);
+    g.lineTo(0, -r * 0.85);
+    g.lineTo(r * 0.32, r * 0.15);
+    g.lineTo(r * 0.6, -r * 0.38);
+    g.lineTo(r, r * 0.15);
+    g.moveTo(-r * 0.9, r * 0.8);
+    g.lineTo(-r * 0.2, r * 0.8);
+    g.lineTo(-r * 0.05, r * 0.58);
+    g.lineTo(r * 0.15, r * 0.95);
+    g.lineTo(r * 0.3, r * 0.8);
+    g.lineTo(r * 0.9, r * 0.8);
+    g.stroke();
+  } else if (kind === 'warp') {
+    // a spiral that swallows you, and the way out
+    g.lineWidth = r * 0.28;
+    g.beginPath();
+    g.arc(0, 0, r * 0.9, -Math.PI / 2, 0, true);
+    g.stroke();
+    g.beginPath();
+    g.arc(0, 0, r * 0.42, -Math.PI / 2, Math.PI, false);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(r * 0.48, -r * 0.94);
+    g.lineTo(r * 0.92, -r * 0.89);
+    g.lineTo(r * 0.83, -r * 0.46);
+    g.stroke();
+  } else if (kind === 'eclipse') {
+    // what is left of the sun: a thin crescent
+    g.beginPath();
+    g.arc(0, 0, r * 0.95, 0, 6.283);
+    g.arc(r * 0.34, 0, r * 0.78, 0, 6.283, true);
+    g.fill('evenodd');
   } else {
     // a lucky box: a question mark
     g.lineWidth = r * 0.34;

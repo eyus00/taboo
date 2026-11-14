@@ -11,7 +11,7 @@
 // The view is close in on your own player and follows them. While a round is
 // being introduced, and when it is over, it pulls back to show the whole arena.
 
-import { ART_W, ART_H, PW, PH, MAX_PLAYERS, TEAM_COLORS, BLAST_RADIUS, FLAG_HALF, FLAG_UP } from '/shared/config.js';
+import { ART_W, ART_H, PW, PH, BODY_SCALE, MAX_PLAYERS, TEAM_COLORS, BLAST_RADIUS, FLAG_HALF, FLAG_UP, ECLIPSE_TICKS, ECLIPSE_SIGHT } from '/shared/config.js';
 import { LEDGE_H } from '/shared/arenas.js';
 import { THEME_MAP } from './themes/index.js';
 import { clamp, mulberry32, hashStr, hash1, rgba, rr, KIND_COLORS, PORTAL_COLORS } from './util.js';
@@ -21,7 +21,8 @@ const VIEW_W_MIN = 760; // ...but never narrower than this (phones held upright)
 const MAX_BG_PIXELS = 6.5e6; // cap on the background canvas (keeps 4K / retina screens fast)
 const MAX_BG_SIDE = 4096;
 const CAP = 16; // slopes are drawn this much longer at each end (a player's centre rides them)
-const LABEL_PX = 12;
+const LABEL_PX = 13;
+const NIGHT = '#070912'; // what an eclipsed player sees outside their circle of light
 
 export class Renderer {
   // stage: an element to put the canvases in, or null to draw off screen (opts.size = [w, h]).
@@ -29,9 +30,15 @@ export class Renderer {
   // opts.padBottom: CSS px the following view may scroll below the arena (room for touch buttons or the item plaque).
   // opts.touch: wording for thumbs rather than keys.
   // opts.plain: do not dim the area outside the arena (menu pictures).
+  // opts.playerScale: how much bigger than their hitbox players are drawn (standing on the same feet).
+  //   BODY_SCALE unless given - except in an off-screen close-up (no stage, fixed zoom: a menu portrait,
+  //   framed around a body of natural size), which stays at 1.
   constructor(stage, opts = {}) {
     this.stage = stage;
     this.opts = opts;
+    this.bodyK = opts.playerScale ?? (!stage && opts.zoom ? 1 : BODY_SCALE);
+    this.avoid = []; // parts of the screen the HUD stands on ({ x0, y0, x1, y1 } in CSS px): pointers keep out of them
+    this.ptrs = [];
     this.bg = document.createElement('canvas');
     this.fg = document.createElement('canvas');
     this.bg.className = 'layer bg';
@@ -133,6 +140,7 @@ export class Renderer {
     this.kf = this.kDev * this.q; // foreground pixels per world unit
     // pixel-art styles: how many whole screen pixels one art pixel is blown up to before the final fit
     this.pxN = this.theme.pixel ? Math.max(1, Math.ceil(this.kf * this.theme.pixel - 0.001)) : 1;
+    this.pxNB = this.theme.pixel ? Math.max(1, Math.ceil(this.kf * this.theme.pixel * this.bodyK - 0.001)) : 1; // (the same for a player's body, which is drawn larger)
     this.viewW = cssW / kCss; // world units across the screen
     this.viewH = cssH / kCss;
 
@@ -499,7 +507,7 @@ export class Renderer {
     const to = this.last[toSlot];
     const from = this.last[fromSlot];
     if (!to || !this.theme) return;
-    this.shake(to.local || (from && from.local) ? 9 : 5);
+    this.shake(to.local || (from && from.local) ? 13 : 6);
     this.theme.fx?.tag?.(this, to, from || to);
   }
 
@@ -546,7 +554,10 @@ export class Renderer {
     const pv = this.last[e.slot];
     if (kind === 'blast') {
       // a shockwave that runs out exactly as far as it reaches
-      this.shake(7);
+      const me = this.last.find((o) => o && o.local);
+      const close = !me || Math.hypot(me.cx - e.x, me.y - e.y) < BLAST_RADIUS * 1.2;
+      this.shake(close ? 13 : 6);
+      if (close) this.flash('#ffb347', 0.2);
       const T = 0.4;
       this.emit({ x: e.x, y: e.y, life: T, size: 26, grow: (BLAST_RADIUS - 26) / T, shape: 'ring', width: 9, color: col });
       this.emit({ x: e.x, y: e.y, life: T * 0.8, size: 12, grow: (BLAST_RADIUS * 0.7) / (T * 0.8), shape: 'ring', width: 3.5, color: '#ffffff' });
@@ -585,6 +596,59 @@ export class Renderer {
           this.emit({ x: o.cx, y: o.y + 20, vx: Math.cos(a) * 130, vy: Math.sin(a) * 130 - 30, drag: 3, life: 0.5, size: 4, shape: 'square', rot: a, vr: 3, color: i % 2 ? '#ffffff' : col });
         }
       }
+    } else if (kind === 'quake') {
+      // the whole arena jumps: the screen with it, and the ground bursts under everyone it throws
+      this.shake(18);
+      this.flash(col, 0.2);
+      if (pv) for (let i = 0; i < 2; i++) this.emit({ x: pv.cx, y: pv.feet - 2, life: 0.5 + i * 0.15, size: 20, grow: 900 - i * 300, shape: 'ring', width: 7 - i * 3, color: i ? '#ffffff' : col });
+      for (const o of this.hitBy(pv, kind)) {
+        if (o.orb) continue;
+        this.emit({ x: o.cx, y: o.feet - 2, life: 0.4, size: 10, grow: 170, shape: 'ring', width: 4, color: col });
+        // a crack along the ground where they stood
+        this.emit({ x: o.cx, y: o.feet - 1, life: 0.9, draw: (g, p, k) => {
+          g.globalAlpha = Math.min(1, k * 2);
+          g.strokeStyle = '#2a1c10';
+          g.lineWidth = 3;
+          g.lineJoin = 'miter';
+          g.beginPath();
+          g.moveTo(p.x - 44, p.y);
+          g.lineTo(p.x - 24, p.y - 5);
+          g.lineTo(p.x - 9, p.y + 2);
+          g.lineTo(p.x + 6, p.y - 6);
+          g.lineTo(p.x + 22, p.y + 1);
+          g.lineTo(p.x + 44, p.y - 3);
+          g.stroke();
+        } });
+        for (let i = 0; i < 7; i++) this.emit({ x: o.cx + (Math.random() - 0.5) * 50, y: o.feet - 3, vx: (Math.random() - 0.5) * 260, vy: -180 - Math.random() * 280, g: 950, life: 0.5 + Math.random() * 0.25, size: 3 + Math.random() * 3.5, shape: 'square', rot: Math.random() * 6, vr: 7, color: i % 3 ? col : '#6b4a2a' });
+      }
+    } else if (kind === 'warp') {
+      // gone here (a ring closing on nothing), there in the same instant (a column of light, a ring bursting out)
+      const tx = e.tx ?? e.x;
+      const ty = e.ty ?? e.y;
+      const me = this.last.find((o) => o && o.local);
+      if (me && (me.id === e.slot || me.id === e.to)) this.shake(7);
+      this.emit({ x: e.x, y: e.y, life: 0.3, size: 52, grow: -165, shape: 'ring', width: 4, color: col });
+      this.emit({ x: tx, y: ty, life: 0.42, size: 12, grow: 230, shape: 'ring', width: 5, color: col });
+      this.emit({ x: tx, y: ty, life: 0.36, draw: (g, p, k) => {
+        const w = 6 + 26 * k;
+        g.globalAlpha = k;
+        g.fillStyle = col;
+        g.fillRect(p.x - w / 2 - 3, p.y - 200, w + 6, 228);
+        g.fillStyle = '#ffffff';
+        g.fillRect(p.x - w / 2, p.y - 200, w, 228);
+      } });
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * 6.283;
+        this.emit({ x: e.x + Math.cos(a) * 44, y: e.y + Math.sin(a) * 44, vx: -Math.cos(a) * 170, vy: -Math.sin(a) * 170, life: 0.24, size: 2.6, color: i % 2 ? col : '#ffffff' });
+        this.emit({ x: tx + Math.cos(a) * 10, y: ty + Math.sin(a) * 10, vx: Math.cos(a) * 240, vy: Math.sin(a) * 240 - 40, drag: 4, life: 0.4, size: 2.8, color: i % 2 ? '#ffffff' : col });
+      }
+    } else if (kind === 'eclipse') {
+      // the light goes: a dark wave from whoever called it, and a shadow settles on everyone it blinds
+      this.flash('#05060f', 0.3);
+      if (pv) for (let i = 0; i < 2; i++) this.emit({ x: pv.cx, y: pv.y + 14, life: 0.55 + i * 0.12, size: 16, grow: 760 - i * 260, shape: 'ring', width: 9 - i * 5, color: i ? col : '#14122e' });
+      for (const o of this.hitBy(pv, kind)) {
+        for (let i = 0; i < 4; i++) this.emit({ x: o.cx - 18 + i * 12, y: o.y - 34 - (i % 2) * 8, vy: 50, drag: 3, life: 0.6, size: 11 - (i % 2) * 3, color: '#14122e', alpha: 0.85 });
+      }
     } else if (kind === 'swap') {
       const o = this.last[e.to];
       if (pv) this.portalFx(pv.cx, pv.y + PH / 2, pv);
@@ -596,11 +660,6 @@ export class Renderer {
         this.emit({ x: e.x, y: e.y, vx: Math.cos(a) * 200, vy: Math.sin(a) * 200 - 60, g: 400, drag: 2, life: 0.4, size: 3, color: i % 2 ? col : '#ffffff' });
       }
     }
-  }
-
-  // someone stepped in goo
-  slipFx(e) {
-    for (let i = 0; i < 12; i++) this.emit({ x: e.x + (Math.random() - 0.5) * 30, y: e.y - 4, vx: (Math.random() - 0.5) * 260, vy: -120 - Math.random() * 200, g: 900, life: 0.5, size: 2.5 + Math.random() * 2.5, color: KIND_COLORS.goo });
   }
 
   // Who to keep an eye on: whoever is it; in a team battle, the nearest enemy
@@ -726,6 +785,7 @@ export class Renderer {
   // carries a bomb - sends out red ripples.
   drawRings(g, view, pvs, t) {
     const live = view.phase === 'playing';
+    const S = this.bodyK;
     for (const pv of pvs) {
       if (pv.orb) continue;
       const x = pv.cx;
@@ -735,13 +795,13 @@ export class Renderer {
         g.strokeStyle = TEAM_COLORS[pv.team];
         g.lineWidth = pv.local ? 4 : 3;
         g.beginPath();
-        g.ellipse(x, y, 21, 6, 0, 0, 6.283);
+        g.ellipse(x, y, 21 * S, 6 * S, 0, 0, 6.283);
         g.stroke();
         if (pv.local) {
           g.strokeStyle = '#ffffff';
           g.lineWidth = 1.6;
           g.beginPath();
-          g.ellipse(x, y, 26, 8.5, 0, 0, 6.283);
+          g.ellipse(x, y, 26 * S, 8.5 * S, 0, 0, 6.283);
           g.stroke();
         }
       }
@@ -751,7 +811,7 @@ export class Renderer {
         g.strokeStyle = '#ff4d3d';
         g.lineWidth = 3;
         g.beginPath();
-        g.ellipse(x, y, 22 + k * 22, 6 + k * 7, 0, 0, 6.283);
+        g.ellipse(x, y, (22 + k * 22) * S, (6 + k * 7) * S, 0, 0, 6.283);
         g.stroke();
       }
     }
@@ -800,6 +860,7 @@ export class Renderer {
 
     g.setTransform(1, 0, 0, 1, 0, 0);
     this.drawLabels(g, view, pvs, t);
+    if (view.me && view.me.ecl > 0) this.drawNight(g, view.me.ecl, pvs);
 
     // screen shake moves the whole stage; the browser does that without repainting
     if (this.stage) {
@@ -962,19 +1023,6 @@ export class Renderer {
       const pt = A.pickups[point];
       if (pt) this.blit(g, spr.box, pt.x, pt.y + Math.sin(t * 3 + point) * 3);
     }
-    // puddles of goo
-    if (view.goo && view.goo.length) {
-      for (const [x, y] of view.goo) {
-        g.fillStyle = '#4fae36';
-        g.beginPath();
-        g.ellipse(x, y - 3, 26, 6.5, 0, 0, 6.283);
-        g.fill();
-        g.fillStyle = '#9be26f';
-        g.beginPath();
-        g.ellipse(x - 6, y - 5, 9, 2.4, 0, 0, 6.283);
-        g.fill();
-      }
-    }
     // team battle: the flags. Each is a ring on the ground with a pole in it: the
     // strip along the ground fills with the colour of whoever is taking it, and
     // the pennant flies the colour of whoever holds it (pale: nobody).
@@ -1073,6 +1121,7 @@ export class Renderer {
         springy: !!p.jmp,
         shield: !!p.shd,
         slow: !!p.slw,
+        dark: !!p.ecl, // night has fallen on them (Eclipse)
         team: p.team ?? -1,
         local: !!p.local,
         itTicks: p.itTicks,
@@ -1231,6 +1280,9 @@ export class Renderer {
     const U = th.pixel;
     // tag protection: flash between solid and see-through
     const a = pv.immune ? (Math.floor(t * 14) % 2 ? 0.45 : 0.95) : 1;
+    // the body is drawn larger than the hitbox, standing on the same feet: the style
+    // draws its 32 x 40 character as ever, inside a scale about the middle of the feet
+    const S = this.bodyK;
     if (U) {
       // pixel-art styles: draw at one canvas pixel per art pixel, then blow it up
       const sg = this.sx;
@@ -1243,15 +1295,20 @@ export class Renderer {
       th.player(sg, pv, t, this.scene);
       sg.restore();
       g.globalAlpha = a;
-      const big = this.pxN > 1 ? (this.scratch2 = this.crisp(this.scratch, this.pxN, this.scratch2)) : this.scratch;
-      g.drawImage(big, bx, by, this.scratch.width * U, this.scratch.height * U);
+      const big = this.pxNB > 1 ? (this.scratch2 = this.crisp(this.scratch, this.pxNB, this.scratch2)) : this.scratch;
+      g.drawImage(big, pv.cx + (bx - pv.cx) * S, pv.feet + (by - pv.feet) * S, this.scratch.width * U * S, this.scratch.height * U * S);
       g.globalAlpha = 1;
     } else {
       g.save();
       g.globalAlpha = a;
+      if (S !== 1) g.transform(S, 0, 0, S, pv.cx * (1 - S), pv.feet * (1 - S));
       th.player(g, pv, t, this.scene);
       g.restore();
     }
+    if (!pv.frozen && !pv.slow && !pv.shield && !pv.dark) return;
+    // what the renderer adds to a body (ice, cloud, ward, shadow) grows with it
+    g.save();
+    if (S !== 1) g.transform(S, 0, 0, S, pv.cx * (1 - S), pv.feet * (1 - S));
     if (pv.frozen) {
       // block of ice
       g.fillStyle = 'rgba(170,235,255,.55)';
@@ -1290,6 +1347,20 @@ export class Renderer {
       g.ellipse(pv.cx, pv.y + 19, 27 * pulse, 30 * pulse, 0, -2.4 + t * 2, -1.5 + t * 2);
       g.stroke();
     }
+    if (pv.dark) {
+      // blinded by an eclipse: a black sun over their head (beside the storm cloud, if they have that too)
+      const x = pv.cx + (pv.slow ? 22 : 0);
+      const y = pv.y - 17 + Math.sin(t * 4 + pv.id) * 1.5;
+      g.fillStyle = KIND_COLORS.eclipse;
+      g.beginPath();
+      g.arc(x, y, 9.5, 0, 6.283);
+      g.fill();
+      g.fillStyle = '#14122e';
+      g.beginPath();
+      g.arc(x + 1.6, y - 0.6, 8, 0, 6.283);
+      g.fill();
+    }
+    g.restore();
   }
 
   drawParticles(g, dt, back) {
@@ -1374,10 +1445,12 @@ export class Renderer {
     // team battle: which side is yours (-1 when you are only watching), and whether you carry a bomb yourself
     const mine = pvs.find((p) => p.local);
     const myTeam = view.team && mine ? mine.team : -1;
+    const S = this.bodyK;
+    const bodyH = PH * S; // a body as it is drawn
     for (const pv of pvs) {
       const sx = Math.round((pv.cx - cam.x) * kf);
       if (sx < -20 * px || sx > this.fg.width + 20 * px) continue; // out of sight
-      let top = Math.round((pv.y - cam.y) * kf - (pv.orb ? 6 : (lab.gap || 7)) * px);
+      let top = Math.round(((pv.orb ? pv.y : pv.feet - bodyH - (pv.dark || pv.slow ? 24 * S : 0)) - cam.y) * kf - (pv.orb ? 6 : (lab.gap || 7)) * px);
       const foe = myTeam >= 0 && pv.team !== myTeam;
       if (view.names !== false && pv.name) {
         if (view.team && pv.team >= 0) {
@@ -1393,9 +1466,9 @@ export class Renderer {
       }
       if (foe && mine.isIt && !pv.isIt && !pv.orb && view.phase === 'playing') {
         // you carry a bomb, and this one's hands are free: someone you can stick it on (corner marks round them)
-        const cy = Math.round((pv.y + PH / 2 - cam.y) * kf);
-        const hw = (PW / 2 + 9) * kf;
-        const hh = (PH / 2 + 8) * kf;
+        const cy = Math.round((pv.feet - bodyH / 2 - cam.y) * kf);
+        const hw = ((PW * S) / 2 + 9) * kf;
+        const hh = (bodyH / 2 + 8) * kf;
         const n = 7 * px;
         const breathe = 1 + 0.08 * Math.sin(t * 7);
         g.strokeStyle = '#ffffff';
@@ -1472,7 +1545,7 @@ export class Renderer {
         g.closePath();
         g.stroke();
         g.fill();
-        const cy = (pv.y + PH / 2 - cam.y) * kf;
+        const cy = (pv.feet - bodyH / 2 - cam.y) * kf;
         g.strokeStyle = `rgba(255,255,255,${0.9 - ((t * 1.2) % 1) * 0.9})`;
         g.lineWidth = 3 * px;
         g.beginPath();
@@ -1480,33 +1553,211 @@ export class Renderer {
         g.stroke();
       }
     }
-    if (!this.follow) return;
-    const it = this.chaser(pvs, pvs.find((p) => p.local));
-    const w = this.fg.width;
-    const h = this.fg.height;
-    if (!it || it.local) return;
-    const ix = (it.cx - cam.x) * kf;
-    const iy = (it.y + PH / 2 - cam.y) * kf;
-    if (ix > 0 && ix < w && iy > 0 && iy < h) return;
-    const m = 26 * px;
-    const ax = clamp(ix, m, w - m);
-    const ay = clamp(iy, m, h - m);
-    const ang = Math.atan2(iy - ay, ix - ax);
-    g.save();
-    g.translate(ax, ay);
-    g.rotate(ang);
-    g.fillStyle = it.color;
-    g.strokeStyle = lab.stroke || 'rgba(0,0,0,.6)';
-    g.lineWidth = 3 * px;
+    // everyone you cannot see: a pointer at the edge of the screen (not while the whole arena is in view, nor in the dark)
+    if (this.follow && !this.opts.zoom && cam.z > 0.97 && view.phase !== 'over' && !(view.me && view.me.ecl > 0)) this.drawPointers(g, view, pvs, t, mine);
+  }
+
+  // A small label of our own for a pointer (white on dark, whatever the style's names look like).
+  badge(text) {
+    const key = `badge|${text}`;
+    let hit = this.labels.get(key);
+    if (hit) return hit;
+    const px = Math.max(8, Math.round(11 * this.s * this.q));
+    const c = document.createElement('canvas');
+    const g = c.getContext('2d');
+    const f = `800 ${px}px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`;
+    g.font = f;
+    c.width = Math.ceil(g.measureText(text).width) + 6;
+    c.height = px + 6;
+    g.font = f;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
     g.lineJoin = 'round';
-    g.beginPath();
-    g.moveTo(13 * px, 0);
-    g.lineTo(-8 * px, -10 * px);
-    g.lineTo(-8 * px, 10 * px);
-    g.closePath();
-    g.stroke();
-    g.fill();
-    g.restore();
+    g.lineWidth = Math.max(2, px * 0.28);
+    g.strokeStyle = '#16110d';
+    g.strokeText(text, c.width / 2, c.height / 2 + px * 0.06);
+    g.fillStyle = '#ffffff';
+    g.fillText(text, c.width / 2, c.height / 2 + px * 0.06);
+    hit = { c, w: c.width, h: c.height };
+    this.labels.set(key, hit);
+    return hit;
+  }
+
+  // For every other player who is out of sight: a pointer at the edge of the
+  // screen, on the side they are on, aimed at them. A drop in their colour (in a
+  // team battle their side's colour, with a white edge for your side and a dark
+  // one for theirs). Whoever is it is bigger, red-rimmed and says IT; whoever
+  // carries a bomb is bigger and shows it - and pulses red if they are after you.
+  // Pointers stay off the parts of the screen the HUD stands on (this.avoid).
+  drawPointers(g, view, pvs, t, mine) {
+    const cam = this.cam;
+    const kf = this.kz || this.kf;
+    const px = this.s * this.q;
+    const W = this.fg.width;
+    const H = this.fg.height;
+    const half = (PH * this.bodyK) / 2;
+    const big = clamp(Math.min(this.cssW, this.cssH) / 760, 0.74, 1.2); // pointers suit the screen: smaller on a phone
+    const list = this.ptrs;
+    let n = 0;
+    for (const pv of pvs) {
+      if (pv.local) continue;
+      const ix = (pv.cx - cam.x) * kf;
+      const iy = (pv.feet - half - cam.y) * kf;
+      if (ix > 0 && ix < W && iy > 0 && iy < H) continue; // in view
+      const hot = pv.isIt && view.phase === 'playing';
+      const r = (hot ? 16 : 12.5) * px * big * clamp(1.08 - Math.hypot(ix - W / 2, iy - H / 2) / (kf * 3600), 0.8, 1); // (a little smaller far away)
+      const m = r * 1.72 + 7 * px; // (its point may face the edge)
+      let ax = clamp(ix, m, W - m);
+      let ay = clamp(iy, m, H - m);
+      // Out from under the HUD: straight in from the edge it sits on, so it stays on the line to
+      // whoever it points at (in a corner: whichever of the two ways in is shorter). Blocks of the
+      // HUD stand side by side, so look again until it is clear of all of them.
+      const onL = ix < m;
+      const onR = ix > W - m;
+      const onT = iy < m;
+      const onB = iy > H - m;
+      for (let pass = 0; pass < 3; pass++) {
+        let moved = false;
+        for (const q of this.avoid) {
+          const x0 = q.x0 * px - m;
+          const x1 = q.x1 * px + m;
+          const y0 = q.y0 * px - m;
+          const y1 = q.y1 * px + m;
+          if (ax <= x0 || ax >= x1 || ay <= y0 || ay >= y1) continue;
+          let best = Infinity;
+          let bx = ax;
+          let by = ay;
+          if (onL && x1 <= W - m && x1 - ax < best) (best = x1 - ax), (bx = x1), (by = ay);
+          if (onR && x0 >= m && ax - x0 < best) (best = ax - x0), (bx = x0), (by = ay);
+          if (onT && y1 <= H - m && y1 - ay < best) (best = y1 - ay), (bx = ax), (by = y1);
+          if (onB && y0 >= m && ay - y0 < best) (best = ay - y0), (bx = ax), (by = y0);
+          if (best === Infinity) continue; // (no room that way: it stays where it is)
+          ax = bx;
+          ay = by;
+          moved = true;
+        }
+        if (!moved) break;
+      }
+      const e = list[n] || (list[n] = {});
+      n++;
+      e.pv = pv;
+      e.x = ax;
+      e.y = ay;
+      e.ix = ix;
+      e.iy = iy;
+      e.r = r;
+      e.hot = hot;
+    }
+    if (!n) return;
+    // two in the same place: the second one moves along the edge
+    for (let i = 1; i < n; i++) {
+      const b = list[i];
+      for (let j = 0; j < i; j++) {
+        const a = list[j];
+        const need = (a.r + b.r) * 1.04;
+        if (Math.abs(b.x - a.x) >= need || Math.abs(b.y - a.y) >= need) continue;
+        const m = b.r * 1.72 + 7 * px;
+        if (b.x <= m + 1 || b.x >= W - m - 1) b.y = clamp(a.y + (b.iy >= a.iy ? need : -need), m, H - m);
+        else b.x = clamp(a.x + (b.ix >= a.ix ? need : -need), m, W - m);
+      }
+    }
+    const myTeam = view.team && mine ? mine.team : -1;
+    g.lineJoin = 'round';
+    for (let i = 0; i < n; i++) {
+      const e = list[i];
+      const pv = e.pv;
+      const r = e.r;
+      const sided = !!view.team && pv.team >= 0;
+      const foe = sided && myTeam >= 0 && pv.team !== myTeam;
+      const chasing = e.hot && (!sided || (foe && !mine.isIt)); // this one is after you
+      const c = Math.cos(Math.atan2(e.iy - e.y, e.ix - e.x));
+      const sn = Math.sin(Math.atan2(e.iy - e.y, e.ix - e.x));
+      g.setTransform(c, sn, -sn, c, e.x, e.y);
+      if (chasing) {
+        const k = (t * 1.8 + pv.id * 0.3) % 1;
+        g.strokeStyle = `rgba(255,77,61,${(0.9 * (1 - k)).toFixed(3)})`;
+        g.lineWidth = 3 * px;
+        g.beginPath();
+        g.arc(0, 0, r * (1.25 + k * 0.7), 0, 6.283);
+        g.stroke();
+      }
+      // a drop: round, with a point towards them
+      g.beginPath();
+      g.moveTo(r * 1.72, 0);
+      g.lineTo(r * 0.6, -r * 0.8);
+      g.arc(0, 0, r, -0.927, 0.927, true);
+      g.closePath();
+      g.strokeStyle = e.hot && !sided ? '#ff4d3d' : sided && !foe && myTeam >= 0 ? '#ffffff' : '#16110d';
+      g.lineWidth = (e.hot ? 5.5 : 4.5) * px;
+      g.stroke();
+      g.fillStyle = sided ? TEAM_COLORS[pv.team] : pv.color;
+      g.fill();
+      g.setTransform(1, 0, 0, 1, e.x, e.y);
+      if (e.hot && sided) {
+        // a bomb
+        g.fillStyle = '#16110d';
+        g.strokeStyle = '#ffffff';
+        g.lineWidth = 1.6 * px;
+        g.beginPath();
+        g.arc(-r * 0.06, r * 0.1, r * 0.5, 0, 6.283);
+        g.fill();
+        g.stroke();
+        g.fillStyle = Math.floor(t * 8) % 2 ? '#ffd23f' : '#ff7a2b';
+        g.beginPath();
+        g.arc(r * 0.42, -r * 0.46, r * 0.2, 0, 6.283);
+        g.fill();
+      } else if (e.hot) {
+        const l = this.badge('IT');
+        g.drawImage(l.c, -(l.w >> 1), -(l.h >> 1));
+      }
+    }
+    g.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  // Eclipse, as the player it fell on sees it: everything is night except a
+  // circle around them. Four plain dark rectangles and, over the hole between
+  // them, one picture of a soft-edged hole (made once). The circle closes in as
+  // night falls and opens again as it lifts.
+  drawNight(g, left, pvs) {
+    const me = pvs.find((p) => p.local);
+    if (!me || !this.follow) return;
+    if (!this.hole) {
+      const c = (this.hole = document.createElement('canvas'));
+      c.width = c.height = 256;
+      const hg = c.getContext('2d');
+      hg.fillStyle = NIGHT;
+      hg.fillRect(0, 0, 256, 256);
+      const grad = hg.createRadialGradient(128, 128, 128 * 0.56, 128, 128, 127);
+      grad.addColorStop(0, 'rgba(0,0,0,1)');
+      grad.addColorStop(0.6, 'rgba(0,0,0,0.45)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      hg.globalCompositeOperation = 'destination-out';
+      hg.fillStyle = grad;
+      hg.fillRect(0, 0, 256, 256);
+    }
+    const kf = this.kz || this.kf;
+    const W = this.fg.width;
+    const H = this.fg.height;
+    const x = (me.cx - this.cam.x) * kf;
+    const y = (me.feet - (PH * this.bodyK) / 2 - this.cam.y) * kf;
+    const open = Math.max(0, 1 - (ECLIPSE_TICKS - left) / 16, 1 - left / 30); // 1: wide open (it has just begun, or is all but over)
+    const R = ECLIPSE_SIGHT * 1.3 * kf + Math.hypot(W, H) * open * open; // the picture's half-width: night is complete from there on
+    const x0 = Math.max(0, Math.floor(x - R));
+    const y0 = Math.max(0, Math.floor(y - R));
+    const x1 = Math.min(W, Math.ceil(x + R));
+    const y1 = Math.min(H, Math.ceil(y + R));
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    g.imageSmoothingEnabled = true;
+    // (only the part of the picture that is on the screen)
+    const k = 256 / (2 * R);
+    g.drawImage(this.hole, (x0 - (x - R)) * k, (y0 - (y - R)) * k, (x1 - x0) * k, (y1 - y0) * k, x0, y0, x1 - x0, y1 - y0);
+    // (the rectangles lap over the picture's rim, which is as dark as they are: no seam)
+    g.fillStyle = NIGHT;
+    if (y0 > 0) g.fillRect(0, 0, W, y0 + 2);
+    if (y1 < H) g.fillRect(0, y1 - 2, W, H - y1 + 2);
+    if (x0 > 0) g.fillRect(0, y0, x0 + 2, y1 - y0);
+    if (x1 < W) g.fillRect(x1 - 2, y0, W - x1 + 2, y1 - y0);
   }
 
   // Both layers flattened into one picture (for menu previews).

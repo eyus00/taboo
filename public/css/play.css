@@ -34,7 +34,7 @@
 #hud {
   position: absolute; inset: 0; pointer-events: none; color: #fff; font-family: var(--f-ui);
   --pad-l: max(10px, env(safe-area-inset-left)); --pad-r: max(10px, env(safe-area-inset-right)); --pad-t: max(8px, env(safe-area-inset-top)); --pad-b: max(12px, env(safe-area-inset-bottom));
-  --mapw: clamp(132px, 11.5vw, 200px); --maph: calc(var(--mapw) * 0.5636); --mapt: var(--pad-t);
+  --mapw: clamp(184px, 16vw, 280px); --maph: calc(var(--mapw) * 0.5636); --mapt: var(--pad-t);
 }
 #hud ul { list-style: none; margin: 0; padding: 0; }
 #hud p { margin: 0; }
@@ -121,6 +121,7 @@ body.no-kbd #hud kbd { display: none; }
 #buffs:empty { display: none; }
 #buffs div { display: flex; align-items: center; gap: 5px; padding: 4px 16px 4px 12px; background: var(--plaque); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); }
 #buffs .bad { background: #7a2a8c; }
+#buffs .bad + .bad { background: #3a2f8c; }
 /* what you are right now: it, or carrying a bomb (or only watching) */
 #status { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 16px 0 11px; font: 800 13px/1 var(--f-ui); letter-spacing: 0.02em; color: #fff; background: var(--hot); white-space: nowrap; clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%); }
 #status .sign { display: grid; place-items: center; font-size: 17px; }
@@ -141,8 +142,7 @@ body.no-kbd #hud kbd { display: none; }
 #itemslot.got .tile, #itemslot.ready.named .tile { animation: hud-landed 0.3s ease-out; }
 @keyframes hud-landed { 0% { transform: scale(1.45) rotate(-8deg); } 100% { transform: none; } }
 #itemslot.draw .tile { opacity: 0.55; }
-#itemslot.locked .tile { opacity: 0.5; }
-#hud #itemslot.locked kbd, #hud #itemslot.draw kbd { display: none; }
+#hud #itemslot.draw kbd { display: none; }
 
 /* --- the item draw: a small reel. The icons roll through its window for as
    long as the item takes to arm (one animation, set up by the script), it stops
@@ -160,11 +160,11 @@ body.no-kbd #hud kbd { display: none; }
 #itemdraw.roll { animation: item-in 0.16s cubic-bezier(0.2, 1.3, 0.4, 1) both; }
 @keyframes item-in { from { opacity: 0; transform: translateY(16px) scale(0.6); } }
 /* stopped: the window turns the colour of a ready item, the name takes the tag's place */
-#itemdraw.land { animation: item-land 0.72s ease-in both; }
+#itemdraw.land { animation: item-land 0.52s ease-in both; }
 #itemdraw.land .strip { transform: translateY(var(--end)); }
 #itemdraw.land .win { background: var(--ready); }
 #itemdraw.land .win::after { display: none; }
-#itemdraw.land .tag { color: #1c1b1f; background: var(--ready); font-size: 14.5px; animation: item-tag 0.72s linear both; }
+#itemdraw.land .tag { color: #1c1b1f; background: var(--ready); font-size: 14.5px; animation: item-tag 0.52s linear both; }
 body:not(.no-kbd) #hud #itemdraw.land .tag kbd { display: inline-grid; }
 @keyframes item-land {
   0% { transform: scale(1.2) rotate(-5deg); animation-timing-function: ease-out; }
@@ -241,14 +241,12 @@ body:not(.no-kbd) #hud #itemdraw.land .tag kbd { display: inline-grid; }
 .touch .t-use.ready { background: rgba(255, 210, 63, 0.75) !important; color: #1c1b1f !important; border-color: #fff !important; }
 
 /* On a touch screen the kit sits at the bottom between the run strip and the
-   buttons. The item itself is on its button, so there is no tile: only a note
-   when it gets locked. The item draw appears beside the item button (the
-   script puts it there) and drops into it. */
+   buttons. The item itself is on its button, so there is no tile. The item
+   draw appears beside the item button (the script puts it there) and drops
+   into it. */
 body.touch-on #kit { left: calc(max(14px, env(safe-area-inset-left)) + min(44vw, 230px) + 8px); right: calc(max(14px, env(safe-area-inset-right)) + 252px); bottom: max(16px, env(safe-area-inset-bottom)); transform: none; justify-content: center; flex-wrap: wrap-reverse; gap: 5px 6px; }
 body.touch-on #itemslot .tile, body.touch-on #hud #itemslot kbd { display: none; }
-body.touch-on #itemslot .cap { position: static; transform: none; display: none; }
-body.touch-on #itemslot.locked.named .cap { display: block; animation: hud-capt 1.9s ease-out forwards; }
-@keyframes hud-capt { 0% { opacity: 0; } 10%, 78% { opacity: 1; } 100% { opacity: 0; } }
+body.touch-on #itemslot .cap { display: none; }
 body.touch-on #status { height: 28px; font-size: 12px; padding: 0 13px 0 9px; }
 body.touch-on #buffs div { padding: 3px 13px 3px 10px; font-size: 12px; }
 body.touch-on #itemdraw { --s: 92px; bottom: auto; }
@@ -256,14 +254,21 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
 
 /* --- narrower screens: a side's players shrink to their colour diamonds (a
    bomb still shows beside whoever carries one; yours is still the white one) --- */
-@media (max-width: 1499px) {
+@media (max-width: 1699px) {
   .h-roster.c3 li { font-size: 12px; }
 }
-@media (max-width: 1239px) {
+@media (max-width: 1399px) {
   .h-roster.c3 { grid-template-columns: repeat(var(--cols, 3), max-content); }
   .h-roster.c3 .nm { display: none; }
   .h-roster.c3 li { gap: 3px; padding: 5px 9px 5px 8px; }
   .h-roster.c3 .bm { width: 13px; height: 13px; margin: -1px -3px -1px 1px; }
+}
+@media (max-width: 1127px) {
+  /* (the map on the left takes a good part of the top edge: every side is down to its diamonds a little sooner) */
+  .h-roster { grid-template-columns: repeat(var(--cols, 3), max-content); }
+  .h-roster .nm { display: none; }
+  .h-roster li { gap: 3px; padding: 5px 9px 5px 8px; }
+  .h-roster .bm { width: 13px; height: 13px; margin: -1px -3px -1px 1px; }
 }
 @media (max-width: 1023px), (max-height: 560px) {
   .h-roster { grid-template-columns: repeat(var(--cols, 3), max-content); }
@@ -280,7 +285,7 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
 }
 @media (max-height: 560px) {
   /* a phone on its side */
-  #hud { --mapw: 128px; }
+  #hud { --mapw: 178px; }
   #timer { min-width: 84px; padding: 3px 18px 1px; }
   .h-score { padding: 6px 12px 4px; }
   .h-score .tn, .h-score.mine::after { display: none; } /* (the colour says which side; yours keeps the white line under it) */
@@ -309,7 +314,7 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
   /* A phone held upright. The top is narrow: the clock with a score either
      side takes the first row, each side's players sit under their score, then
      the flags and the round. The minimap goes under all that, on the left. */
-  #hud { --mapw: 112px; --mapt: calc(var(--pad-t) + 62px); }
+  #hud { --mapw: 156px; --mapt: calc(var(--pad-t) + 62px); }
   #hud.team { --mapt: calc(var(--pad-t) + 108px); }
   #hud.team.deep { --mapt: calc(var(--pad-t) + 131px); }
   #top { --side: calc(max(var(--pad-l), var(--pad-r)) + 48px); }
@@ -343,7 +348,7 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
   .touch .t-jump { grid-column: 2; grid-row: 2; }
   .touch .pad { width: min(42vw, 200px); }
 }
-@media (min-width: 1700px) {
+@media (min-width: 1860px) {
   /* room for a whole side in one row */
   .h-roster { grid-template-columns: repeat(5, minmax(0, max-content)); }
 }

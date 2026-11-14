@@ -8,6 +8,10 @@ export const ART_H = 500;
 // Player hitbox
 export const PW = 32;
 export const PH = 40;
+// Players are DRAWN this much bigger than their hitbox, standing on the same
+// feet (so the arenas, the route maps and the bots keep the body they were
+// built around). TOUCH below makes up the difference for tags.
+export const BODY_SCALE = 1.25;
 
 // Simulation runs at a fixed 60 steps per second everywhere.
 export const TICK_RATE = 60;
@@ -19,7 +23,7 @@ export const SNAP_EVERY = 2; // server broadcasts every 2nd tick (30 Hz)
 // Running has a little weight: you pick up speed over about a tenth of a
 // second, and reversing direction costs a brief skid before you go the other way.
 export const MOVE_SPEED = 310; // px/s top speed
-export const IT_SPEED_MUL = 1.06; // the chaser is a touch faster, so chases end
+export const IT_SPEED_MUL = 1.1; // the chaser is faster, so chases end
 export const GROUND_ACCEL = 2700; // px/s^2 while speeding up
 export const GROUND_TURN = 4300; // braking when you push against your own motion
 export const GROUND_STOP = 3000; // braking when you let go
@@ -59,19 +63,22 @@ export const SPIKE_COOLDOWN = 80; // ticks before thorns can hurt you again
 export const EPS = 0.5; // collision tolerance in px
 
 // --- Tag rules ----------------------------------------------------------------
-export const TOUCH = 7; // "it" tags anyone within this many px of touching
-export const IMMUNE_TICKS = 60; // 1 s no-tag-back protection for the old "it"
-export const STUN_TICKS = 24; // 0.4 s freeze for the newly tagged player
+// (bodies are drawn BODY_SCALE times their hitbox: 4 px wider on each side and 10 px taller.
+// So two players LOOK as if they touch with their hitboxes 8 px apart side by side, or
+// 10 px apart one above the other - and a touch you can see has to count.)
+export const TOUCH = 12; // "it" tags anyone whose hitbox is within this many px
+export const IMMUNE_TICKS = 42; // 0.7 s no-tag-back protection for the old "it"
+export const STUN_TICKS = 18; // 0.3 s freeze for the newly tagged player
 export const BLOCK_STUN_TICKS = 36; // "it" is knocked back when a shield blocks the tag
-export const RESPAWN_TICKS = 30;
+export const RESPAWN_TICKS = 24;
 export const COUNTDOWN_MS = 3000;
 export const INTRO_MS = 4200; // before the countdown: the draw for arena, style and who is it
 
 // --- Lucky boxes and the items inside them --------------------------------------
 // Boxes appear around the arena. Touch one (with empty hands) and you get a
-// random item to keep; press USE to set it off whenever you like. Nothing can
-// be used in the last seconds of a round, so nobody can sit on one for the buzzer.
-export const ITEM_KINDS = ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'goo'];
+// random item to keep; press USE to set it off whenever you like - right up to
+// the buzzer.
+export const ITEM_KINDS = ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'quake', 'warp', 'eclipse'];
 export const ITEM_INFO = {
   speed: { name: 'Swift', blurb: 'Run much faster for 6 s' },
   jump: { name: 'Spring', blurb: 'Jump much higher for 7 s' },
@@ -80,16 +87,17 @@ export const ITEM_INFO = {
   blast: { name: 'Blast', blurb: 'A shockwave hurls everyone nearby away and stuns them' },
   swap: { name: 'Swap', blurb: 'Trade places with another player' },
   storm: { name: 'Storm', blurb: 'Everyone else moves in slow motion' },
-  goo: { name: 'Goo', blurb: 'Drop a puddle - whoever steps in it slips' },
+  quake: { name: 'Quake', blurb: 'Throws everyone else into the air, wherever they are, and stuns them' },
+  warp: { name: 'Warp', blurb: 'The oni lands beside the nearest runner; a runner lands far from the oni' },
+  eclipse: { name: 'Eclipse', blurb: 'Everyone else is left in the dark for 4 s' },
 };
 export const PICKUP_TYPES = ITEM_KINDS; // older name, still used by the art styles
 export const PICKUP_INFO = ITEM_INFO;
-export const PICKUP_R = 22; // pick-up radius around a box
-export const BOX_FIRST_TICKS = 150; // first box 2.5 s after GO
-export const BOX_EVERY_TICKS = 270; // then one every 4.5 s
-export const BOX_MAX = 4; // at most this many lying around (one more in a crowd of 5 or 6)
-export const ITEM_ARM_TICKS = 50; // the draw takes a moment before the item can be used
-export const ITEM_LOCK_TICKS = 600; // no boxes, no items in the last 10 s of a round
+export const PICKUP_R = 26; // pick-up radius around a box
+export const BOX_FIRST_TICKS = 90; // first box 1.5 s after GO
+export const BOX_EVERY_TICKS = 180; // then one every 3 s
+export const BOX_MAX = 5; // at most this many lying around (one more for every two players beyond four)
+export const ITEM_ARM_TICKS = 30; // the draw takes half a second before the item can be used
 export const SPEED_BUFF_MUL = 1.4;
 export const JUMP_BUFF_MUL = 1.25;
 export const SPEED_BUFF_TICKS = 360;
@@ -102,9 +110,12 @@ export const BLAST_STUN_TICKS = 50;
 export const BLAST_KICK = 900;
 export const STORM_TICKS = 210; // 3.5 s of slow motion for everyone else
 export const STORM_SPEED = 0.55;
-export const GOO_TICKS = 780; // a puddle lasts 13 s
-export const GOO_MAX = 5;
-export const GOO_STUN_TICKS = 42;
+export const QUAKE_STUN_TICKS = 80; // everyone else, wherever they are: 1.3 s out of the game...
+export const QUAKE_POP = 500; // ...thrown straight up at this speed (about 90 px), no push sideways
+export const WARP_GAP = 26; // the oni lands with this much air between it and the runner (more than TOUCH: the runner gets a blink)
+export const WARP_DROP = 30; // "beside" means level with them, give or take this much
+export const ECLIPSE_TICKS = 240; // 4 s of night for everyone else
+export const ECLIPSE_SIGHT = 150; // what they still see: a circle of this radius (world units) around themselves
 
 // --- Team battle: bombs and flags -------------------------------------------------
 // Two teams.

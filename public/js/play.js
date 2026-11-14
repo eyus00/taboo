@@ -42,7 +42,7 @@ const icon = (name) => `<svg class="ic" aria-hidden="true"><use href="#pi-${name
 const pickRandom = (list) => list[Math.floor(Math.random() * list.length)];
 const calm = matchMedia('(prefers-reduced-motion: reduce)');
 
-const ITEM_LAND_MS = 720; // the item draw, once it has stopped: its name for a moment, then into the tile
+const ITEM_LAND_MS = 520; // the item draw, once it has stopped: its name for a moment, then into the tile (play.css: item-land)
 const FIRST_MATCHES = 3; // how many matches start with a reminder of the controls
 
 // item icons (and a few others), kept here so the match needs nothing from the page
@@ -59,7 +59,9 @@ const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden=
 <symbol id="pi-blast" viewBox="0 0 24 24"><path d="M12 1l2.6 6.2L21 4.5l-2.700 6.400L23 12l-4.700 1.100L21 19.500l-6.400-2.700L12 23l-2.600-6.200L3 19.500l2.700-6.400L1 12l4.700-1.100L3 4.500l6.400 2.700z" fill="currentColor"/></symbol>
 <symbol id="pi-swap" viewBox="0 0 24 24"><path d="M4 8h14l-4-4M20 16H6l4 4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="pi-storm" viewBox="0 0 24 24"><path d="M6 13a5 5 0 1 1 3.5-8.5A6 6 0 0 1 20 8a4 4 0 0 1-2 7.500" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M12 12l-3 5h4l-2 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-<symbol id="pi-goo" viewBox="0 0 24 24"><path d="M12 2c3 5 6 8 6 12a6 6 0 0 1-12 0c0-4 3-7 6-12z" fill="currentColor"/></symbol>
+<symbol id="pi-quake" viewBox="0 0 24 24"><path d="M2 13.500l4-6 3.200 4.500L12 4l3.200 9.500 2.800-5 4 5" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 19.500h7l1.500-2 2 3.500 1.500-1.500h6" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="pi-warp" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round"/><path d="M12 7.800a4.200 4.200 0 1 1-4.200 4.200" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round"/><path d="M16.800 2.600l4.400.500-.900 4.300" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="pi-eclipse" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2.500a9.500 9.500 0 1 1 0 19 9.500 9.500 0 0 1 0-19zM14.600 5.400a7 7 0 1 0 0 13.200 8.300 8.300 0 0 1 0-13.200z" fill="currentColor"/></symbol>
 <symbol id="pi-box" viewBox="0 0 24 24"><path d="M8 9a4 4 0 1 1 6 3.5c-1.300.800-2 1.500-2 3M12 19.500v.500" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
 <symbol id="pi-it" viewBox="0 0 24 24"><path d="M6 2.5c.3 2.6 1.300 4.300 3.200 5.400M18 2.500c-.300 2.600-1.300 4.300-3.200 5.400" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M5.5 9.5h13l-1 8.200c-.400 2.600-2.600 4.300-5.500 4.300s-5.100-1.700-5.500-4.300z" fill="currentColor"/></symbol>
 <symbol id="pi-bomb" viewBox="0 0 24 24"><circle cx="10" cy="15" r="7.5" fill="currentColor"/><path d="M13.3 8.2l2.9-2.900 2.500 2.500-2.900 2.900z" fill="currentColor"/><path d="M17.8 5.9c.7-1.700 1.900-2.600 3.400-2.700" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21.6 1v1.300M23.300 3.300H22M22.900 1.500l-.900.900" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
@@ -87,7 +89,7 @@ export const play = {
     root.innerHTML = `${SPRITE}
       <div id="stage"></div>
       <div id="hud">
-        <canvas id="minimap" width="220" height="124" aria-hidden="true"></canvas>
+        <canvas id="minimap" width="308" height="174" aria-hidden="true"></canvas>
         <ul id="pills" aria-label="Players"></ul>
         <div id="top">
           <div class="h-wing a"><ul id="roster-a" class="h-roster" aria-label="${TEAM_NAMES[0]}"></ul><b id="team-a" class="h-score" hidden></b></div>
@@ -309,7 +311,7 @@ export const play = {
     }
     const m = view.me;
     const kind = m && m.item ? ITEM_KINDS[m.item - 1] : '';
-    const state = !kind ? '' : m.arm > 0 ? 'draw' : m.locked ? `${kind}-locked` : kind;
+    const state = !kind ? '' : m.arm > 0 ? 'draw' : kind;
     if (state !== h.item) this.itemChanged(state, kind, m, view);
   },
 
@@ -432,13 +434,13 @@ export const play = {
 
     // boosts that are running
     const m = view.me;
-    const buffs = m ? [m.spd > 0 && ['speed', m.spd], m.jmp > 0 && ['jump', m.jmp], m.shd > 0 && ['shield', m.shd], m.slw > 0 && ['storm', m.slw]].filter(Boolean) : [];
+    const buffs = m ? [m.spd > 0 && ['speed', m.spd], m.jmp > 0 && ['jump', m.jmp], m.shd > 0 && ['shield', m.shd], m.slw > 0 && ['storm', m.slw], m.ecl > 0 && ['eclipse', m.ecl]].filter(Boolean) : [];
     const bsig = buffs.map(([k, t]) => `${k}${Math.ceil(t / TICK_RATE)}`).join();
     if (bsig !== h.buffs) {
       h.buffs = bsig;
       E.buffs.textContent = '';
       for (const [k, t] of buffs) {
-        const d = el('div', k === 'storm' ? 'bad' : '');
+        const d = el('div', k === 'storm' || k === 'eclipse' ? 'bad' : '');
         d.innerHTML = icon(k);
         d.append(`${Math.ceil(t / TICK_RATE)}s`);
         E.buffs.append(d);
@@ -590,7 +592,7 @@ export const play = {
 
   // --- the item in your hands, and the draw that deals it -----------------------------------
   // state: '' (empty hands) | 'draw' (a lucky box is being opened: the server
-  // arms the item a moment after you touch the box) | <kind> | <kind>-locked
+  // arms the item a moment after you touch the box) | <kind>
   itemChanged(state, kind, m, view) {
     const h = this.hud;
     const E = this.el;
@@ -617,21 +619,20 @@ export const play = {
       this.reelStart(kind, ms, view);
       return;
     }
-    const locked = !!m.locked;
     const hold = (named) => {
       const it = ITEM_INFO[kind];
       slot.hidden = false;
-      slot.className = locked ? 'locked' : 'ready';
+      slot.className = 'ready';
       E.itemPic.innerHTML = icon(kind);
-      E.itemCap.textContent = locked ? 'Locked - the round is nearly over' : it.name;
+      E.itemCap.textContent = it.name;
       slot.title = `${it.name}: ${it.blurb}`;
-      this.setUse(kind, !locked);
+      this.setUse(kind, true);
       if (named) {
         void slot.offsetWidth; // (so the caption's fade starts afresh even if it was showing a moment ago)
         slot.classList.add('named');
       }
     };
-    if (was === 'draw' && h.reelOn && !locked) {
+    if (was === 'draw' && h.reelOn) {
       // the reel stops on it and says its name; a moment later it drops into the tile
       this.reelLand(kind);
       h.itemTimer = setTimeout(() => {
@@ -641,7 +642,7 @@ export const play = {
       }, calm.matches ? 900 : ITEM_LAND_MS);
     } else {
       this.reelOff();
-      hold(locked || was === '' || was === 'draw');
+      hold(was === '' || was === 'draw');
     }
   },
 
@@ -686,7 +687,7 @@ export const play = {
       const host = E.hud.getBoundingClientRect();
       const u = E.use.getBoundingClientRect();
       const size = 92;
-      st.left = `${Math.min(host.width - size - 4, Math.max(4, u.left - host.left + u.width / 2 - size / 2))}px`;
+      st.left = `${Math.min(host.width - size - 14, Math.max(14, u.left - host.left + u.width / 2 - size / 2))}px`; // (room for the pop it lands with)
       st.top = `${u.top - host.top - size - 30}px`;
     } else {
       // low in the middle, just above the kit - unless that is where you are standing: then a step to the side
@@ -734,8 +735,17 @@ export const play = {
 
   // --- minimap ---------------------------------------------------------------------------
   // The arena in miniature: painted once, with a dot for every player on top.
+  // The canvas has as many pixels as the map takes up on this screen.
   bakeMinimap(arena) {
     const c = this.el.minimap;
+    const hid = c.hidden;
+    c.hidden = false;
+    const cssW = c.clientWidth || 220;
+    c.hidden = hid;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = Math.round(cssW * dpr);
+    c.height = Math.round((cssW * dpr * 124) / 220);
+    const u = c.width / 220; // canvas pixels per unit the marks below are drawn in
     const k = Math.min(c.width / arena.w, c.height / arena.h);
     const base = document.createElement('canvas');
     base.width = c.width;
@@ -749,9 +759,9 @@ export const play = {
     g.fillStyle = 'rgba(255,255,255,.2)';
     for (const z of arena.lifts) g.fillRect(z.x * k, z.y * k, z.w * k, z.h * k);
     g.fillStyle = 'rgba(255,255,255,.62)';
-    for (const p of arena.platforms) g.fillRect(p.x * k, p.y * k, Math.max(1, p.w * k), p.oneway ? 1.4 : Math.max(1.4, p.h * k));
+    for (const p of arena.platforms) g.fillRect(p.x * k, p.y * k, Math.max(1, p.w * k), p.oneway ? 1.4 * u : Math.max(1.4 * u, p.h * k));
     g.strokeStyle = 'rgba(255,255,255,.62)';
-    g.lineWidth = 1.4;
+    g.lineWidth = 1.4 * u;
     g.beginPath();
     for (const r of arena.ramps) {
       g.moveTo(r.x0 * k, r.y0 * k);
@@ -759,40 +769,80 @@ export const play = {
     }
     g.stroke();
     g.fillStyle = '#ffc94d';
-    for (const t of arena.tramps) g.fillRect(t.x * k, t.y * k - 1, Math.max(2, t.w * k), 2);
+    for (const t of arena.tramps) g.fillRect(t.x * k, t.y * k - u, Math.max(2 * u, t.w * k), 2 * u);
     g.fillStyle = '#ff5a4d';
-    for (const sp of arena.spikes) g.fillRect(sp.x * k, sp.y * k, Math.max(2, sp.w * k), 2);
-    this.mini = { base, k, ox, oy };
+    for (const sp of arena.spikes) g.fillRect(sp.x * k, sp.y * k, Math.max(2 * u, sp.w * k), 2 * u);
+    this.mini = { base, k, ox, oy, u, cssW, arena };
+  },
+
+  // Where the HUD stands (about once a second): so that the map and the list of
+  // players can turn faint while you are under them, and the pointers to players
+  // out of sight (renderer.js) keep off all of it.
+  measureHud(m) {
+    const E = this.el;
+    const a = E.stage.getBoundingClientRect();
+    const rect = (e) => {
+      const b = e.getBoundingClientRect();
+      return b.width && b.height ? { x0: b.left - a.left, y0: b.top - a.top, x1: b.right - a.left, y1: b.bottom - a.top } : null;
+    };
+    const wide = (r) => r && { x0: r.x0 - 36, y0: r.y0 - 56, x1: r.x1 + 36, y1: r.y1 + 36 };
+    const map = rect(E.minimap);
+    const list = rect(E.pills);
+    m.rect = wide(map);
+    m.list = wide(list);
+    m.w = a.width;
+    m.h = a.height;
+    const keep = [map, list, rect(E.btnPause), rect(E.hud.querySelector('.hud-key')), rect(E.status), rect(E.itemslot), rect(E.buffs)];
+    for (const e of E.top.children) keep.push(rect(e));
+    if (!E.touch.hidden) for (const e of E.touch.querySelectorAll('.pad, .acts button')) keep.push(rect(e));
+    this.renderer.avoid = keep.filter(Boolean);
+    if (map && Math.abs(E.minimap.clientWidth - m.cssW) > 6) this.bakeMinimap(m.arena); // the window changed size: paint the map again at its new one
   },
 
   drawMinimap(view) {
-    const m = this.mini;
+    let m = this.mini;
     if (!m) return;
+    const now = performance.now();
+    if (!m.rectAt || now - m.rectAt > 1000) {
+      this.measureHud(m);
+      m = this.mini; // (it may just have been painted again)
+      m.rectAt = now;
+      if (!m.rect) this.measureHud(m);
+    }
     const c = this.el.minimap;
     const g = c.getContext('2d');
+    const u = m.u;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, c.width, c.height);
     g.drawImage(m.base, 0, 0);
+    // Eclipse: the map goes dark with everything else - only you are on it
+    const night = !!(view.me && view.me.ecl > 0);
+    if (night) {
+      g.fillStyle = 'rgba(7,9,18,.82)';
+      g.fillRect(0, 0, c.width, c.height);
+    }
     g.translate(m.ox, m.oy);
     const k = m.k;
     // what the main view is showing
     const cam = this.renderer.viewRect();
-    if (cam) {
+    if (cam && !night) {
       g.strokeStyle = 'rgba(255,255,255,.5)';
-      g.lineWidth = 1;
+      g.lineWidth = u;
       g.strokeRect(cam.x * k + 0.5, cam.y * k + 0.5, cam.w * k, cam.h * k);
     }
-    g.fillStyle = '#ffd23f';
-    for (const point of view.boxes || []) {
-      const pt = this.renderer.arena.pickups[point];
-      if (pt) g.fillRect(pt.x * k - 1.5, pt.y * k - 1.500, 3, 3);
-    }
-    if (view.team) {
-      // flags: a pole and a pennant in the colour of whoever holds it (pale: nobody's)
-      for (const f of view.team.flags) {
-        g.fillStyle = f.owner >= 0 ? TEAM_COLORS[f.owner] : '#e9e2cf';
-        g.fillRect(f.x * k - 1, f.y * k - 9, 2, 9);
-        g.fillRect(f.x * k, f.y * k - 9, 6, 4);
+    if (!night) {
+      g.fillStyle = '#ffd23f';
+      for (const point of view.boxes || []) {
+        const pt = this.renderer.arena.pickups[point];
+        if (pt) g.fillRect(pt.x * k - 1.6 * u, pt.y * k - 1.6 * u, 3.2 * u, 3.2 * u);
+      }
+      if (view.team) {
+        // flags: a pole and a pennant in the colour of whoever holds it (pale: nobody's)
+        for (const f of view.team.flags) {
+          g.fillStyle = f.owner >= 0 ? TEAM_COLORS[f.owner] : '#e9e2cf';
+          g.fillRect(f.x * k - u, f.y * k - 9 * u, 2 * u, 9 * u);
+          g.fillRect(f.x * k, f.y * k - 9 * u, 6 * u, 4 * u);
+        }
       }
     }
     // never hide your own player: the map - and the list of players under it -
@@ -801,19 +851,6 @@ export const play = {
     let under = false;
     let underList = false;
     if (me) {
-      const now = performance.now();
-      if (!m.rect || now - m.rectAt > 1000) {
-        const a = this.el.stage.getBoundingClientRect();
-        const box = (e) => {
-          const b = e.getBoundingClientRect();
-          return b.width ? { x0: b.left - a.left - 36, y0: b.top - a.top - 56, x1: b.right - a.left + 36, y1: b.bottom - a.top + 36 } : null;
-        };
-        m.rect = box(c);
-        m.list = box(this.el.pills);
-        m.w = a.width;
-        m.h = a.height;
-        m.rectAt = now;
-      }
       const sx = ((me.x + PW / 2 - cam.x) / cam.w) * m.w;
       const sy = ((me.y + PH / 2 - cam.y) / cam.h) * m.h;
       const inside = (r) => !!r && sx > r.x0 && sx < r.x1 && sy > r.y0 && sy < r.y1;
@@ -823,23 +860,23 @@ export const play = {
     if (under !== m.under) c.classList.toggle('aside', (m.under = under));
     if (underList !== m.underList) this.el.pills.classList.toggle('aside', (m.underList = underList));
     for (const p of view.players) {
-      if (p.dead > 0) continue;
+      if (p.dead > 0 || (night && !p.local)) continue;
       const x = (p.x + PW / 2) * k;
       const y = (p.y + PH / 2) * k;
       g.fillStyle = view.team && p.team >= 0 ? TEAM_COLORS[p.team] : this.colorOf(p.slot); // team battle: friend or foe at a glance
       g.beginPath();
-      g.arc(x, y, p.local ? 4 : 3, 0, 6.283);
+      g.arc(x, y, (p.local ? 4 : 3) * u, 0, 6.283);
       g.fill();
       if (p.local) {
         g.strokeStyle = '#fff';
-        g.lineWidth = 1.500;
+        g.lineWidth = 1.5 * u;
         g.stroke();
       }
       if (view.it === p.slot || p.bomb) {
         g.strokeStyle = '#ff4d3d';
-        g.lineWidth = 1.500;
+        g.lineWidth = 1.5 * u;
         g.beginPath();
-        g.arc(x, y, 6.500, 0, 6.283);
+        g.arc(x, y, 6.5 * u, 0, 6.283);
         g.stroke();
       }
     }
@@ -884,15 +921,16 @@ export const play = {
       // a = { slot, kind, x, y, to }
       const kind = ITEM_KINDS[a.kind];
       R.itemFx(a, kind);
-      sfx.play({ freeze: 'freeze', blast: 'blast', storm: 'storm', swap: 'swap', goo: 'goo' }[kind] || 'pick', a.slot === me ? 1 : 0.6);
+      sfx.play({ freeze: 'freeze', blast: 'blast', storm: 'storm', swap: 'swap', quake: 'quake', warp: 'warp', eclipse: 'eclipse' }[kind] || 'pick', a.slot === me || kind === 'quake' || kind === 'eclipse' ? 1 : 0.6);
       const who = a.slot === me ? 'You' : this.nameOf(a.slot);
       if (kind === 'blast') this.banner(`${who} set off a Blast!`, a.slot !== me);
       else if (kind === 'storm') this.banner(`${who} called a Storm!`, a.slot !== me);
       else if (kind === 'freeze') this.banner(`${who} used Frost!`, a.slot !== me);
       else if (kind === 'swap' && a.to >= 0 && (a.slot === me || a.to === me)) this.banner(a.slot === me ? `You swapped with ${this.nameOf(a.to)}` : `${who} swapped places with you!`, a.to === me);
-    } else if (type === 'slip') {
-      R.slipFx(a);
-      sfx.play('fall', a.slot === me ? 1 : 0.4);
+      else if (kind === 'quake') this.banner(a.slot === me ? 'Quake! Everyone else is in the air' : `${who} shook the ground - Quake!`, a.slot !== me);
+      else if (kind === 'eclipse') this.banner(a.slot === me ? 'Eclipse! Nobody else can see' : `${who} called an Eclipse!`, a.slot !== me);
+      else if (kind === 'warp' && a.to === me) this.banner(`${who} warped right beside you!`, true);
+      else if (kind === 'warp' && a.slot === me && a.tx != null) this.banner(a.to >= 0 ? `Warp! Right beside ${this.nameOf(a.to)}` : team ? 'Warp! Far away from their bombs' : 'Warp! Far away from the oni');
     } else if (type === 'boom') {
       R.boomFx(a);
       sfx.play('boom');

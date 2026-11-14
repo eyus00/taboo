@@ -580,7 +580,6 @@ function tickRoom(room) {
       room.phase = 'playing';
       sim.start(g.startIt);
       g.endTick = sim.tick + g.duration * TICK_RATE;
-      sim.endsAt = g.endTick; // items lock shortly before this
       io.to(room.code).emit('go', sim.it, sim.bombs());
       emitRoom(room);
     }
@@ -616,11 +615,11 @@ function tickRoom(room) {
 }
 
 // Snapshot, one per player because each also gets their own full state:
-//   [tick, playing, itSlot, ticksLeft | msToGo, players[], boxes[], mine, goo[], team]
+//   [tick, playing, itSlot, ticksLeft | msToGo, players[], boxes[], mine, [], team]
 //   player: [slot, x, y, vx, vy, flags, immune, itTicks, tags, item]   (item: 0 or kind + 1, +16 while it is being drawn)
 //   boxes:  indices of the box spots that have a box
 //   mine:   [ackSeq, ...packState(mine)] or 0 for spectators
-//   goo:    [x, y] of every puddle
+//   []:     (puddles, once; the place is kept so that what follows does not move)
 //   team:   0, or [score0, score1, bombs (one bit per slot), over, then for each flag: fill (-cap..cap), owner (-1, 0, 1)]
 function sendSnapshot(room) {
   const g = room.game;
@@ -633,7 +632,6 @@ function sendSnapshot(room) {
   }
   const playing = g.state === 'playing';
   const left = playing ? Math.max(0, g.endTick - sim.tick) : Math.max(0, g.goAt - Date.now());
-  const goo = sim.goo.map((p) => [Math.round(p.x), Math.round(p.y)]);
   let team = 0;
   if (sim.teams) {
     let mask = 0;
@@ -645,7 +643,7 @@ function sendSnapshot(room) {
   for (const p of room.players.values()) {
     const pl = p.playing ? sim.players[p.slot] : null;
     const mine = pl ? [g.net[p.slot].lastSeq, ...packState(pl.s)] : 0;
-    io.to(p.id).volatile.emit('s', [...head, mine, goo, team]);
+    io.to(p.id).volatile.emit('s', [...head, mine, [], team]);
   }
 }
 

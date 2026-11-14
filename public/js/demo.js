@@ -201,18 +201,57 @@ const ITEM_ACTS = {
     d.ai[1] = null;
     yield* hold(0, 20);
   },
-  *goo(d) {
-    const me = d.cast([{ name: 'You', x: 170 }, { name: 'Oni', x: 50 }], { it: 1 });
-    d.give('goo');
+  *quake(d) {
+    const me = d.cast([{ name: 'You', x: 300 }, { name: 'Oni', x: 40 }, { name: 'Kiko', x: 400, y: 150, face: -1 }], { it: 1 });
+    d.give('quake');
+    d.ai[1] = chase(0, false);
+    d.ai[2] = pace(335, 415);
+    d.say('The oni closes in...');
+    yield* until(0, () => cx(me) - cx(d.p(1).s) < 120, 200);
+    d.say('Quake! The ground throws everyone else into the air, wherever they are');
+    yield U;
+    d.ai[1] = d.ai[2] = null;
+    yield* hold(0, 20);
+    yield* runTo(me, 510);
+    yield* hold(0, 60);
+  },
+  *warp(d) {
+    // first as a runner: away, as far as the arena goes
+    let me = d.cast([{ name: 'You', x: 150 }, { name: 'Oni', x: 40 }], { it: 1 });
+    d.give('warp');
     d.ai[1] = chase(0, false);
     d.say('The oni is on your heels...');
-    yield* runTo(me, 290);
-    d.say('Goo! Whoever steps in it slips');
+    yield* runTo(me, 230);
+    d.say('Warp! A runner comes out as far from the oni as can be');
     yield R | U;
-    yield* runTo(me, 505);
-    yield* until(0, () => d.p(1).s.stun > 0, 120);
     d.ai[1] = null;
-    yield* hold(0, 70);
+    yield* hold(0, 90);
+    // then as the oni: right beside the nearest runner
+    me = d.cast([{ name: 'You', x: 60 }, { name: 'Kiko', x: 470, face: -1 }], { it: 0 });
+    d.give('warp');
+    d.say('And if you are the oni...');
+    yield* hold(0, 50);
+    d.say('Warp! The oni comes out right beside the nearest runner');
+    yield U;
+    yield* hold(0, 8);
+    yield* until(() => steer(me, cx(d.p(1).s), 2), () => d.sim.it === 1, 90);
+    yield* runTo(me, 200); // (and away, before they can hand it back)
+    yield* hold(0, 40);
+  },
+  *eclipse(d) {
+    const me = d.cast([{ name: 'You', x: 280 }, { name: 'Oni', x: 40 }], { it: 1 });
+    d.give('eclipse');
+    d.ai[1] = chase(0, false);
+    d.say('The oni closes in...');
+    yield* until(0, () => cx(me) - cx(d.p(1).s) < 130, 200);
+    d.say('Eclipse! Night falls on everyone else: the oni cannot see you');
+    yield U;
+    d.ai[1] = pace(60, 210); // (blind: it gropes about where it last saw you)
+    yield* hold(0, 16);
+    yield* runTo(me, 500);
+    yield* until(0, () => d.p(1).s.ecl === 0, 260);
+    d.ai[1] = null;
+    yield* hold(0, 30);
   },
 };
 const ITEM_ORDER = ['box', ...ITEM_KINDS];
@@ -385,9 +424,9 @@ const SCENES = {
     },
   },
 
-  // a lucky box, then each of the eight items
+  // a lucky box, then each of the items
   items: {
-    arena: world('items', { platforms: [floor(), ledge(250, 150, 190)], pickups: [{ x: 300, y: FLOOR - 22 }] }),
+    arena: world('items', { platforms: [floor(), ledge(250, 150, 190)], pickups: [{ x: 300, y: FLOOR - 22 }, { x: 520, y: FLOOR - 22 }] }), // (the second spot never gets a box: it is somewhere to Warp to)
     keys: 'lrju',
     pips: ITEM_ORDER,
     *play(d) {
@@ -635,6 +674,7 @@ class Run {
         jmp: s.jmp,
         shd: s.shd,
         slw: s.slw,
+        ecl: s.ecl,
         dead: s.dead,
         itTicks: p.itTicks,
         item: p.item,
@@ -655,7 +695,6 @@ class Run {
       it: sim.it,
       players,
       boxes: sim.boxes,
-      goo: sim.goo.map((g) => [g.x, g.y]),
       team: sim.teams ? { score: sim.score, over: sim.over, flags: sim.flags.map((f) => ({ x: f.x, y: f.y, owner: f.owner, fill: f.m / FLAG_CAP_TICKS })) } : null,
       me: null,
       code: null,
@@ -812,7 +851,6 @@ class Demo {
         else if (e.type === 'block') R0.blockFx(e.from, e.to);
         else if (e.type === 'pick') R0.pickFx(e.slot, e.kind);
         else if (e.type === 'use') R0.itemFx(e, ITEM_KINDS[e.kind]);
-        else if (e.type === 'slip') R0.slipFx(e);
         else if (e.type === 'boom') R0.boomFx(e);
         else if (e.type === 'flag' && e.what !== 'lose') R0.flagFx(e.i, e.team, e.what === 'pay');
       }

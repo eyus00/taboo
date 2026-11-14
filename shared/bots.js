@@ -43,6 +43,7 @@ export function makeBot(seed = 1) {
     roaming: false,
     stuck: 0,
     lastX: 0,
+    blind: false, // night has fallen on us (Eclipse): nobody to chase, nobody to run from
     rejump: 0, // countdown to a second jump press
     airT: 0, // ticks since we last stood on something
     escape: 0, // ticks left of steering out of an updraft we did not mean to ride
@@ -111,6 +112,20 @@ export function botThink(sim, slot, mem) {
   }
   mem.lastX = s.x;
 
+  // Eclipse: we cannot see a thing. Whatever we were after is forgotten the moment
+  // night falls, and until it lifts we only feel our way about (see decide()).
+  const blind = s.ecl > 0;
+  if (blind !== mem.blind) {
+    mem.blind = blind;
+    mem.think = 0;
+    mem.direct = null;
+    mem.target = -1;
+    if (blind) {
+      mem.goal = -1;
+      mem.roaming = false;
+    }
+  }
+
   // decide what to do next (but never half way through a jump we planned)
   if (--mem.think <= 0 && (s.ground || !mem.plan || mem.airT > 150)) {
     mem.think = Math.round((5 + rnd() * 5) / (sim.isIt(me) ? 1 : mem.nerve));
@@ -151,7 +166,7 @@ export function botThink(sim, slot, mem) {
     mem.think = 0;
   }
   // holding an item: set it off when it would do some good
-  if (me.item && me.arm === 0 && !sim.locked() && !(mem.pressed & IN_USE) && wantsToUse(sim, me, mem)) bits |= IN_USE;
+  if (me.item && me.arm === 0 && !blind && !(mem.pressed & IN_USE) && wantsToUse(sim, me, mem)) bits |= IN_USE;
   // a jump only counts when the button goes down, so never hold it across a landing
   if (s.ground && mem.pressed & IN_JUMP) bits &= ~IN_JUMP;
   mem.pressed = bits;
@@ -169,26 +184,33 @@ function wantsToUse(sim, me, mem) {
   if (mem.rnd() > 0.06) return false; // a human-ish delay, not the very first tick
   const kind = ITEM_KINDS[me.item - 1];
   let nearest = Infinity;
-  for (const o of sim.targets(me)) nearest = Math.min(nearest, gap(o, me));
+  let prey = Infinity; // ...the nearest one we could actually tag
+  for (const o of sim.targets(me)) {
+    const d = gap(o, me);
+    nearest = Math.min(nearest, d);
+    if (!o.bomb && o.s.orb === 0 && o.immune === 0) prey = Math.min(prey, d);
+  }
   if (sim.isIt(me)) {
     // chasing: anything that slows them down or speeds us up, once someone is in reach
     if (kind === 'swap') return nearest > 500;
-    if (kind === 'goo') return nearest < 200;
+    if (kind === 'warp') return prey > 380 && prey < Infinity; // too far to run: be there now
+    if (kind === 'quake') return prey > 70 && prey < 400; // they hang in the air for a second: near enough to get there in that time
     return nearest < (kind === 'blast' ? BLAST_RADIUS * 0.85 : 480);
   }
   const it = chaserOf(sim, me);
   let danger = it ? gap(it, me) : Infinity;
-  if (sim.flags && (kind === 'freeze' || kind === 'blast' || kind === 'storm')) {
+  if (sim.flags && (kind === 'freeze' || kind === 'blast' || kind === 'storm' || kind === 'quake' || kind === 'eclipse')) {
     // one of them is standing on a flag, and we are close enough to make use of the moment
+    // (a quake reaches them wherever we are)
     for (const f of sim.flags) {
       if (f.owner === 1 - me.team && Math.abs(f.m) >= FLAG_CAP_TICKS) continue; // theirs already, nothing to stop
-      if (Math.hypot(f.x - me.s.x, f.y - me.s.y) > (kind === 'blast' ? BLAST_RADIUS * 0.85 : 560)) continue;
+      if (kind !== 'quake' && Math.hypot(f.x - me.s.x, f.y - me.s.y) > (kind === 'blast' ? BLAST_RADIUS * 0.85 : 560)) continue;
       if (sim.targets(me).some((o) => inRing(o, f))) return true;
     }
   }
   if (kind === 'swap') return danger < 200; // let someone else stand here
-  if (kind === 'goo') return danger < 260;
-  return danger < (kind === 'storm' ? 420 : kind === 'blast' ? BLAST_RADIUS * 0.8 : 300);
+  if (kind === 'warp') return danger < 230; // gone, to the far end of the arena
+  return danger < (kind === 'storm' || kind === 'eclipse' ? 420 : kind === 'blast' ? BLAST_RADIUS * 0.8 : kind === 'quake' ? 340 : 300);
 }
 
 // ----------------------------------------------------------------------------
@@ -196,6 +218,11 @@ function wantsToUse(sim, me, mem) {
 // ----------------------------------------------------------------------------
 function decide(sim, me, mem, nav) {
   mem.direct = null;
+  if (mem.blind) {
+    // in the dark: no target, no threat, no boxes - wander until we can see again
+    mem.target = -1;
+    return wander(sim, me, mem, nav, null, null, true);
+  }
   if (sim.teams && sim.flags) {
     if (me.bomb && !mem.hadBomb && mem.itWho >= 0) {
       // just had a bomb stuck on us: go after somebody else for a while, not straight back at whoever did it
@@ -458,7 +485,8 @@ function evade(sim, me, mem, nav, it, reach = 540) {
 // Nothing urgent: go somewhere interesting instead of standing in a corner.
 //   threat - someone to keep clear of (or null)
 //   home   - stay within reach of this spot (a keeper minding the flag), or null
-function wander(sim, me, mem, nav, threat, home = null) {
+//   blind  - we cannot see the boxes either
+function wander(sim, me, mem, nav, threat, home = null, blind = false) {
   const s = me.s;
   const rnd = mem.rnd;
   if (mem.rest > 0) {
@@ -476,7 +504,7 @@ function wander(sim, me, mem, nav, threat, home = null) {
   mem.roaming = true;
   const near = (x, y) => !home || (Math.abs(x - home[0]) < 520 && Math.abs(y - home[1]) < 400);
   // a lucky box lying around is worth the trip
-  if (sim.boxes.length && !me.item && rnd() < 0.8) {
+  if (sim.boxes.length && !me.item && !blind && rnd() < 0.8) {
     let best = null;
     let bestD = Infinity;
     for (const point of sim.boxes) {

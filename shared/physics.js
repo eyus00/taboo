@@ -90,6 +90,7 @@ export function makeState(x, y) {
     jmp: 0, // ticks of Spring left
     shd: 0, // ticks of Ward left
     slw: 0, // ticks of slow motion left (someone used Storm)
+    ecl: 0, // ticks of night left (someone used Eclipse): changes nothing here, only what this player is shown
     hz: 0, // ticks until thorns can hurt us again
     w: PW,
     h: PH,
@@ -123,9 +124,10 @@ export function packState(s) {
     s.oy,
     s.slw,
     s.hz,
+    s.ecl,
   ];
 }
-export const STATE_LEN = 24;
+export const STATE_LEN = 25;
 
 export function unpackState(a) {
   const s = makeState(a[0], a[1]);
@@ -155,6 +157,7 @@ export function unpackState(a) {
   s.oy = a[21];
   s.slw = a[22];
   s.hz = a[23];
+  s.ecl = a[24] || 0;
   return s;
 }
 
@@ -169,6 +172,7 @@ export const PF_JUMP = 64;
 export const PF_SHIELD = 128;
 export const PF_DEAD = 256;
 export const PF_SLOW = 512;
+export const PF_DARK = 1024;
 
 export function publicFlags(s) {
   return (
@@ -181,7 +185,8 @@ export function publicFlags(s) {
     (s.jmp > 0 ? PF_JUMP : 0) |
     (s.shd > 0 ? PF_SHIELD : 0) |
     (s.dead > 0 ? PF_DEAD : 0) |
-    (s.slw > 0 ? PF_SLOW : 0)
+    (s.slw > 0 ? PF_SLOW : 0) |
+    (s.ecl > 0 ? PF_DARK : 0)
   );
 }
 
@@ -197,7 +202,7 @@ function orbPoint(p, d, e) {
 }
 
 // Is the player's box clear of solid blocks and inside the arena?
-function isFree(p, arena) {
+export function isFree(p, arena) {
   if (p.x < 0 || p.x > arena.w - PW || p.y < 0 || p.y > arena.h - PH) return false;
   const plats = arena.platforms;
   for (let i = 0; i < plats.length; i++) {
@@ -363,6 +368,7 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
   if (p.jmp > 0) p.jmp--;
   if (p.shd > 0) p.shd--;
   if (p.slw > 0) p.slw--;
+  if (p.ecl > 0) p.ecl--;
   if (p.hz > 0) p.hz--;
   if (p.drop > 0) p.drop--;
 

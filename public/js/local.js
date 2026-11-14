@@ -1,7 +1,7 @@
 // A match that runs entirely in the browser: practice against bots.
 // Same rules code as the server, so it plays exactly like an online match.
 
-import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, MAX_PLAYERS, ITEM_LOCK_TICKS, TEAM_SLOTS, BOMB_END_TICKS, FLAG_CAP_TICKS } from '/shared/config.js';
+import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, MAX_PLAYERS, TEAM_SLOTS, BOMB_END_TICKS, FLAG_CAP_TICKS } from '/shared/config.js';
 import { Sim, standings, makeTeams } from '/shared/sim.js';
 import { makeBot, botThink, prepareBots, BOT_NAMES } from '/shared/bots.js';
 
@@ -98,7 +98,6 @@ export class LocalGame {
         this.goTime = now;
         sim.start(this.startIt);
         this.endTick = sim.tick + this.duration * TICK_RATE;
-        sim.endsAt = this.endTick;
         this.onEvent('go', sim.it, sim.bombs());
       }
     }
@@ -175,6 +174,7 @@ export class LocalGame {
         jmp: s.jmp,
         shd: s.shd,
         slw: s.slw,
+        ecl: s.ecl,
         dead: s.dead,
         itTicks: p.itTicks,
         item: p.item,
@@ -204,9 +204,8 @@ export class LocalGame {
       it: this.phase === 'countdown' ? -1 : sim.it,
       players,
       boxes: sim.boxes,
-      goo: sim.goo.map((g) => [g.x, g.y]),
       team: sim.teams ? { score: sim.score, over: sim.over, flags: sim.flags.map((f) => ({ x: f.x, y: f.y, owner: f.owner, fill: f.m / FLAG_CAP_TICKS })) } : null,
-      me: this.phase === 'playing' ? { spd: me.s.spd, jmp: me.s.jmp, shd: me.s.shd, slw: me.s.slw, item: me.item, arm: me.arm, locked: this.endTick - sim.tick <= ITEM_LOCK_TICKS } : null,
+      me: this.phase === 'playing' ? { spd: me.s.spd, jmp: me.s.jmp, shd: me.s.shd, slw: me.s.slw, ecl: me.s.ecl, item: me.item, arm: me.arm } : null,
       code: null,
       ping: null,
       spectating: false,

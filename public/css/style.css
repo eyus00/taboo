@@ -50,7 +50,7 @@ h1, h2, h3 { text-wrap: balance; }
 p, li { text-wrap: pretty; }
 /* a press is felt at once: whatever can be pressed gives a little (0.96), unless it cannot be pressed right now */
 .tool, .link { transition: scale 150ms ease-out; }
-.btn:not(:disabled):active, .plate:active, .tool:active { scale: 0.96; }
+.btn:not(:disabled):active, .tool:active { scale: 0.96; }
 .entry:active { scale: 0.98; }
 /* (pinch-zoom is the reader's to use in the menus; a double tap on a control is a tap, not a zoom) */
 button, input, label, [role='button'] { touch-action: manipulation; }
@@ -195,12 +195,16 @@ kbd {
   .btn:hover:not(:disabled) { translate: 0 -2px; }
   .btn.primary:hover:not(:disabled)::before { background-image: var(--stroke-deep-plain); }
 }
-/* close: the cross in the top right corner, with its key */
-.m-x { flex: none; display: inline-flex; align-items: center; gap: 8px; min-width: 44px; min-height: 44px; padding: 0 6px; margin-left: auto; border: 0; background: none; color: var(--ink); font-size: 19px; transition: scale 150ms ease-out; }
+/* close: a cross in a circle, in the top right corner, with its key beside it */
+.m-x { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 2px; margin-left: auto; border: 0; background: none; color: var(--ink); transition: scale 150ms ease-out; }
+.m-x .ring { width: 38px; height: 38px; display: grid; place-items: center; font-size: 15px; background: var(--paper-lit); border: 2px solid var(--ink); border-radius: 50%; transition: background-color 150ms ease-out, color 150ms ease-out; }
 .m-x kbd { background: var(--paper-lit); }
-.m-x:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+.m-x:focus-visible { outline: none; }
+.m-x:focus-visible .ring { outline: 3px solid var(--red); outline-offset: 2px; }
 .m-x:active { scale: 0.96; }
-@media (hover: hover) { .m-x:hover { color: var(--red-deep); } }
+@media (hover: hover) { .m-x:hover .ring { color: var(--paper); background: var(--ink); } }
+/* (words for a screen reader only) */
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .link { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 5px 0 3px; color: var(--soft); font: 600 14px/1.2 var(--serif); border-bottom: 1.5px solid currentColor; }
 @media (hover: hover) { .link:hover { color: var(--red-deep); } }
 .link:focus-visible { color: var(--red-deep); }
@@ -241,29 +245,18 @@ input[type='text']:focus { border-bottom-color: var(--red); outline: none; }
   .entry.primary:hover::before { background-image: var(--stroke-deep-plain); }
 }
 
-/* who you are: a name plate under your own seal, set apart from the settings below it */
+/* your own seal */
 .seal.hanko { font: 400 1em/1 var(--brush); padding: 0.06em 0.06em 0 0; }
 .seal.hanko.huge { font-size: 64px; transform: rotate(-6deg); }
-.plate {
-  position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 6px 12px 6px 8px; text-align: left;
-  background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 4px rgba(28, 27, 31, 0.4);
-  transition: transform 0.14s, scale 150ms ease-out;
-}
-.plate .seal { font-size: 21px; transform: rotate(-5deg); transition: transform 0.14s; }
-.plate span { display: flex; flex-direction: column; min-width: 0; margin-right: auto; }
-.plate small { font: 800 10.5px/1.2 var(--serif); letter-spacing: 0.22em; text-transform: uppercase; color: var(--red-deep); }
-.plate b { font: 400 24px/1.15 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; }
-.plate kbd { min-width: 22px; height: 22px; font-size: 11px; }
-.plate:focus-visible, .plate[aria-current] { outline: none; border-color: var(--red); box-shadow: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 4px var(--red); transform: translateX(6px); }
-@media (hover: hover) { .plate:hover { outline: none; border-color: var(--red); box-shadow: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 4px var(--red); transform: translateX(6px); } }
-.plate:focus-visible .seal, .plate[aria-current] .seal { transform: rotate(6deg) scale(1.08); }
-@media (hover: hover) { .plate:hover .seal { transform: rotate(6deg) scale(1.08); } }
-.plate:focus-visible kbd { opacity: 1; }
 
 /* the settings under it: a brush drawing in an ink circle, its name, its key */
 .foot { display: flex; gap: 2px; margin: 0 -6px; }
 .tool { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 4px 2px 3px; border: 0; background: none; color: var(--soft); }
 .tool .ring { width: 48px; height: 48px; display: grid; place-items: center; font-size: 20px; color: var(--ink); background: var(--enso) center / 100% 100% no-repeat; transition: transform 0.14s; }
+.tool .ring.you { background: none; }
+.tool .ring.you .seal { font-size: 25px; transform: rotate(-5deg); }
+@media (hover: hover) { .tool:hover .ring.you { background: none; } }
+.tool:focus-visible .ring.you { background: none; outline: 3px solid var(--red); outline-offset: 2px; }
 .tool b { max-width: 100%; font: 800 11.5px/1.25 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tool kbd { position: absolute; top: -2px; left: calc(50% + 13px); min-width: 20px; height: 20px; padding: 0 3px; font-size: 10.5px; color: var(--ink); background: var(--paper-lit); opacity: 1; transform: rotate(6deg); }
 .tool:focus-visible, .tool[aria-current] { color: var(--red-deep); outline: none; }
@@ -532,40 +525,9 @@ body:not(.no-kbd) .touch-only { display: none; }
   /* the title scroll keeps its place on the left... */
   .screen.home { grid-column: 1; position: sticky; top: 0; align-self: start; height: 100vh; height: 100dvh; min-height: 0; padding-left: clamp(30px, 3.4vw, 72px); padding-right: 0; }
   .home .scroll { width: clamp(366px, 28.4vw, 430px); padding-left: 32px; padding-right: 32px; }
-  @media (prefers-reduced-motion: no-preference) { .home .scroll { transition: width 180ms ease-out; } }
   /* ...and whatever is opened hangs beside it (the lantern keeps the corner) */
-  .screen.panel { grid-column: 2; padding-left: 22px; padding-right: clamp(64px, 5vw, 96px); }
+  .screen.panel { grid-column: 2; padding-left: clamp(30px, 2.6vw, 56px); padding-right: clamp(70px, 5.4vw, 104px); }
   .screen.panel.over { padding-left: 26px; padding-right: 26px; }
-  /* While something is open the title scroll folds into a strip down the
-     left: its seal, Play and Practice, your own seal, and the three tools,
-     one under the other - still there to press, out of the way of what you
-     opened. */
-  body.has-panel .screen.home { padding-left: 20px; }
-  body.has-panel .home .scroll { width: 100px; padding: 18px 12px 14px; gap: 14px; }
-  body.has-panel .home .title, body.has-panel .home .lead, body.has-panel .home .legend, body.has-panel .home .error, body.has-panel .home .plate small { display: none; }
-  body.has-panel .home .logo { justify-content: center; padding: 0; }
-  body.has-panel .home .seal.big { margin: 0; font-size: 26px; }
-  body.has-panel .home .menu { gap: 10px; }
-  body.has-panel .home .entry { flex-direction: column; justify-content: center; gap: 4px; min-height: 70px; padding: 9px 2px 6px; text-align: center; }
-  body.has-panel .home .entry.primary::before { inset: 0 -5px; }
-  body.has-panel .home .entry span { margin: 0; }
-  body.has-panel .home .entry b { font-size: 17px; }
-  body.has-panel .home .entry.primary b { font-size: 20px; }
-  body.has-panel .home .entry > .ic { font-size: 21px; }
-  body.has-panel .home .entry.primary:focus-visible, body.has-panel .home .entry.primary:hover { translate: 0 -2px; }
-  body.has-panel .home .entry.primary:focus-visible::after { display: none; }
-  body.has-panel .home .entry.primary:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
-  body.has-panel .home .entry kbd, body.has-panel .home .plate kbd { position: absolute; top: -7px; right: -5px; min-width: 19px; height: 19px; font-size: 10.5px; color: var(--ink); background: var(--paper-lit); opacity: 1; }
-  body.has-panel .home .plate { flex-direction: column; gap: 3px; padding: 8px 2px 5px; text-align: center; }
-  body.has-panel .home .plate span { margin: 0; max-width: 100%; }
-  body.has-panel .home .plate b { font-size: 14px; padding: 0; }
-  body.has-panel .home .foot { flex-direction: column; gap: 10px; margin: 0; }
-  /* (on Play a digit is part of a room's code, so the strip does not offer 1, 2, 3 there) */
-  body[data-panel='rooms'] .home .entry kbd, body[data-panel='rooms'] .home .plate kbd { display: none; }
-  body.has-panel .home .plate:hover, body.has-panel .home .plate:focus-visible { transform: none; translate: 0 -2px; }
-  .lantern { width: 34px; }
-  .conn { right: clamp(10px, 1.3vw, 28px); }
-  .conn-note { margin-top: 14px; }
 }
 @media (max-width: 1279.98px) {
   /* one thing at a time */
@@ -640,8 +602,6 @@ body:not(.no-kbd) .touch-only { display: none; }
   .tool .ring { width: 40px; height: 40px; font-size: 17px; }
   .numpad button { height: 36px; font-size: 19px; }
   .digits span { height: 50px; width: 44px; font-size: 28px; }
-  .plate { padding-top: 3px; padding-bottom: 3px; }
-  .plate b { font-size: 21px; }
   .seal.hanko.huge { font-size: 46px; }
   /* how to play: the picture beside its words */
   .lessons { grid-template-columns: minmax(0, 1fr); }
@@ -652,7 +612,7 @@ body:not(.no-kbd) .touch-only { display: none; }
 @media (max-height: 560px) and (min-width: 620px) {
   /* a phone on its side: the title sits beside the menu, with your name plate and the settings under the menu */
   .home .scroll { max-width: 740px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); column-gap: 28px; align-items: center; }
-  .home .logo, .home .lead, .home .error, .home .plate { grid-column: 1; }
+  .home .logo, .home .lead, .home .error { grid-column: 1; }
   .home .menu { grid-column: 2; grid-row: 1 / span 2; }
   .home .foot { grid-column: 2; grid-row: 3 / span 2; }
   .home .error:empty { display: none; }
@@ -661,8 +621,8 @@ body:not(.no-kbd) .touch-only { display: none; }
 @media (prefers-reduced-motion: reduce) {
   #petals { display: none; }
   .digits.bad { animation-duration: 0.01s; }
-  .entry, .entry::before, .plate, .plate .seal, .btn, .tool, .tool .ring, .link { transition: none; }
-  .btn:active, .plate:active, .tool:active, .entry:active { scale: none; }
+  .entry, .entry::before, .btn, .tool, .tool .ring, .link { transition: none; }
+  .btn:active, .tool:active, .entry:active { scale: none; }
   .digits span.next::after { animation: none !important; }
   .lantern, .conn .glow, .conn .lantern svg { animation: none !important; }
   .conn.bad .glow, .conn.wait .glow { opacity: 0.35; }
@@ -672,4 +632,3 @@ body:not(.no-kbd) .touch-only { display: none; }
   .verdict .seal { animation: none; }
 }
 @keyframes toast-calm { 0% { opacity: 0; } 8%, 85% { opacity: 1; } 100% { opacity: 0; } }
-}

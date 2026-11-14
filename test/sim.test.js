@@ -4,11 +4,11 @@ import {
   PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, MOVE_SPEED, IMMUNE_TICKS, STUN_TICKS, RESPAWN_TICKS,
   SPEED_BUFF_MUL, TOUCH, AIR_JUMPS, twistById, IN_USE, ITEM_KINDS, BOX_FIRST_TICKS, ITEM_ARM_TICKS, STORM_SPEED, IT_SPEED_MUL,
   BLAST_RADIUS, BOMB_POINTS, FLAG_POINTS, FLAG_CAP_TICKS, FLAG_PAY_TICKS, FLAG_HALF, FLAG_UP, LAUNCH_VX, LAUNCH_VY,
-  MAX_PLAYERS, PLAYER_COLORS, TEAM_SLOTS,
+  MAX_PLAYERS, PLAYER_COLORS, TEAM_SLOTS, ITEM_INFO, BODY_SCALE, BOX_EVERY_TICKS, QUAKE_STUN_TICKS, WARP_GAP, WARP_DROP, ECLIPSE_TICKS,
 } from '../shared/config.js';
 import { ARENAS, arenaById, TILE, rampY } from '../shared/arenas.js';
-import { makeState, stepPlayer, packState, unpackState, STATE_LEN } from '../shared/physics.js';
-import { Sim, standings, cupPoints, makeTeams } from '../shared/sim.js';
+import { makeState, stepPlayer, packState, unpackState, STATE_LEN, publicFlags, PF_DARK, isFree } from '../shared/physics.js';
+import { Sim, standings, cupPoints, makeTeams, warpSpots } from '../shared/sim.js';
 import { buildNav, surfaceAt } from '../shared/nav.js';
 import { makeBot, botThink } from '../shared/bots.js';
 
@@ -339,7 +339,8 @@ test('"it" tags by grazing: within a few pixels is enough, and players pass thro
   assert.ok(c.s.x > b.s.x + PW, 'ran through both');
 });
 
-test('after a tag: 0.4s freeze for the new it, 1s no tag-backs', () => {
+test('after a tag: a short freeze for the new it (0.3 s), then no tag-backs for a moment (0.7 s)', () => {
+  assert.ok(STUN_TICKS < IMMUNE_TICKS, 'the old it is still protected when the new one can move again');
   const { sim, a, b } = duel(0);
   sim.step([0, 0]);
   assert.equal(sim.it, 1);
@@ -388,7 +389,9 @@ test('lag compensation: a touch on where the target was on the tagger\'s screen 
   assert.equal(sim.it, 1, 'hit against the position a actually saw');
 });
 
-test('lucky boxes: you get an item to keep and set it off yourself - one at a time, and not in the last seconds', () => {
+test('lucky boxes: you get an item to keep and set it off yourself - one at a time, any time up to the buzzer', () => {
+  assert.deepEqual(ITEM_KINDS, ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'quake', 'warp', 'eclipse']);
+  for (const k of ITEM_KINDS) assert.ok(ITEM_INFO[k].name && ITEM_INFO[k].blurb, `${k} has a name and a blurb`);
   const sim = new Sim(box, () => 0.4);
   const a = sim.add(0);
   const b = sim.add(1);
@@ -467,22 +470,181 @@ test('lucky boxes: you get an item to keep and set it off yourself - one at a ti
   assert.ok(a.s.slw > 0 && b.s.slw === 0);
   for (let i = 0; i < 20; i++) sim.step([IN_LEFT, 0]);
   assert.ok(Math.abs(Math.abs(a.s.vx) - MOVE_SPEED * IT_SPEED_MUL * STORM_SPEED) < 0.5, `slow motion ${a.s.vx}`);
+  // Quake: everyone else, however far away, is thrown straight up and is out of it for over a second
   apart();
-  use(b, 'goo');
-  assert.equal(sim.goo.length, 1, 'a puddle where b stood');
-  b.s.x = 2950;
-  a.s.x = 2700;
+  const far = sim.add(2);
+  far.s.x = 300; // 2500 px from b: far outside any blast
+  far.s.y = floorY;
+  sim.step([0, 0, 0]);
+  use(b, 'quake');
+  assert.ok(a.s.stun > QUAKE_STUN_TICKS - 3 && far.s.stun > QUAKE_STUN_TICKS - 3 && b.s.stun === 0, 'everyone but whoever set it off is stunned');
+  assert.ok(QUAKE_STUN_TICKS >= 72 && QUAKE_STUN_TICKS <= 90, 'for 1.2 to 1.5 seconds');
+  assert.ok(a.s.vy < 0 && !a.s.ground && far.s.vy < 0 && !far.s.ground && b.s.ground, 'and in the air');
+  const ax0 = a.s.x;
+  let peak = a.s.y;
+  for (let i = 0; i < QUAKE_STUN_TICKS - 2; i++) {
+    sim.step([IN_RIGHT, 0, IN_LEFT]);
+    peak = Math.min(peak, a.s.y);
+  }
+  assert.ok(floorY - peak > 50 && floorY - peak < 140, `thrown ${floorY - peak} px up`);
+  assert.ok(a.s.x === ax0 && a.s.ground && a.s.y === floorY, 'straight up and down again: no push sideways, no moving meanwhile');
+  for (let i = 0; i < 6; i++) sim.step([IN_RIGHT, 0, 0]);
+  assert.ok(a.s.stun === 0 && a.s.x > ax0, 'then they are back in the game');
+  // Warp, as a runner: to the standing spot furthest from whoever is it
+  apart();
+  const spots = warpSpots(box);
+  assert.ok(spots.length >= 6, 'starts, flag stands and the ground under box spots are places to warp to');
+  const off = ([x, y]) => Math.hypot(a.s.x - x, a.s.y - y);
+  const furthest = spots.reduce((best, sp) => (off(sp) > off(best) ? sp : best));
   sim.events.length = 0;
-  for (let i = 0; i < 40 && a.s.stun === 0; i++) sim.step([IN_RIGHT, 0]);
-  assert.ok(a.s.stun > 0 && sim.goo.length === 0 && sim.events.some((e) => e.type === 'slip'), 'whoever steps in it slips, and the puddle is gone');
-  // nothing works in the final seconds
+  use(b, 'warp');
+  assert.deepEqual([b.s.x, b.s.y], furthest, 'as far from "it" as there is somewhere to stand');
+  assert.ok(off(furthest) > 1900 && b.s.ground, 'the other end of the arena, on the ground');
+  // Warp, as "it": right beside the nearest runner, on the side they are running towards
   apart();
-  sim.endsAt = sim.tick + 120;
+  far.s.x = 1250; // another runner, further off
+  far.s.y = floorY;
+  far.s.stun = 0;
+  for (let i = 0; i < 12; i++) sim.step([0, IN_RIGHT, 0]); // b runs away to the right
+  use(a, 'warp');
+  const beside = a.s.x - b.s.x - PW; // the air between them
+  assert.ok(beside > TOUCH && beside <= WARP_GAP && a.s.y === floorY && a.s.ground, `"it" lands ${beside} px in front of the nearest runner`);
+  assert.equal(sim.it, 0, 'not touching yet: there is a blink in which to jump');
+  assert.ok(sim.events.some((e) => e.type === 'use' && ITEM_KINDS[e.kind] === 'warp' && e.to === 1 && e.tx > 2700), 'the event says who was warped to, and where');
+  for (let i = 0; i < 12 && sim.it === 0; i++) sim.step([IN_LEFT, 0, 0]);
+  assert.equal(sim.it, 1, 'and a step later they are tagged');
+  sim.remove(2);
+  // Eclipse: night for everyone else - a timer on each of them that travels in their state like the others
+  apart();
+  use(b, 'eclipse');
+  assert.ok(a.s.ecl > ECLIPSE_TICKS - 3 && b.s.ecl === 0, 'night falls on everyone but whoever called it');
+  assert.ok(publicFlags(a.s) & PF_DARK && !(publicFlags(b.s) & PF_DARK), 'and everybody is told who is in the dark');
+  assert.equal(unpackState(JSON.parse(JSON.stringify(packState(a.s)))).ecl, a.s.ecl, 'the timer is part of the state a browser predicts from');
+  const before = a.s.x;
+  for (let i = 0; i < ECLIPSE_TICKS; i++) sim.step([i < 30 ? IN_RIGHT : 0, 0]);
+  assert.ok(a.s.ecl === 0 && a.s.x > before + 100, 'it lifts after 4 seconds; meanwhile they can still move');
+  // boxes keep coming and items keep working right up to the buzzer (there is no lock near the end any more) - and nothing after it
+  apart();
+  assert.equal(sim.locked, undefined);
+  sim.boxes = [];
+  for (let i = 0; i <= BOX_EVERY_TICKS; i++) sim.step([0, 0]);
+  assert.equal(sim.boxes.length, 1, 'another box');
   b.item = ITEM_KINDS.indexOf('speed') + 1;
   b.arm = 0;
   sim.step([0, 0]);
   sim.step([0, IN_USE]);
-  assert.ok(b.item > 0 && b.s.spd === 0, 'items are locked near the end of a round');
+  assert.ok(b.item === 0 && b.s.spd > 0);
+  sim.finish(); // the buzzer
+  b.item = ITEM_KINDS.indexOf('jump') + 1;
+  sim.boxes = [];
+  sim.step([0, 0]);
+  sim.step([0, IN_USE]);
+  for (let i = 0; i <= BOX_EVERY_TICKS; i++) sim.step([0, 0]);
+  assert.ok(b.item > 0 && b.s.jmp === 0 && sim.boxes.length === 0, 'after the buzzer nothing goes off and nothing appears');
+});
+
+test('a touch you can see counts: bodies are drawn bigger than their hitboxes, and the tag reaches as far as the drawing', () => {
+  assert.ok(BODY_SCALE >= 1.2 && BODY_SCALE <= 1.3, 'players are drawn about a quarter bigger');
+  const side = ((BODY_SCALE - 1) * PW) / 2; // how far a drawn body sticks out of its hitbox on each side...
+  const head = (BODY_SCALE - 1) * PH; // ...and above it (the feet are where they always were)
+  assert.ok(TOUCH >= 2 * side && TOUCH >= head, `two drawn bodies touch with their hitboxes ${2 * side} px apart side by side, ${head} px apart head to feet`);
+  const flank = duel(2 * side - 1);
+  flank.sim.step([0, 0]);
+  assert.equal(flank.sim.it, 1, 'side by side, the drawings just overlapping');
+  const above = duel(0);
+  above.b.s.x = above.a.s.x;
+  above.b.s.y = floorY - PH - head + 1;
+  above.sim.step([0, 0]);
+  assert.equal(above.sim.it, 1, 'feet on a head');
+  const clear = duel(TOUCH + 6);
+  clear.sim.step([0, 0]);
+  assert.equal(clear.sim.it, 0, 'but not from a distance');
+});
+
+test('Warp never lands in a wall, over a pit, in thorns, a portal or an updraft: tried to and from hundreds of places in every arena', () => {
+  const log = [];
+  for (const { id } of ARENAS) {
+    const arena = arenaById(id); // as a match plays it
+    const spots = warpSpots(arena);
+    assert.ok(spots.length >= 14, `${id}: only ${spots.length} places to warp to`);
+    const stands = (x, y, what) => {
+      assert.ok(isFree({ x, y }, arena), `${id}: ${what} is inside a wall or outside the arena (${x}, ${y})`);
+      const p = makeState(x, y);
+      for (let t = 0; t < 40; t++) stepPlayer(p, 0, arena);
+      assert.ok(p.ground && Math.abs(p.x - x) < 1 && Math.abs(p.y - y) < 1 && p.dead === 0 && p.stun === 0 && p.orb === 0, `${id}: ${what} is not somewhere to stand (${x}, ${y})`);
+    };
+    spots.forEach(([x, y], i) => stands(x, y, `warp spot ${i}`));
+    const nav = buildNav(arena);
+    let tries = 0;
+    let level = 0;
+    let onGround = 0;
+    for (const sf of nav.surfaces) {
+      for (const f of [0.08, 0.5, 0.92]) {
+        for (const up of [0, 60, 190]) {
+          for (const vx of [-250, 0, 250]) {
+            const x = sf.x0 + (sf.x1 - sf.x0) * f;
+            const sim = new Sim(arena, () => 0.5);
+            const it = sim.add(0, tries % arena.spawns.length);
+            const runner = sim.add(1);
+            runner.s.x = Math.round(x - PW / 2);
+            runner.s.y = Math.round(nav.heightAt(sf, x)) - PH - up;
+            runner.s.ground = up === 0;
+            runner.s.vx = vx;
+            sim.start(0);
+            // "it" comes out beside the runner...
+            const hop = sim.warpFor(it);
+            assert.ok(hop && hop.to === runner, `${id}: no way to warp to (${runner.s.x}, ${runner.s.y})`);
+            stands(hop.x, hop.y, `"it" warping to (${runner.s.x}, ${runner.s.y})`);
+            if (up === 0) {
+              onGround++;
+              if (Math.abs(hop.x - runner.s.x) <= PW + WARP_GAP && Math.abs(hop.y - runner.s.y) <= WARP_DROP) level++;
+            }
+            // ...and the runner far away from "it"
+            const away = sim.warpFor(runner);
+            assert.ok(away && away.to === null);
+            stands(away.x, away.y, 'a runner warping away');
+            assert.ok(Math.hypot(away.x - it.s.x, away.y - it.s.y) > arena.w * 0.4, `${id}: a runner warped only ${Math.round(Math.hypot(away.x - it.s.x, away.y - it.s.y))} px away`);
+            tries++;
+          }
+        }
+      }
+    }
+    log.push(`${id} ${spots.length} spots, ${tries} warps, ${Math.round((100 * level) / onGround)}% right beside a runner on the ground`);
+    assert.ok(level >= onGround * 0.9, `${id}: only ${level} of ${onGround} warps to a runner on the ground came out right beside them`);
+  }
+  console.log(`      ${log.join('; ')}`);
+});
+
+test('Eclipse: a bot in the dark forgets who it was after, uses nothing and wanders - until the night lifts', () => {
+  const arena = arenaById('dojo');
+  const sim = new Sim(arena, () => 0.5);
+  sim.add(0);
+  sim.add(1);
+  sim.powerups = false;
+  const mem = [makeBot(1), null];
+  sim.start(0);
+  const tick = () => {
+    sim.step([botThink(sim, 0, mem[0]), 0]); // (the runner just stands there)
+    sim.events.length = 0;
+  };
+  for (let i = 0; i < 40; i++) tick();
+  assert.equal(mem[0].target, 1, 'the bot that is it goes after the other player');
+  sim.players[0].s.ecl = ECLIPSE_TICKS;
+  sim.players[0].item = ITEM_KINDS.indexOf('blast') + 1;
+  sim.players[1].immune = 1e6; // (so bumping into them in the dark changes nothing here)
+  let moved = 0;
+  let from = sim.players[0].s.x;
+  for (let i = 0; i < ECLIPSE_TICKS - 2; i++) {
+    tick();
+    assert.ok(mem[0].blind && mem[0].target === -1 && !mem[0].direct, 'in the dark: nobody to chase');
+    moved += Math.abs(sim.players[0].s.x - from);
+    from = sim.players[0].s.x;
+  }
+  assert.ok(sim.players[0].item > 0, 'and no item is set off blind');
+  assert.ok(moved > 200, `it feels its way about (${Math.round(moved)} px)`);
+  sim.players[1].immune = 0;
+  for (let i = 0; i < 30 && sim.it === 0; i++) tick();
+  assert.ok(!mem[0].blind && (sim.it !== 0 || mem[0].target === 1), 'the night lifts and the chase is on again');
 });
 
 test('team battle: a bomb for every two players, passed only to enemies with free hands; they all go off at the buzzer', () => {

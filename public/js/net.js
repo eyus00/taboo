@@ -9,8 +9,8 @@
 //   * everyone else is drawn slightly in the past, gliding between the last
 //     few snapshots, so 30 updates a second looks smooth at 60+ fps.
 
-import { TICK_MS, TICK_RATE, MAX_PLAYERS, ITEM_LOCK_TICKS, FLAG_CAP_TICKS, twistById } from '/shared/config.js';
-import { stepPlayer, unpackState, PF_GROUND, PF_FACE, PF_STUN, PF_FROZEN, PF_ORB, PF_SPEED, PF_JUMP, PF_SHIELD, PF_DEAD, PF_SLOW } from '/shared/physics.js';
+import { TICK_MS, TICK_RATE, MAX_PLAYERS, FLAG_CAP_TICKS, twistById } from '/shared/config.js';
+import { stepPlayer, unpackState, PF_GROUND, PF_FACE, PF_STUN, PF_FROZEN, PF_ORB, PF_SPEED, PF_JUMP, PF_SHIELD, PF_DEAD, PF_SLOW, PF_DARK } from '/shared/physics.js';
 
 const INTERP_TICKS = 6; // draw other players ~100 ms behind the newest snapshot
 const MAX_EXTRAPOLATE = 4;
@@ -36,7 +36,6 @@ export class NetGame {
     this.offset = null; // server tick minus local clock (in ticks)
     this.it = -1;
     this.boxes = []; // box spots that have a lucky box
-    this.goo = []; // puddles
     this.teamState = 0; // team battle: [score0, score1, bombs (a bit per slot), over, then fill and owner of each flag]
     this.countdownEnd = 0;
     this.goTime = null;
@@ -92,7 +91,7 @@ export class NetGame {
     this.goTime = performance.now();
   }
 
-  // 's' from the server: [tick, playing, it, left, players, pickups, mine]
+  // 's' from the server: [tick, playing, it, left, players, boxes, mine, (unused), team]
   onSnap(m) {
     if (!this.round || this.phase === 'over') return;
     const tick = m[0];
@@ -123,6 +122,7 @@ export class NetGame {
         shd: f & PF_SHIELD ? 1 : 0,
         dead: f & PF_DEAD ? 1 : 0,
         slw: f & PF_SLOW ? 1 : 0,
+        ecl: f & PF_DARK ? 1 : 0,
         item: (e[9] || 0) & 15,
         arm: (e[9] || 0) & 16 ? 1 : 0,
         immune: e[6],
@@ -137,8 +137,7 @@ export class NetGame {
     this.cur = { tick, playing: m[1] === 1, it: m[2], left: m[3], players };
     this.it = m[2];
     this.boxes = m[5];
-    this.goo = m[7] || [];
-    this.teamState = m[8] || 0;
+    this.teamState = m[8] || 0; // (m[7] is no longer used)
     if (this.cur.playing && this.phase === 'countdown') this.startPlaying();
     if (!this.cur.playing && this.phase === 'countdown') this.countdownEnd = performance.now() + m[3];
 
@@ -266,9 +265,10 @@ export class NetGame {
             jmp: p.jmp,
             shd: p.shd,
             slw: p.slw,
+            ecl: p.ecl,
             dead: p.dead,
           });
-          me = { spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw, item: latest.item, arm: latest.arm, locked: false };
+          me = { spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw, ecl: p.ecl, item: latest.item, arm: latest.arm };
         } else {
           players.push({ ...base, ...sample(this.hist[slot], rt, this.phase === 'over') });
         }
@@ -286,7 +286,6 @@ export class NetGame {
       }
     }
     const goAge = this.goTime != null ? (now - this.goTime) / 1000 : null;
-    if (me) me.locked = timeLeft * TICK_RATE <= ITEM_LOCK_TICKS;
     const ts = this.teamState;
     return {
       phase: this.phase === 'idle' ? 'countdown' : this.phase,
@@ -301,7 +300,6 @@ export class NetGame {
       it: this.phase === 'countdown' ? -1 : this.it,
       players,
       boxes: this.boxes,
-      goo: this.goo,
       // team battle: the score, and each flag: where it is, whose it is (-1: nobody's), how full (-1 all team 0 ... 1 all team 1)
       team: ts ? { score: [ts[0], ts[1]], over: !!ts[3], flags: this.arena.bases.map(([x, y], i) => ({ x, y, owner: ts[5 + i * 2] ?? -1, fill: (ts[4 + i * 2] || 0) / FLAG_CAP_TICKS })) } : null,
       me: this.phase === 'playing' ? me : null,
@@ -312,7 +310,7 @@ export class NetGame {
   }
 }
 
-const pose = (p) => ({ vx: p.vx, vy: p.vy, ground: p.ground, face: p.face, stun: p.stun, frz: p.frz, orb: p.orb, spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw });
+const pose = (p) => ({ vx: p.vx, vy: p.vy, ground: p.ground, face: p.face, stun: p.stun, frz: p.frz, orb: p.orb, spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw, ecl: p.ecl });
 
 // Position of a remote player at render time `rt` (in server ticks).
 function sample(h, rt, freeze) {
