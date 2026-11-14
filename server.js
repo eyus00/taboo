@@ -750,7 +750,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(code);
     if (!room) return ack({ error: code.length === CODE_LEN ? `No room ${code}. Check the code and try again.` : 'Room codes are 4 digits.' });
     if (room.players.has(socket.id)) return ack({ ok: true, id: socket.id, room: roomState(room) });
-    if (room.players.size >= MAX_PLAYERS) return ack({ error: `That room is full (${MAX_PLAYERS} players max).` });
+    if (room.players.size >= MAX_PLAYERS) return ack({ error: `That room is full (${MAX_PLAYERS} players max). Ask the host to make room, or host your own.` });
     leaveRoom(socket);
     const player = addPlayer(room, socket, name);
     ack({ ok: true, id: socket.id, room: roomState(room) });

@@ -73,7 +73,7 @@
         <form id="name-form" class="scroll narrow">
           <header class="logo">
             <h1 class="title">Onigokko</h1>
-            <i class="seal big">鬼</i>
+            <i class="seal big" aria-hidden="true">鬼</i>
           </header>
           <label class="lead" for="name">Sign your name, challenger.</label>
           <input id="name" type="text" name="nickname" autocomplete="nickname" maxlength="12" placeholder="Hana" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="go" aria-describedby="name-error" data-autofocus />
@@ -87,7 +87,7 @@
         <div class="scroll narrow">
           <header class="logo">
             <h1 class="title">Onigokko</h1>
-            <i class="seal big">鬼</i>
+            <i class="seal big" aria-hidden="true">鬼</i>
           </header>
           <p class="lead"><span class="kana" lang="ja" aria-hidden="true">鬼ごっこ</span>Tag for 2–10 players. Don't be the oni when the clock runs out.</p>
           <nav class="menu" aria-label="Main menu">
@@ -96,15 +96,16 @@
           </nav>
           <p class="error" id="home-error" role="alert"></p>
           <!-- who you are: a name plate of your own, apart from the settings below it -->
-          <button class="plate" id="btn-profile" aria-label="Your profile (3)">
+          <button class="plate" id="btn-profile">
             <i class="seal hanko" id="home-seal" aria-hidden="true"></i>
             <span><small>Profile</small><b id="home-name"></b></span>
             <kbd>3</kbd>
           </button>
           <div class="foot" role="group" aria-label="Settings">
             <button class="tool" id="btn-help" aria-label="How to play (H)"><span class="ring"><svg class="ic"><use href="#i-scroll" /></svg></span><b>How to play</b><kbd>H</kbd></button>
-            <button class="tool" id="btn-sound" aria-label="Sound (M)"><span class="ring"><svg class="ic on"><use href="#i-sound" /></svg><svg class="ic off"><use href="#i-mute" /></svg></span><b id="sound-label"></b><kbd>M</kbd></button>
+            <button class="tool" id="btn-sound"><span class="ring"><svg class="ic on"><use href="#i-sound" /></svg><svg class="ic off"><use href="#i-mute" /></svg></span><b id="sound-label"></b><kbd>M</kbd></button>
             <button class="tool" id="btn-full" aria-label="Full screen (F)"><span class="ring"><svg class="ic"><use href="#i-full" /></svg></span><b>Full screen</b><kbd>F</kbd></button>
+            <button class="tool" id="btn-still"><span class="ring"><svg class="ic"><use href="#i-goo" /></svg></span><b id="still-label"></b></button>
           </div>
           <p class="legend"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd>move</span><span><kbd>Enter</kbd>choose</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>jump straight in</span></p>
         </div>
@@ -152,7 +153,7 @@
               </div>
             </section>
           </div>
-          <p class="legend"><span><kbd>C</kbd>host</span><span><kbd>P</kbd>open rooms</span><span><kbd>0</kbd>-<kbd>9</kbd>type a code</span><span><kbd>&uarr;</kbd><kbd>&darr;</kbd>move</span></p>
+          <p class="legend"><span><kbd>C</kbd>host</span><span><kbd>P</kbd>open rooms</span><span><kbd>0</kbd>–<kbd>9</kbd>type a code</span><span><kbd>&uarr;</kbd><kbd>&darr;</kbd>move</span></p>
         </div>
       </section>
 
@@ -239,7 +240,7 @@
           <button class="btn primary big" id="btn-resume" data-autofocus><svg class="ic"><use href="#i-play" /></svg>Resume <kbd>Esc</kbd></button>
           <div class="foot" role="group" aria-label="Settings">
             <button class="tool" id="btn-pause-help" aria-label="How to play (H)"><span class="ring"><svg class="ic"><use href="#i-scroll" /></svg></span><b>How to play</b><kbd>H</kbd></button>
-            <button class="tool" id="btn-pause-sound" aria-label="Sound (M)"><span class="ring"><svg class="ic on"><use href="#i-sound" /></svg><svg class="ic off"><use href="#i-mute" /></svg></span><b id="pause-sound"></b><kbd>M</kbd></button>
+            <button class="tool" id="btn-pause-sound"><span class="ring"><svg class="ic on"><use href="#i-sound" /></svg><svg class="ic off"><use href="#i-mute" /></svg></span><b id="pause-sound"></b><kbd>M</kbd></button>
             <button class="tool" id="btn-pause-full" aria-label="Full screen (F)"><span class="ring"><svg class="ic"><use href="#i-full" /></svg></span><b>Full screen</b><kbd>F</kbd></button>
             <button class="tool danger" id="btn-quit" aria-label="Leave the match (Q)"><span class="ring"><svg class="ic"><use href="#i-exit" /></svg></span><b>Leave</b><kbd>Q</kbd></button>
           </div>
@@ -333,11 +334,11 @@
                 <li><span><kbd>Enter</kbd></span> Choose – in a room it starts the match</li>
                 <li><span><kbd>Esc</kbd></span> Back – during a match it opens the pause menu</li>
                 <li><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span> Title screen: play, practice, your profile</li>
-                <li><span><kbd>C</kbd> <kbd>P</kbd> <kbd>0</kbd>-<kbd>9</kbd></span> Play: host a room, look through the open rooms, type a room's code</li>
+                <li><span><kbd>C</kbd> <kbd>P</kbd> <kbd>0</kbd>–<kbd>9</kbd></span> Play: host a room, look through the open rooms, type a room's code</li>
                 <li><span><kbd>G</kbd> <kbd>R</kbd> <kbd>N</kbd></span> In a room: one match or a tournament, which game, how many rounds</li>
                 <li><span><kbd>A</kbd> <kbd>S</kbd> <kbd>T</kbd></span> In a room: next arena, next style (with Shift: previous); in a tournament, T walks along the rounds. Enter on a round's picture opens every style and arena to choose from</li>
                 <li><span><kbd>L</kbd> <kbd>P</kbd> <kbd>B</kbd></span> In a room: round time, lucky boxes, bots (practice)</li>
-                <li><span><kbd>C</kbd> <kbd>V</kbd></span> In a room: copy the invite link, make the room public or private</li>
+                <li><span><kbd>C</kbd> <kbd>V</kbd></span> In a room: copy the invite link, make the room open or private</li>
                 <li><span><kbd>X</kbd> <kbd>Z</kbd></span> Team battle, in a room: change sides; the host shuffles the teams</li>
                 <li><span><kbd>H</kbd></span> Menus: how to play</li>
                 <li><span><kbd>M</kbd> <kbd>F</kbd></span> Anywhere: sound on or off, full screen</li>

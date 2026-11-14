@@ -227,6 +227,7 @@ function show(name, beside = '') {
 
 function setOverlay(name) {
   overlay = name;
+  $('game').inert = !!name; // (the match behind a menu laid over it is out of reach)
   $('s-results').hidden = name !== 'results';
   $('s-pause').hidden = name !== 'pause';
   for (const p of PANELS) $(`s-${p}`).hidden = !(panel === p || (p === 'help' && name === 'help'));
@@ -469,7 +470,7 @@ socket.on('disconnect', () => {
   setConn('bad', 'Reconnecting…', NAP);
   if (room) {
     play.stop();
-    toHome('Lost the connection to the server.');
+    toHome(`Lost the connection to the server. When the lantern is lit again, go back in with code ${room.code}, or host a new room.`);
   }
 });
 
@@ -497,6 +498,18 @@ function paintSound() {
   document.body.classList.toggle('muted', sfx.muted);
 }
 for (const id of ['btn-sound', 'btn-pause-sound']) $(id).addEventListener('click', () => toggleSound(false));
+// the drifting petals and the swaying lantern can be stilled (and stay as they were left)
+function paintStill() {
+  const still = store.get('tag.still') === '1';
+  document.body.classList.toggle('still', still);
+  $('still-label').textContent = `Petals ${still ? 'off' : 'on'}`;
+}
+$('btn-still').addEventListener('click', () => {
+  store.set('tag.still', store.get('tag.still') === '1' ? '0' : '1');
+  sfx.play('click');
+  paintStill();
+});
+paintStill();
 paintSound();
 $('btn-full').hidden = !canFullscreen;
 $('btn-full').addEventListener('click', toggleFullscreen);
@@ -961,7 +974,10 @@ function buildOptions() {
       o.values.forEach(([value, text], i) => {
         const card = el('label', 'card');
         let pic;
-        if (value === 'random') pic = el('span', 'pic any', '?');
+        if (value === 'random') {
+          pic = el('span', 'pic any', '?');
+          pic.setAttribute('aria-hidden', 'true');
+        }
         else {
           pic = el('img', 'pic');
           pic.alt = '';
@@ -1024,10 +1040,10 @@ function syncOptions() {
   if (kind === 'online') {
     door.classList.toggle('on', !!s.open);
     door.disabled = lock;
-    $('open-label').textContent = s.open ? 'Public' : 'Private';
-    const what = s.open ? 'Public room: anyone can find it and come in' : 'Private room: only people with the code can come in';
+    $('open-label').textContent = s.open ? 'Open room' : 'Private room';
+    const what = s.open ? 'Open room: anyone can find it under Open rooms and come in' : 'Private room: only people with the code can come in';
     door.title = what;
-    door.setAttribute('aria-label', lock ? what : `${what}. Make it ${s.open ? 'private' : 'public'} (V)`);
+    door.setAttribute('aria-label', lock ? what : `${what}. Make it ${s.open ? 'private' : 'open'} (V)`);
   }
   paintFaces();
   if (popupOpen('stage')) syncStage();
@@ -1222,6 +1238,9 @@ function repaintPictures() {
   syncOptions();
 }
 
+// (how tall the bar with Start is, for the layouts that pin it to the foot of the screen)
+const measureBar = () => document.body.style.setProperty('--bar', `${document.querySelector('.rm-go').offsetHeight}px`);
+
 function openLobby() {
   show('home', 'lobby');
   buildOptions();
@@ -1330,7 +1349,7 @@ function renderLobby() {
     start.hidden = !amHost();
     start.disabled = !enough;
     setLabel(start, room.settings.game === 'cup' ? 'Start tournament' : 'Start match', 'Enter');
-    $('lobby-note').textContent = enough ? '' : 'You need at least 2 players - send someone the code or the invite link.';
+    $('lobby-note').textContent = enough ? '' : 'You need at least 2 players. Send someone the code or the invite link.';
     $('start-note').textContent = amHost() ? '' : `Waiting for ${host ? host.name : 'the host'} to start…`;
   } else {
     $('players-title').textContent = 'Players';
@@ -1344,13 +1363,14 @@ function renderLobby() {
   setLegend(
     $('lobby-legend'),
     locked()
-      ? [[['Esc', 'Esc'], 'leave the room'], [['C'], 'copy the invite link'], ...(sided ? [[['X'], 'change sides']] : [])]
-      : [[['↑', '↓'], 'move'], [['←', '→'], 'choose'], [['A'], 'arena'], [['S'], 'style'], ...(cup ? [[['T'], 'rounds']] : []), ...(sided ? [[['X'], 'change sides']] : []), [['Enter'], 'start'], [online ? ['Esc', 'Esc'] : ['Esc'], online ? 'leave' : 'back']],
+      ? [[['Esc'], 'leave the room'], [['C'], 'copy the invite link'], ...(sided ? [[['X'], 'change sides']] : [])]
+      : [[['↑', '↓'], 'move'], [['←', '→'], 'choose'], [['A'], 'arena'], [['S'], 'style'], ...(cup ? [[['T'], 'rounds']] : []), ...(sided ? [[['X'], 'change sides']] : []), [['Enter'], 'start'], [['Esc'], online ? 'leave' : 'back']],
   );
   // Where the keyboard starts: the start button; alone in a room, the invite
   // link. (A guest gets no starting point: Enter must not walk them out.)
   const first = start.hidden ? null : start.disabled ? $('btn-copy') : start;
   for (const b of [start, $('btn-copy')]) b.toggleAttribute('data-autofocus', b === first);
+  measureBar();
   // someone joined and the match can start: Enter should start it, not copy the link again
   if (first === start && panel === 'lobby' && !overlay && [$('btn-copy'), document.body].includes(document.activeElement)) focusFirst();
   syncOptions();
@@ -1773,7 +1793,7 @@ function renderResultButtons() {
     $('res-note').textContent = '';
   } else {
     const host = amHost();
-    setLabel(back, host ? (between ? 'End tournament' : 'Back to lobby') : 'Leave', host && !between ? 'Esc' : 'Esc Esc');
+    setLabel(back, host ? (between ? 'End tournament' : 'Back to the room') : 'Leave room', 'Esc');
     again.hidden = !host || between;
     setLabel(again, res.cup ? 'New tournament' : 'Play again', 'Enter');
     again.disabled = !room || room.players.length < MIN_PLAYERS;
@@ -1977,6 +1997,7 @@ addEventListener('resize', () => {
   resizeTimer = setTimeout(() => {
     if (screen === 'game') renderer.arena && renderer.resize();
     else paintScene();
+    if (panel === 'lobby') measureBar();
   }, 150);
 });
 

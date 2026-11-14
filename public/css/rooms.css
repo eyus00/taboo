@@ -78,7 +78,7 @@ h3.lab::after { display: none; }
 .hub-host .words, .hub-tile .words { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-right: auto; }
 .hub-host b { font: 400 34px/1.05 var(--brush); white-space: nowrap; }
 .hub-host small { font-size: 13.5px; font-weight: 600; }
-.hub-host kbd { opacity: 0.85; }
+.hub-host kbd { opacity: 1; }
 .hub-host:focus-visible { outline: none; translate: 6px 0; }
 .hub-host:focus-visible::before { background-image: var(--stroke-deep-plain); }
 /* (where the keyboard is: a pointer of ink, as on every red button) */
@@ -103,13 +103,12 @@ h3.lab::after { display: none; }
 .hub-field { display: flex; align-items: stretch; gap: var(--s2); }
 .hub-field .digits { justify-content: flex-start; gap: var(--s2); cursor: text; }
 .hub-field .digits span { width: 48px; height: 56px; font-size: 30px; }
-.hub-field .digits:focus-visible { outline: none; }
 .hub-join {
   flex: 1 1 0; min-width: 60px; padding: 0 var(--s2) 2px; font: 400 23px/1 var(--brush); color: var(--paper); background: var(--ink);
   border: 2px solid var(--ink); box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 3px rgba(243, 234, 214, 0.5); transition: background-color var(--quick), opacity var(--quick), scale var(--quick);
 }
-.hub-join:not(.ready) { opacity: 0.45; } /* (the code is not whole yet: Join will say so) */
-.hub-join:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; opacity: 1; }
+.hub-join:not(.ready) { color: var(--ink); background: var(--paper-lit); box-shadow: none; } /* (the code is not whole yet: Join will say so) */
+.hub-join:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
 .hub-join:active { scale: var(--press); }
 /* the code is being typed: a caret in the next square */
 .hub-code .digits span.next { position: relative; }
@@ -129,7 +128,7 @@ h3.lab::after { display: none; }
   .hub-host:hover .crest, .hub-tile:hover .crest { rotate: -8deg; }
   .hub-tile:hover { translate: 0 -2px; }
   .hub-tile:hover .go { color: var(--ink); }
-  .hub-join.ready:hover { background: var(--red); border-color: var(--red-deep); box-shadow: inset 0 0 0 2px var(--red), inset 0 0 0 3px rgba(243, 234, 214, 0.6); }
+  .hub-join.ready:hover { background: var(--red-deep); border-color: var(--red-deep); box-shadow: inset 0 0 0 2px var(--red-deep), inset 0 0 0 3px rgba(243, 234, 214, 0.6); }
 }
 
 /* ============================================================ popups ===== */
@@ -212,8 +211,8 @@ button.hub-room:active { scale: 0.99; }
 .hub-room .seal { grid-row: 1 / span 2; font-size: 20px; transform: rotate(-5deg); }
 .hub-room:focus-visible .seal { background: var(--ink); }
 .hub-room .who { grid-row: 1 / span 2; display: flex; flex-direction: column; min-width: 0; }
-.hub-room .who b { font: 400 21px/1.2 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: var(--s2); }
-.hub-room .who small { display: block; font-size: 13px; font-weight: 600; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hub-room .who b { font: 400 21px/1.2 var(--brush); overflow-wrap: anywhere; padding-right: var(--s2); }
+.hub-room .who small { display: block; font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .hub-room .who .ic { display: inline-block; font-size: 12px; margin-right: 5px; vertical-align: -2px; }
 .hub-room .fill { grid-column: 3; grid-row: 1 / span 2; justify-self: end; font: 800 13px/1 var(--serif); font-variant-numeric: tabular-nums; }
 .hub-room .fill b { font-size: 21px; }
@@ -280,7 +279,7 @@ button.hub-room:active { scale: 0.99; }
 .rm-door .open, .rm-door.on .shut { display: none; }
 .rm-door.on .open { display: block; }
 .rm-door.on .mark { background: var(--red); }
-.rm-door b { min-width: 3.6em; text-align: left; }
+.rm-door b { min-width: 6.2em; text-align: left; white-space: nowrap; }
 .rm-door:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
 .rm-door:not(:disabled):active { scale: var(--press); }
 /* (a guest cannot change it: for them it only says which it is) */
@@ -348,7 +347,7 @@ button.rm-round:active { scale: var(--press); }
 /* which round: a numeral pressed in the corner of its picture; and what is special about it - a twist, or double points */
 .rm-round .no { position: absolute; top: var(--s1); left: var(--s1); width: 23px; height: 23px; display: grid; place-items: center; padding: 2px 1px 0 0; font: 400 16px/1 var(--brush); color: #fff3e0; background: var(--ink); clip-path: var(--seal-cut); }
 .rm-round .flag { position: absolute; top: 5px; right: var(--s1); padding: 3px 5px 2px; font: 800 10.5px/1 var(--serif); letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper); background: var(--ink); }
-.rm-round .flag.x2 { top: var(--s1); display: grid; place-items: center; width: 23px; height: 23px; padding: 0 0 1px; font-size: 11px; letter-spacing: 0; text-transform: none; background: var(--red); clip-path: var(--seal-cut); }
+.rm-round .flag.x2 { top: var(--s1); display: grid; place-items: center; width: 23px; height: 23px; padding: 0 0 1px; font-size: 11px; letter-spacing: 0; text-transform: none; background: var(--red-deep); clip-path: var(--seal-cut); }
 
 /* --- the people: a panel of their own, with Start at the foot of it ------- */
 .rm-people { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; padding: var(--s4); background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); }
@@ -425,14 +424,14 @@ button.rm-round:active { scale: var(--press); }
 .pk .card .pic { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background-color: #d9cdb2; }
 .pk .card .cap { display: block; padding: 5px 3px 4px; text-align: center; font-size: 13.5px; font-weight: 800; color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pk .card:active { scale: var(--press); }
-.pk .card.on { background: var(--red); translate: 0 -3px; }
+.pk .card.on { background: var(--red-deep); translate: 0 -3px; }
 .pk .card:has(input:focus-visible) { outline: 3px solid var(--red); outline-offset: 4px; }
 /* the styles: one row */
 .pk-row {
   display: flex; gap: var(--s3); overflow: auto hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: var(--s5);
   margin: 0 calc(-1 * var(--s5)); padding: 10px var(--s5) var(--s2); scrollbar-width: thin; scrollbar-color: var(--ink) transparent;
 }
-.pk-row .card { flex: 0 0 clamp(128px, 16%, 150px); scroll-snap-align: start; }
+.pk-row .card { flex: 0 0 calc((100% - 3 * var(--s3)) / 5.5); scroll-snap-align: start; }
 /* the arenas: every one of them, large */
 .pk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s4) var(--s3); padding: 10px 3px 3px; }
 .pk-about { min-height: calc(2 * 1.45em); font-size: 14px; font-weight: 600; line-height: 1.45; color: var(--soft); text-wrap: pretty; }
@@ -472,13 +471,14 @@ button.rm-round:active { scale: var(--press); }
   .rm-seat.free:not(:has(.invite)) { display: none; }
   .rm-prog.n5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-/* not wide enough for two columns: who is here, then the match - and Start
+/* not wide enough for two columns: the match, then who is here - and Start
    stays in reach, in a bar along the foot of the screen */
 @media (max-width: 980px) {
   .rm-body { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
-  .rm-people { order: -1; }
   .rm-seat.free:not(:has(.invite)) { display: none; }
-  .scroll.rm { margin-bottom: 120px; }
+  /* the page ends where the bar begins (its height is measured: --bar), so nothing can be under it - a notice neither */
+  body.in-room #ui { bottom: var(--bar, 72px); }
+  body.in-room #toasts { bottom: calc(var(--bar, 72px) + var(--s2)); }
   .rm-go {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; margin: 0; gap: var(--s1);
     padding: var(--s2) max(var(--s4), env(safe-area-inset-right)) max(var(--s2), env(safe-area-inset-bottom)) max(var(--s4), env(safe-area-inset-left));
@@ -493,7 +493,7 @@ button.rm-round:active { scale: var(--press); }
   .rm-door { margin-left: 0; }
   .rm-prog.n5, .rm-prog.n7 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rm-prog.n7 small { display: block; }
-  .pk-row .card { flex-basis: 132px; }
+  .pk-row .card { flex-basis: calc((100% - 2 * var(--s3)) / 3.5); }
   .m-top { padding-left: var(--s4); }
   .m-body, .m-foot { padding-left: var(--s4); padding-right: var(--s4); }
   .pk-row { margin: 0 calc(-1 * var(--s4)); padding-left: var(--s4); padding-right: var(--s4); scroll-padding-inline: var(--s4); }
@@ -509,6 +509,7 @@ button.rm-round:active { scale: var(--press); }
   .rm-prog, .rm-prog.n5, .rm-prog.n7 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rm-seats, .rm-teams { grid-template-columns: minmax(0, 1fr); }
   .pk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pk-row .card { flex-basis: calc((100% - var(--s3)) / 2.25); }
   .m-foot .btn { flex: 1 1 auto; }
 }
 @media (max-width: 380px) {
@@ -537,9 +538,12 @@ button.rm-round:active { scale: var(--press); }
   .rm { --tile: 66px; --seat: 42px; --face: 30px; }
   .rm-mode { padding: var(--s2) var(--s3); }
   .rm-mode .crest { width: 38px; height: 38px; font-size: 17px; }
-  .scroll.rm { margin-bottom: 96px; }
   .rm-go { flex-direction: row; align-items: center; justify-content: center; gap: var(--s4); }
   .rm-go .btn.big { width: auto; min-height: 48px; padding: 4px var(--s6); font-size: 25px; }
   .hub-list, .fd .hub-none { height: min(48dvh, 336px); }
   .m-top { padding-top: var(--s2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hub, .rm, .modal { --quick: 0s; }
+  .rm-icon .ic.a, .rm-icon .ic.b { transition: opacity 300ms cubic-bezier(0.2, 0, 0, 1); scale: 1; }
 }
