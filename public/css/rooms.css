@@ -32,28 +32,26 @@
 .scroll.hub { max-width: 540px; gap: var(--s5); }
 .scroll.rm { max-width: 1200px; gap: var(--s4); }
 
-/* a scroll opens by unrolling, wherever you came from (if motion is welcome; if not, it is simply there) */
+/* what you open is there at once: a short fade, and - if motion is welcome - a few pixels' rise */
+.screen.panel > .scroll { animation: rm-in 160ms ease-out backwards; }
+@keyframes rm-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: no-preference) {
-  .screen.panel > .scroll { animation: rm-unroll 0.24s cubic-bezier(0.2, 0.75, 0.25, 1) backwards; }
+  .screen.panel > .scroll { animation-name: rm-in-up; }
 }
-@keyframes rm-unroll { from { clip-path: inset(-24px -24px 100% -24px); } to { clip-path: inset(-24px -24px -70px -24px); } }
+@keyframes rm-in-up { from { opacity: 0; translate: 0 8px; } }
 
 /* the name of something, over it: small red capitals (and, beside them, its key) */
 .lab { display: flex; align-items: center; gap: var(--s2); margin: 0; font: 800 12px/1.2 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; color: var(--red-deep); white-space: nowrap; }
 h3.lab::after { display: none; }
-.lab kbd, .rm-icon kbd, .rm-door kbd, .pk-rounds kbd, .modal .btn kbd, .hub-tile kbd {
   transform: none; min-width: 20px; height: 20px; padding: 0 3px; margin: 0; font-size: 11px; letter-spacing: 0; border-width: 1.5px; opacity: 0.85; color: var(--ink); background: none;
 }
-.modal .btn.primary kbd { color: inherit; }
 
-/* something that is still coming: grey paper with a slow shimmer across it */
-.sk, .rm .pic:has(img:not([src])), .pk .card img.pic:not([src]) {
-  background: linear-gradient(100deg, rgba(28, 27, 31, 0.1) 40%, rgba(28, 27, 31, 0.04) 50%, rgba(28, 27, 31, 0.1) 60%) 0 0 / 250% 100%, #e6dcc5;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .sk, .rm .pic:has(img:not([src])), .pk .card img.pic:not([src]) { animation: rm-shimmer 1.5s linear infinite; }
-}
-@keyframes rm-shimmer { from { background-position: 100% 0, 0 0; } to { background-position: -150% 0, 0 0; } }
+/* something that is still coming: a block of grey paper, pulsing slowly (a
+   word that is not there yet, a row of a list, a picture being painted, a
+   player's face) */
+.sk, .rm .pic:has(img:not([src])), .pk .card img.pic:not([src]), .rm-seat .face:not(:has(img)) { background-color: #ddd2ba; animation: rm-pulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+.rm-seat .face:not(:has(img)) { background-color: var(--c, #ddd2ba); }
+@keyframes rm-pulse { 50% { opacity: 0.45; } }
 /* a button that has been pressed and is waiting for the server */
 [aria-busy='true'] { cursor: progress; pointer-events: none; opacity: 0.6; }
 @media (prefers-reduced-motion: no-preference) {
@@ -162,20 +160,11 @@ h3.lab::after { display: none; }
 .m-top { display: flex; align-items: center; gap: var(--s3) var(--s4); padding: var(--s4) var(--s4) var(--s2) var(--s5); }
 .m-top h2 { margin-right: auto; font-size: clamp(27px, 4vw, 34px); }
 /* the cross: a comfortable target in the corner */
-.m-x { width: 44px; height: 44px; flex: none; display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--ink); font-size: 19px; transition: scale var(--quick); }
-.m-x:focus-visible { outline: none; color: #fff3e0; background: var(--enso-red) center / 40px 40px no-repeat; }
-.m-x:active { scale: var(--press); }
 .m-body { flex: 1 1 auto; min-height: 0; overflow: hidden auto; overscroll-behavior: contain; padding: var(--s2) var(--s5) var(--s4); scrollbar-width: thin; scrollbar-color: var(--ink) transparent; }
 .m-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2) var(--s4); padding: var(--s2) var(--s5) var(--s4); }
-.m-foot .btn { min-height: 46px; padding: 6px var(--s5); font-size: 21px; transition: scale var(--quick); }
-.m-foot .btn:not(:disabled):active { scale: var(--press); }
 /* (a small red button with its key on it: the stroke without the dry streaks that would cross the key) */
-.modal .btn.primary::before { background-image: var(--stroke-red-plain); }
-.modal .btn.primary:focus-visible::before { background-image: var(--stroke-deep-plain); }
 .modal .error:empty, .modal .lead:empty { display: none; }
 @media (hover: hover) {
-  .m-x:hover { color: var(--red); }
-  .modal .btn.primary:hover::before { background-image: var(--stroke-deep-plain); }
 }
 
 /* a question: what will happen, and two buttons that say what each does */
@@ -192,10 +181,6 @@ h3.lab::after { display: none; }
 .fd-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s5); }
 .fd-filters .seg { flex: 0 1 auto; }
 /* a tick box: a small square that takes a seal when it is on */
-.fd-check { display: inline-flex; align-items: center; gap: var(--s2); min-height: 36px; font-size: 14.5px; font-weight: 800; cursor: pointer; }
-.fd-check input { appearance: none; width: 22px; height: 22px; margin: 0; flex: none; background: var(--paper-lit); border: 2px solid var(--ink); cursor: pointer; transition: background-color var(--quick); }
-.fd-check input:checked { background: var(--tick) center / 15px no-repeat, var(--red-deep); border-color: var(--red-deep); }
-.fd-check input:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
 /* the list keeps its height, however many rooms there are: the popup does not jump as you narrow it down */
 .hub-list, .fd .hub-none { height: min(44dvh, 336px); }
 .hub-list { display: flex; flex-direction: column; overflow: hidden auto; overscroll-behavior: contain; margin: 0 calc(-1 * var(--s3)); padding: 0 var(--s3); scrollbar-width: thin; scrollbar-color: var(--ink) transparent; }
@@ -249,6 +234,7 @@ button.hub-room:active { scale: 0.99; }
    and the people (with Start). */
 .rm-top { gap: var(--s3) var(--s4); }
 .rm-top h2 { margin-right: 0; }
+.rm-top .m-x { margin-left: var(--s1); }
 
 /* the room's code, on a wooden tag */
 .rm-code {
@@ -295,6 +281,8 @@ button.hub-room:active { scale: 0.99; }
 .rm-opts:empty { display: none; }
 .rm .opt { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
 .rm .opt.wide { flex: 1 1 100%; }
+.rm .hint { margin-top: -4px; font-size: 13.5px; font-weight: 600; line-height: 1.4; color: var(--soft); }
+.rm .hint:empty { display: none; }
 .rm .seg label { flex: 0 0 auto; }
 .rm .seg span { padding: 7px 13px 6px; }
 .locked .lab kbd, .guest .lab kbd { display: none; }
@@ -305,6 +293,11 @@ button.hub-room:active { scale: 0.99; }
   position: relative; display: flex; align-items: center; gap: var(--s3); min-height: var(--tile); padding: var(--s3); cursor: pointer;
   background: var(--paper-lit); border: 2px solid rgba(28, 27, 31, 0.55); box-shadow: var(--frame); transition: translate var(--quick), scale var(--quick), border-color var(--quick), box-shadow var(--quick);
 }
+button.rm-mode { width: 100%; font: inherit; color: inherit; text-align: left; }
+button.rm-mode:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+button.rm-mode:disabled { opacity: 1; }
+/* (Custom shows the stage that was chosen: its picture at the end of the card) */
+.rm-mode .pic { flex: none; width: 96px; margin-left: auto; box-shadow: 0 0 0 2px var(--ink); }
 .rm-mode input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .rm-mode .crest { width: 46px; height: 46px; flex: none; display: grid; place-items: center; font-size: 20px; color: var(--ink); background: var(--enso) center / 100% 100% no-repeat; transition: rotate var(--quick); }
 .rm-mode .words { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
@@ -324,7 +317,7 @@ button.hub-room:active { scale: 0.99; }
 .locked .rm-mode:not(.on) { display: none; }
 .locked .rm-mode.on { border-color: rgba(28, 27, 31, 0.55); box-shadow: var(--frame); }
 .locked .rm-mode.on::after { display: none; }
-.locked .rm-modes { grid-auto-columns: minmax(0, 340px); }
+.locked .rm-modes, .rm-modes.locked { grid-auto-columns: minmax(0, 360px); }
 
 /* --- the stage: one tile per round (one match is one round) ---------------- */
 /* a picture of an arena (or the "?" of one that is still to be drawn) */
@@ -333,21 +326,7 @@ button.hub-room:active { scale: 0.99; }
 .rm .pic img:not([src]) { visibility: hidden; }
 .rm .pic.any, .pk .card .pic.any { display: grid; place-items: center; font: 400 38px/1 var(--brush); color: var(--red-deep); background: var(--enso) center / auto 74% no-repeat, var(--paper-lit); }
 /* Three to a row - so one match's tile is the size of a three-round tournament's - five for five rounds, and seven in two rows. */
-.rm-prog { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); align-content: start; padding: 3px; }
-.rm-prog.n5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-.rm-prog.n7 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.rm-round { position: relative; min-width: 0; display: flex; flex-direction: column; gap: var(--s2); padding: 0; border: 0; background: none; text-align: left; color: inherit; transition: scale var(--quick); }
-.rm-round .cap { display: flex; flex-direction: column; min-width: 0; padding-left: 1px; }
-.rm-round .name { font: 800 13.5px/1.25 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rm-round small { font-size: 12px; font-weight: 600; line-height: 1.4; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rm-prog.n7 small { display: none; } /* (the picture already shows the style) */
-button.rm-round:focus-visible { outline: none; }
-button.rm-round:focus-visible .pic { outline: 3px solid var(--red); outline-offset: 3px; }
-button.rm-round:active { scale: var(--press); }
 /* which round: a numeral pressed in the corner of its picture; and what is special about it - a twist, or double points */
-.rm-round .no { position: absolute; top: var(--s1); left: var(--s1); width: 23px; height: 23px; display: grid; place-items: center; padding: 2px 1px 0 0; font: 400 16px/1 var(--brush); color: #fff3e0; background: var(--ink); clip-path: var(--seal-cut); }
-.rm-round .flag { position: absolute; top: 5px; right: var(--s1); padding: 3px 5px 2px; font: 800 10.5px/1 var(--serif); letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper); background: var(--ink); }
-.rm-round .flag.x2 { top: var(--s1); display: grid; place-items: center; width: 23px; height: 23px; padding: 0 0 1px; font-size: 11px; letter-spacing: 0; text-transform: none; background: var(--red-deep); clip-path: var(--seal-cut); }
 
 /* --- the people: a panel of their own, with Start at the foot of it ------- */
 .rm-people { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; padding: var(--s4); background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); }
@@ -392,7 +371,6 @@ button.rm-round:active { scale: var(--press); }
 .rm-go .note:empty { display: none; }
 /* (for a guest, in place of Start: a ribbon of ink, as the notices at the foot of the screen are) */
 .rm-go #start-note { align-self: center; padding: var(--s2) var(--s5) 7px; font-weight: 800; color: var(--paper); background: var(--ink); clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
-.rm-go .btn:not(:disabled):active { scale: var(--press); }
 .rm .legend { gap: var(--s1) var(--s4); font-size: 12px; }
 
 @media (hover: hover) {
@@ -400,25 +378,46 @@ button.rm-round:active { scale: var(--press); }
   .rm-door:hover:not(:disabled) .mark { background: var(--red-deep); }
   .rm-mode:hover { translate: 0 -2px; }
   .locked .rm-mode:hover { translate: none; }
-  button.rm-round:hover .pic { translate: 0 -2px; }
   .rm-seat .invite:hover { color: var(--ink); text-decoration-color: currentColor; }
   .rm-seat .cross:hover { opacity: 1; color: var(--ink); }
 }
 
 /* ==================================================== the stage popup ==== */
-/* The art styles in one row (it scrolls sideways; the next one peeks in at
-   the edge), then every arena as a picture, and under them a line about the
-   one that is chosen. */
-.pk { display: flex; flex-direction: column; gap: var(--s3); }
-.pk > *, .fd > * { flex-shrink: 0; } /* (when there is not room for everything the popup scrolls; nothing in it is squeezed) */
-.pk .lab:not(:first-child) { margin-top: var(--s2); }
-.pk-rounds { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); margin-right: auto; min-width: 0; }
-.pk-rounds kbd { margin-right: var(--s2); }
-.pk-rounds .tab { min-width: 40px; height: 40px; padding: 0 var(--s3); border: 0; border-bottom: 2px solid var(--faint); background: none; font: 800 14.5px/1 var(--serif); white-space: nowrap; transition: scale var(--quick); }
-.pk-rounds .tab[aria-checked='true'] { color: #fff3e0; border-bottom-color: transparent; background: var(--stroke-ink) center / 100% 100% no-repeat; }
-.pk-rounds .tab:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
-.pk-rounds .tab:active { scale: var(--press); }
-.m-top:has(.pk-rounds:not([hidden])) h2 { margin-right: var(--s3); }
+/* A tournament lists its rounds down the left; for the one that is picked
+   (or for all of them at once) the right side has the art styles in one row
+   - it scrolls sideways, and the next card always peeks in at the edge -
+   then every arena as a picture, and under them the chosen arena's name
+   with, on a line of its own, what it is like. Random comes first in both. */
+.modal.lg { --w: 1040px; }
+.modal.one { --w: 880px; }
+.pk { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: var(--s5); align-items: start; }
+.pk:has(> .pk-rounds[hidden]) { grid-template-columns: minmax(0, 1fr); }
+.pk-rounds { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.pk-tabs { display: flex; flex-direction: column; gap: var(--s1); }
+.pk-tabs .tab { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 44px; padding: var(--s1) var(--s2); text-align: left; color: var(--ink); border: 0; border-bottom: 1.5px solid var(--faint); background: none; transition: scale var(--quick); }
+.pk-tabs .tab .no { width: 24px; height: 24px; flex: none; display: grid; place-items: center; padding-top: 2px; font: 400 16px/1 var(--brush); color: #fff3e0; background: var(--ink); clip-path: var(--seal-cut); }
+.pk-tabs .tab .words { display: flex; flex-direction: column; min-width: 0; }
+.pk-tabs .tab b { font: 800 13.5px/1.25 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-tabs .tab small { font-size: 12px; font-weight: 600; line-height: 1.3; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-tabs .tab[aria-checked='true'] { color: #fff3e0; border-bottom-color: transparent; background: var(--stroke-ink) center / 100% 100% no-repeat; }
+.pk-tabs .tab[aria-checked='true'] small { color: inherit; }
+.pk-tabs .tab[aria-checked='true'] .no { color: var(--ink); background: #fff3e0; }
+.pk-tabs .tab:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+.pk-tabs .tab:active { scale: var(--press); }
+.pk-main { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.pk-main > * { flex-shrink: 0; }
+.pk-main .lab:not(:first-child) { margin-top: var(--s1); }
+/* the chosen arena: its name, and under it what it is like */
+.pk-about { display: flex; flex-direction: column; gap: 2px; min-height: calc(1.2 * 22px + 2 * 1.45 * 14px + 2px); }
+.pk-about b { font: 400 22px/1.2 var(--brush); }
+.pk-about p { max-width: 68ch; font-size: 14px; font-weight: 600; line-height: 1.45; color: var(--soft); }
+.locked .card { cursor: default; }
+@media (hover: hover) {
+  .pk-tabs .tab:hover:not([aria-checked='true']) { color: var(--red-deep); }
+  .pk .card:hover { translate: 0 -3px; }
+}
+
+/* (picture cards: an arena or a style, its name under it) */
 .pk .card { position: relative; display: block; cursor: pointer; padding: 3px 3px 0; background: var(--ink); transition: translate var(--quick), scale var(--quick), background-color var(--quick); }
 .pk .card input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .pk .card .pic { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background-color: #d9cdb2; }
@@ -426,50 +425,56 @@ button.rm-round:active { scale: var(--press); }
 .pk .card:active { scale: var(--press); }
 .pk .card.on { background: var(--red-deep); translate: 0 -3px; }
 .pk .card:has(input:focus-visible) { outline: 3px solid var(--red); outline-offset: 4px; }
-/* the styles: one row */
 .pk-row {
-  display: flex; gap: var(--s3); overflow: auto hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: var(--s5);
-  margin: 0 calc(-1 * var(--s5)); padding: 10px var(--s5) var(--s2); scrollbar-width: thin; scrollbar-color: var(--ink) transparent;
+  display: flex; gap: var(--s3); overflow: auto hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: var(--s2);
+  margin: 0 calc(-1 * var(--s2)); padding: 10px var(--s2) var(--s2); scrollbar-width: thin; scrollbar-color: var(--ink) transparent;
 }
-.pk-row .card { flex: 0 0 calc((100% - 3 * var(--s3)) / 5.5); scroll-snap-align: start; }
-/* the arenas: every one of them, large */
+.pk-row .card { flex: 0 0 calc((100% - 3 * var(--s3)) / 4.5); scroll-snap-align: start; }
 .pk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s4) var(--s3); padding: 10px 3px 3px; }
-.pk-about { min-height: calc(2 * 1.45em); font-size: 14px; font-weight: 600; line-height: 1.45; color: var(--soft); text-wrap: pretty; }
-.pk-about b { margin-right: var(--s2); font: 400 20px/1 var(--brush); color: var(--ink); }
-.locked .card { cursor: default; }
-@media (hover: hover) {
-  .pk-rounds .tab:hover { color: var(--red-deep); }
-  .pk-rounds .tab[aria-checked='true']:hover { color: #fff3e0; }
-  .pk .card:hover { translate: 0 -3px; }
-}
 
 /* ============================================================ layouts ==== */
 /* a wide screen: a room has the whole of it (the title scroll steps aside) */
 @media (min-width: 1280px) {
-  body.in-room .screen.home { display: none; }
-  body.in-room .screen.panel { grid-column: 1 / -1; padding-left: clamp(40px, 5vw, 120px); padding-right: clamp(40px, 5vw, 120px); }
   /* The stage is as tall for one match as for three or five rounds, and the
      room hangs from where one match puts its top edge - so nothing you are
      about to press moves when you change your mind (seven rounds make it
      longer, downwards). */
-  #stage-view { min-height: 164px; }
   #s-lobby { --room: 690px; align-items: start; padding-top: max(10px, calc((100vh - var(--room) * var(--zoom, 1)) / 2)); }
+}
+/* a wide screen that is only just wide enough for the strip and the room: the cards draw in a little */
+@media (min-width: 1280px) and (max-width: 1359.98px) {
+  .rm-mode { gap: var(--s2); padding: var(--s2) var(--s3); }
+  .rm-mode .crest { width: 38px; height: 38px; font-size: 17px; }
+  .rm-mode b { font-size: 21px; }
+  .rm-mode .pic { width: 80px; }
+  .rm-seat .nm { font-size: 19px; }
+  .rm-team { --face: 24px; }
+  .rm-team .rm-seat { gap: var(--s1); }
+  .rm-team .rm-seat .nm { font-size: 16px; padding-right: 0; }
+  .rm-seat .cross { width: 24px; height: 24px; }
 }
 /* a short wide screen: the same room, a little closer together */
 @media (min-width: 981px) and (max-height: 800px) {
   .rm { --tile: 84px; --seat: 44px; }
   .rm-match { gap: var(--s4); }
-  .pk { gap: var(--s2); }
   .pk-grid { row-gap: var(--s3); }
+  .pk-row .card { flex-basis: calc((100% - 4 * var(--s3)) / 5.5); }
+  .m-top { padding-top: var(--s3); padding-bottom: 0; }
+  .m-foot { padding-top: 0; padding-bottom: var(--s3); }
+  .pk-main { gap: var(--s2); }
   .pk .card .cap { padding: 3px 3px 2px; }
+}
+/* (and a very short one: five arenas to a row, so their names and the line about the chosen one stay in view) */
+@media (min-width: 981px) and (max-height: 740px) {
+  .pk-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 /* two columns, but not wide ones: a game's sign sits above its name, the
    people sit one under the other */
 @media (min-width: 981px) and (max-width: 1279.98px) {
   .rm-mode { flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--s2); }
+  #stage-view .rm-mode { flex-direction: row; align-items: center; gap: var(--s3); }
   .rm-seats, .rm-teams { grid-template-columns: minmax(0, 1fr); }
   .rm-seat.free:not(:has(.invite)) { display: none; }
-  .rm-prog.n5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 /* not wide enough for two columns: the match, then who is here - and Start
    stays in reach, in a bar along the foot of the screen */
@@ -490,9 +495,10 @@ button.rm-round:active { scale: var(--press); }
   .pk-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
+  .pk { grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
+  .pk-tabs { flex-direction: row; overflow: auto hidden; overscroll-behavior-x: contain; padding-bottom: var(--s1); }
+  .pk-tabs .tab { flex: 0 0 auto; width: auto; max-width: 150px; border-bottom: 0; }
   .rm-door { margin-left: 0; }
-  .rm-prog.n5, .rm-prog.n7 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .rm-prog.n7 small { display: block; }
   .pk-row .card { flex-basis: calc((100% - 2 * var(--s3)) / 3.5); }
   .m-top { padding-left: var(--s4); }
   .m-body, .m-foot { padding-left: var(--s4); padding-right: var(--s4); }
@@ -506,7 +512,6 @@ button.rm-round:active { scale: var(--press); }
   .hub-field .digits span { width: 44px; }
   .rm { --tile: 72px; }
   .rm-modes { grid-auto-flow: row; }
-  .rm-prog, .rm-prog.n5, .rm-prog.n7 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rm-seats, .rm-teams { grid-template-columns: minmax(0, 1fr); }
   .pk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pk-row .card { flex-basis: calc((100% - var(--s3)) / 2.25); }
@@ -545,5 +550,6 @@ button.rm-round:active { scale: var(--press); }
 }
 @media (prefers-reduced-motion: reduce) {
   .hub, .rm, .modal { --quick: 0s; }
+  .sk, .rm .pic:has(img:not([src])), .pk .card img.pic:not([src]), .rm-seat .face:not(:has(img)) { animation: none; }
   .rm-icon .ic.a, .rm-icon .ic.b { transition: opacity 300ms cubic-bezier(0.2, 0, 0, 1); scale: 1; }
 }

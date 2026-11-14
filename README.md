@@ -11,7 +11,7 @@
 - **A draw before every round**: three picture cards spin for the arena (shown in that round's style), the art style, and who starts as the oni (their character, in their colour).
 - **Seven art styles**: Ink & Sakura (the house style), Orbit, Xeno, Neon District, Nightmare, Sketchbook and Arcade.
 - **Practice against bots** (one to nine of them), including team battles.
-- Menus drawn like a game: brush lettering on hanging scrolls, a room that reads like a match card, and popups (the stage, open rooms, your profile, questions) laid over what is open like sheets of paper. A how-to-play page where every picture is the real game playing itself. Everything works with the keyboard alone; phones get on-screen controls and a built-in number pad for the room code.
+- Menus drawn like a game: brush lettering on hanging scrolls, a room that reads like a match card, and popups (the stage, open rooms, your profile, questions) laid over what is open like sheets of paper. While something is open, the main menu folds into a strip down the left. A how-to-play page where every picture is the real game playing itself. Everything works with the keyboard alone, and every control shows its key; phones get on-screen controls and a built-in number pad for the room code.
 - No accounts, no database, no API keys. One small Node server.
 
 ## Run it on your computer
@@ -62,12 +62,12 @@ Everything can be done without a mouse, and every screen shows its keys (on phon
 | Anywhere | M sound on / off, F full screen |
 | Title screen | 1 play, 2 practice, 3 your profile (your name), H how to play |
 | Play | C host a room, P look through the open rooms (a popup: filter by game, or only rooms waiting to start), or type the four digits of a room's code (the fourth joins) |
-| In a room | G one match or a tournament, N how many rounds, R which game, A next arena, S next style (Shift goes back), T along the rounds of a tournament (A and S then change that round only), L round time, P lucky boxes, B bots (practice), X change sides, Z shuffle the sides (host), Enter start; also C copy the invite link and V open or private |
-| Choosing the stage | Enter on the stage picture (or on a round's) opens a popup with every style in a row and every arena as a picture; there: arrows choose, A and S step, T picks which round the choice is for, Enter or Esc closes |
+| In a room | G one match or a tournament, N how many rounds, R which game, T the stage (Random, or Custom), A next arena, S next style (Shift goes back), L round time, P lucky boxes, B bots (practice), X change sides, Z shuffle the sides (host), Enter start; also C copy the invite link and V open or private; 1, 2, 3 for the main menu folded away on the left |
+| Choosing the stage | Custom opens a popup with every style in a row and every arena as a picture (Random first in both); a tournament lists its rounds down the left. There: arrows choose, A and S step, T picks which round the choice is for, Enter or Esc closes |
 | In a match | Esc pause menu; there: Esc resume, H how to play, M sound, F full screen, Q leave |
 | Results | Enter play again, Esc back |
 
-Anything that would take you out of a game (Esc or the arrow in a room, Q in the pause menu, Esc on a guest's results, ending a tournament early) asks first: a small popup says what will happen, with *Stay* and *Leave room* (Esc is *Stay*).
+Anything that would take you out of a game (Esc or the cross in a room, Q in the pause menu, Esc on a guest's results, ending a tournament early) asks first: a small popup says what will happen, with *Stay* (Esc) and *Leave room* (Enter).
 
 - The oni tags by touching another player. Grazing counts, and the server also accepts a touch against where the target was on the tagger's own screen, so lag does not rob you of a tag.
 - The tagged player is frozen for 0.4 s so the tagger can get away, and the tagger cannot be tagged back for 1 s (they flash while protected). The oni runs slightly faster than everyone else.
@@ -111,7 +111,7 @@ You hold one item at a time and choose when to use it. Items stop working (and b
 - **Teams** (the default): Team Bomb every round, the sides stay together, points add up, and the last round counts double.
 - **Free-for-all**: each round players are ranked by time spent as the oni &ndash; least is best &ndash; and score one point for every player they beat (9 down to 0 with ten players; equal times share the better place). Everyone who is **not** the oni at the buzzer gets 1 more. From round 2 the leader starts as the oni. A tie at the end is broken by less total time as the oni.
 - Every second round has a twist: *Moon Gravity*, *Turbo* or *Item Frenzy*.
-- **Every round can have its own arena and style.** The stage is shown as one picture per round - one match is simply one round - with a mark on the rounds with a twist and on the last one, which counts double. Pick a round to choose its style and arena; in the popup the tab *Every round* sets them all at once. A round left on Random gets a different arena from the round before.
+- **The stage is Random or Custom.** Random lets the game draw an arena and a style before every round. Custom opens the stage popup: choose them yourself - in a tournament for every round at once, or round by round from the list on the left. A round left on Random gets a different arena from the round before.
 
 ## How it works
 

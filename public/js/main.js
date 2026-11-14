@@ -47,6 +47,7 @@ const cleanName = (raw) =>
     .slice(0, NAME_MAX);
 const INK_COLORS = ['#c8372d', '#2f62b0', '#3c8f57', '#d79a12', '#7a4a9e', '#d9689a', '#d2691e', '#2a8f8f', '#7a5230', '#7c8088']; // the house style's ten player colours
 const isTouch = matchMedia('(pointer: coarse)').matches;
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
 // Key cues are shown wherever there is a keyboard: always on a computer, and
 // on a tablet from the moment someone presses a real key.
 document.body.classList.toggle('no-kbd', isTouch);
@@ -80,7 +81,7 @@ let nextTimer = 0;
 let cardTheme = DEFAULT_THEME; // the style the arena cards were last painted in
 let demos = null; // the live demos on the How to play page (loaded when it is first opened)
 
-const practice = { mode: 'potato', arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true, bots: 3 };
+const practice = { mode: 'potato', arena: 'random', theme: 'random', duration: DEFAULT_DURATION, powerups: true, bots: 3 };
 try {
   Object.assign(practice, JSON.parse(store.get('tag.practice', '{}')));
 } catch {}
@@ -181,11 +182,9 @@ function ask({ title, body = '', yes, no = 'Stay' }) {
   $('ask-title').textContent = title;
   $('ask-body').textContent = body;
   $('ask-body').hidden = !body;
-  $('btn-ask-yes').textContent = yes;
-  $('btn-ask-no').textContent = no;
+  setLabel($('btn-ask-yes'), yes, 'Enter');
+  setLabel($('btn-ask-no'), no, 'Esc');
   $('btn-ask-no').hidden = !no;
-  $('btn-ask-no').toggleAttribute('data-autofocus', !!no);
-  $('btn-ask-yes').toggleAttribute('data-autofocus', !no);
   return new Promise((resolve) => {
     answer = resolve;
     openPopup('ask');
@@ -213,7 +212,8 @@ function show(name, beside = '') {
   $('game').hidden = name !== 'game';
   document.body.classList.toggle('in-game', name === 'game');
   document.body.classList.toggle('has-panel', !!panel);
-  document.body.classList.toggle('in-room', panel === 'lobby'); // a room has the screen to itself
+  document.body.classList.toggle('in-room', panel === 'lobby');
+  document.body.dataset.panel = panel; // (what is open beside the main menu)
   if (name !== 'game') {
     play.stop();
     draw.clear();
@@ -498,18 +498,6 @@ function paintSound() {
   document.body.classList.toggle('muted', sfx.muted);
 }
 for (const id of ['btn-sound', 'btn-pause-sound']) $(id).addEventListener('click', () => toggleSound(false));
-// the drifting petals and the swaying lantern can be stilled (and stay as they were left)
-function paintStill() {
-  const still = store.get('tag.still') === '1';
-  document.body.classList.toggle('still', still);
-  $('still-label').textContent = `Petals ${still ? 'off' : 'on'}`;
-}
-$('btn-still').addEventListener('click', () => {
-  store.set('tag.still', store.get('tag.still') === '1' ? '0' : '1');
-  sfx.play('click');
-  paintStill();
-});
-paintStill();
 paintSound();
 $('btn-full').hidden = !canFullscreen;
 $('btn-full').addEventListener('click', toggleFullscreen);
@@ -809,8 +797,8 @@ const OPTIONS = [
   { id: 'mode', key: 'mode', hot: 'r', label: 'Game', type: 'modes', box: 'opt-mode', values: MODES.map((m) => [m.id, m.name]), line: (v) => MODE_LINE[v], icon: (v) => MODE_ICON[v], show: (s) => s.game !== 'cup' },
   // a tournament is scored on time as the oni (everyone for themselves), or played as a team battle
   { id: 'sides', key: 'mode', hot: 'r', label: 'Game', type: 'modes', only: 'online', box: 'opt-mode', values: [['potato', 'Free-for-all'], ['team', 'Team Bomb']], line: (v) => CUP_LINE[v], icon: (v) => (v === 'team' ? 'bomb' : 'crowd'), on: (s, v) => (v === 'team') === (s.mode === 'team'), show: (s) => s.game === 'cup' },
-  { id: 'arena', hot: 'a', label: 'Arena', type: 'cards', box: 'arena-cards', values: [...ARENAS.map((a) => [a.id, a.name]), ['random', 'Random']], on: (s, v) => stageValue('arena') === v, set: (v) => setStage('arena', v) },
-  { id: 'theme', hot: 's', label: 'Style', type: 'cards', box: 'style-cards', values: [...THEMES.map((t) => [t.id, t.name]), ['random', 'Random']], on: (s, v) => stageValue('theme') === v, set: (v) => setStage('theme', v) },
+  { id: 'arena', hot: 'a', label: 'Arena', type: 'cards', box: 'arena-cards', values: [['random', 'Random'], ...ARENAS.map((a) => [a.id, a.name])], on: (s, v) => stageValue('arena') === v, set: (v) => setStage('arena', v) },
+  { id: 'theme', hot: 's', label: 'Style', type: 'cards', box: 'style-cards', values: [['random', 'Random'], ...THEMES.map((t) => [t.id, t.name])], on: (s, v) => stageValue('theme') === v, set: (v) => setStage('theme', v) },
   { id: 'duration', key: 'duration', hot: 'l', label: 'Round time', box: 'options', values: DURATIONS.map((d) => [d, `${d} s`]) },
   { id: 'powerups', key: 'powerups', hot: 'p', label: 'Lucky boxes', box: 'options', values: [[true, 'On'], [false, 'Off']] },
   { id: 'bots', key: 'bots', hot: 'b', label: 'Bots', only: 'practice', box: 'opt-bots', values: [1, 2, 3, 5, 7, 9].map((n) => [n, String(n)]) },
@@ -1059,17 +1047,18 @@ $('btn-open').addEventListener('click', () => {
 function hotOption(letter, back) {
   const s = settings();
   const picking = popupOpen('stage');
-  if (letter === 't' && isCup()) {
-    if (picking) {
+  if (letter === 't') {
+    if (!picking) {
+      // the stage: Random, or choose it (Custom opens the popup)
+      if (locked()) return false;
+      $(allRandom(planNow()) ? 'btn-stage' : 'btn-stage-random').click();
+      return true;
+    }
+    if (isCup()) {
       // which round the arena and style are for: every round, 1, 2, ...
       const order = ['all', ...planNow().map((_, i) => i)];
       pickRound(order[(order.indexOf(stageSel) + (back ? -1 : 1) + order.length) % order.length]);
-      $('round-strip').querySelector('[aria-checked="true"]')?.focus();
-    } else {
-      // along the rounds of the tournament
-      const tiles = [...$('stage-view').querySelectorAll('button.rm-round')];
-      const i = tiles.indexOf(document.activeElement);
-      tiles[i < 0 ? (back ? tiles.length - 1 : 0) : (i + (back ? -1 : 1) + tiles.length) % tiles.length]?.focus();
+      $('round-tabs').querySelector('[aria-checked="true"]')?.focus();
     }
     return true;
   }
@@ -1078,74 +1067,78 @@ function hotOption(letter, back) {
   if (letter === 'v' && kind === 'online' && !picking) return $('btn-open').click(), true;
   const o = OPTIONS.find((x) => x.hot === letter && (!x.only || x.only === kind) && (!x.show || x.show(s)));
   if (!o || (picking && o.type !== 'cards')) return false;
-  // from the room itself, A and S are for the round whose tile has the focus - or for every round
-  const tile = !picking && o.type === 'cards' ? document.activeElement?.closest?.('.rm-round') : null;
-  if (!picking) stageSel = tile && isCup() ? Number(tile.dataset.i) : 'all';
+  if (!picking) stageSel = 'all'; // (from the room itself, A and S are for every round)
   const i = o.values.findIndex(([v]) => isOn(o, s, v));
   const next = o.values[(i + (back ? -1 : 1) + o.values.length) % o.values.length][0];
   if (o.set) o.set(next);
   else changeSetting({ [o.key]: next });
-  if (!picking) stageSel = 'all';
   if (picking || o.type !== 'cards') (picking ? $('s-stage') : $('s-lobby')).querySelector(`input[name="opt-${o.id}"]:checked`)?.focus();
   sfx.play('click');
   return true;
 }
 
-// --- the stage, as the room shows it: one tile per round, each with its
-// picture, its arena and its style. One match is one round, so it looks and
-// works the same as a tournament with more of them (which also numbers them
-// and marks the ones with a twist and the one that counts double). For the
-// host a tile opens the stage popup for that round.
+// --- the stage, as the room shows it: two cards. Random - the game draws an
+// arena and a style before every round - or Custom, which opens the stage
+// popup to choose them (for each round of a tournament on its own, if you
+// like). A stage with everything left on Random IS Random, so which card is
+// lit is read off the plan itself, and a guest sees the same.
+const allRandom = (plan) => plan.every((st) => st.arena === 'random' && st.theme === 'random');
+const sameStage = (plan) => plan.every((st) => st.arena === plan[0].arena && st.theme === plan[0].theme);
 function renderStage() {
   const box = $('stage-view');
   const cup = isCup();
   const host = !locked();
   const plan = planNow();
+  $('stage-hint').textContent = host ? (cup ? 'Let the game pick, or choose the arena and style of every round.' : 'Let the game pick, or choose the arena and style.') : '';
   const sig = JSON.stringify([kind, cup, host, plan]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
-  const act = document.activeElement;
-  const held = box.contains(act) ? act.dataset.i : null;
+  const held = box.contains(document.activeElement) ? document.activeElement.id : '';
+  const random = allRandom(plan);
   box.textContent = '';
-  box.className = `rm-prog n${plan.length}`;
-  box.toggleAttribute('data-group', plan.length > 1);
-  plan.forEach((st, i) => box.append(roundTile(st, i, plan.length, host, cup)));
-  if (held != null) box.querySelector(`[data-i="${held}"]`)?.focus();
+  box.classList.toggle('locked', !host);
+  const card = (id, on, icon, name, line, act) => {
+    const b = el('button', `rm-mode${on ? ' on' : ''}`);
+    b.type = 'button';
+    b.id = id;
+    b.disabled = !host;
+    b.setAttribute('aria-pressed', String(on));
+    b.insertAdjacentHTML('beforeend', `<span class="crest">${svg(icon)}</span>`);
+    const words = el('span', 'words');
+    words.append(el('b', '', name), el('small', '', line));
+    b.append(words);
+    b.addEventListener('click', act);
+    box.append(b);
+    return b;
+  };
+  card('btn-stage-random', random, 'box', 'Random', cup ? 'A surprise arena and style every round' : 'A surprise arena and style', () => {
+    sfx.play('click');
+    stageSel = 'all';
+    if (!allRandom(planNow())) {
+      setStage('arena', 'random');
+      setStage('theme', 'random');
+    }
+  });
+  // what has been chosen, in a line (and the first round's picture beside it)
+  const st = plan[0];
+  const line = random
+    ? cup ? 'Choose the arena and style of each round' : 'Choose the arena and style'
+    : sameStage(plan) ? `${stageName('arena', st.arena)} · ${stageName('theme', st.theme)}` : `A stage of its own for each of the ${plan.length} rounds`;
+  const custom = card('btn-stage', !random, 'brush', 'Custom', line, () => openStage());
+  if (!random && st.arena !== 'random') custom.append(stagePic(st.arena, st.theme, 240));
+  if (held) $(held)?.focus();
   paintPics(box, () => panel === 'lobby');
-}
-function roundTile(st, i, n, host, cup) {
-  const tile = el(host ? 'button' : 'div', 'rm-round');
-  tile.dataset.i = i;
-  const names = `${stageName('arena', st.arena)}, ${stageName('theme', st.theme)}`;
-  if (host) {
-    tile.type = 'button';
-    if (i === 0) tile.id = 'btn-stage';
-    tile.setAttribute('aria-label', `${cup ? `Round ${i + 1}` : 'Stage'}: ${names}. Change it`);
-    tile.addEventListener('click', () => openStage(cup ? i : 'all'));
-  }
-  const cap = el('span', 'cap');
-  cap.append(el('span', 'name', stageName('arena', st.arena, cup)), el('small', '', stageName('theme', st.theme, cup)));
-  tile.append(stagePic(st.arena, st.theme, 240));
-  if (cup) {
-    tile.append(el('b', 'no', String(i + 1)));
-    // what is special about this round
-    if (i === n - 1) tile.append(el('i', 'flag x2', 'x2'));
-    else if (i % 2 === 1) tile.append(el('i', 'flag', 'Twist'));
-  }
-  tile.append(cap);
-  tile.title = names;
-  return tile;
 }
 
 // --- the stage popup: the art styles in one row, then every arena as a
-// picture. A choice counts at once, for everyone in the room; Done (or the
-// cross, or Esc) only closes the popup. In a tournament the tabs at the top
-// say which round the choice is for.
-let stageFrom = 0; // the tile the popup was opened from
-function openStage(sel = 'all') {
+// picture (Random first in both). A choice counts at once, for everyone in
+// the room; Done (or the cross, or Esc) only closes the popup. In a
+// tournament the rounds are listed down the left: pick one to choose for it
+// alone, or "Every round" to choose for all of them.
+function openStage(sel) {
   if (locked() || panel !== 'lobby') return;
-  stageSel = isCup() ? sel : 'all';
-  stageFrom = stageSel === 'all' ? 0 : stageSel;
+  const plan = planNow();
+  stageSel = !isCup() ? 'all' : sel ?? (sameStage(plan) ? 'all' : 0);
   sfx.play('click');
   openPopup('stage');
   syncOptions();
@@ -1156,55 +1149,61 @@ $('btn-stage-done').addEventListener('click', () => {
   sfx.play('click');
   closeStage();
 });
-// closed, however: the choice is for every round again, and the keyboard goes back to the tile it came from
+// closed, however: the choice is for every round again, and the keyboard goes back to the card it came from
 onClose.stage = () => {
   stageSel = 'all';
-  if (panel === 'lobby') focusFirst($('stage-view').querySelector(`[data-i="${stageFrom}"]`));
+  if (panel === 'lobby') focusFirst($('btn-stage'));
 };
 
 function syncStage() {
   renderRounds();
-  // what the chosen arena is like, in a line under the pictures ('' : the rounds of the tournament do not share one)
+  // the chosen arena: its name, and under it what it is like ('' : the rounds of the tournament do not share one)
   const arena = stageValue('arena');
   $('pk-arena').textContent = arena ? stageName('arena', arena) : 'A different arena each round';
-  $('pk-arena-blurb').textContent = arena ? stageBlurb('arena', arena) : 'Pick a round at the top to see it, or choose here to set them all.';
+  $('pk-arena-blurb').textContent = arena ? stageBlurb('arena', arena) : 'Pick a round on the left to see it, or choose here to give every round the same.';
   // the chosen style is in view in its row
   $('style-cards').querySelector('.card.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   paintCards();
 }
 
-// A tournament: one tab per round, and one for all of them at once.
+// A tournament: its rounds down the left, each with what it is played on, and above them one entry for all of them at once.
 function renderRounds() {
   const strip = $('round-strip');
+  const tabs = $('round-tabs');
   const cup = isCup();
   strip.hidden = !cup;
+  $('s-stage').classList.toggle('lg', cup);
+  $('s-stage').classList.toggle('one', !cup);
   if (!cup) {
     stageSel = 'all';
-    strip.textContent = '';
-    delete strip.dataset.sig;
+    tabs.textContent = '';
+    delete tabs.dataset.sig;
     return;
   }
   const plan = planNow();
   if (stageSel !== 'all' && stageSel >= plan.length) stageSel = 'all';
-  const sig = JSON.stringify([plan.length, stageSel]);
-  if (strip.dataset.sig === sig) return;
-  strip.dataset.sig = sig;
-  const held = strip.contains(document.activeElement) ? document.activeElement.dataset.i : null;
-  strip.textContent = '';
-  const add = (value, text, label) => {
-    const b = el('button', 'tab', text);
+  const sig = JSON.stringify([plan, stageSel]);
+  if (tabs.dataset.sig === sig) return;
+  tabs.dataset.sig = sig;
+  const held = tabs.contains(document.activeElement) ? document.activeElement.dataset.i : null;
+  tabs.textContent = '';
+  const add = (value, no, name, style, label) => {
+    const b = el('button', 'tab');
     b.type = 'button';
     b.dataset.i = String(value);
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(stageSel === value));
     b.setAttribute('aria-label', label);
+    const words = el('span', 'words');
+    words.append(el('b', '', name));
+    if (style) words.append(el('small', '', style));
+    b.append(el('i', 'no', no), words);
     b.addEventListener('click', () => pickRound(value));
-    strip.append(b);
+    tabs.append(b);
   };
-  add('all', 'Every round', 'Every round: one arena and one style for all of them');
-  plan.forEach((_, i) => add(i, String(i + 1), `Round ${i + 1} only`));
-  strip.prepend(el('kbd', '', 'T'));
-  if (held != null) strip.querySelector(`[data-i="${held}"]`)?.focus();
+  add('all', '∗', 'Every round', sameStage(plan) ? '' : 'Give them all the same', 'Every round: one arena and one style for all of them');
+  plan.forEach((st, i) => add(i, String(i + 1), stageName('arena', st.arena, true), stageName('theme', st.theme, true), `Round ${i + 1}: ${stageName('arena', st.arena)}, ${stageName('theme', st.theme)}`));
+  if (held != null) tabs.querySelector(`[data-i="${held}"]`)?.focus();
 }
 function pickRound(value) {
   stageSel = value;
@@ -1309,6 +1308,7 @@ function renderLobby() {
   const online = kind === 'online';
   $('lobby-title').textContent = online ? 'Room' : 'Practice';
   $('btn-copy').hidden = !online;
+  $('lobby-code').hidden = !online;
   $('btn-leave').setAttribute('aria-label', online ? 'Leave the room' : 'Back (Esc)');
   $('opt-bots').hidden = online;
   // a team battle in a room shows the two sides instead of one list
@@ -1317,6 +1317,11 @@ function renderLobby() {
   list.hidden = sided;
   $('squads').hidden = !sided;
   $('btn-shuffle').hidden = !(sided && amHost());
+  if (list.dataset.sided !== String(sided)) {
+    // (not the first time it is shown; and with less motion, a fade only)
+    if (list.dataset.sided) (sided ? $('squads') : list).animate(calm.matches ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'ease-out' });
+    list.dataset.sided = String(sided);
+  }
   const inviting = document.activeElement?.classList.contains('invite');
   list.textContent = '';
   if (sided) renderSquads();
@@ -1364,7 +1369,7 @@ function renderLobby() {
     $('lobby-legend'),
     locked()
       ? [[['Esc'], 'leave the room'], [['C'], 'copy the invite link'], ...(sided ? [[['X'], 'change sides']] : [])]
-      : [[['↑', '↓'], 'move'], [['←', '→'], 'choose'], [['A'], 'arena'], [['S'], 'style'], ...(cup ? [[['T'], 'rounds']] : []), ...(sided ? [[['X'], 'change sides']] : []), [['Enter'], 'start'], [['Esc'], online ? 'leave' : 'back']],
+      : [[['↑', '↓'], 'move'], [['←', '→'], 'choose'], [['T'], 'stage'], ...(sided ? [[['X'], 'change sides']] : []), [['Enter'], 'start'], [['Esc'], online ? 'leave' : 'back']],
   );
   // Where the keyboard starts: the start button; alone in a room, the invite
   // link. (A guest gets no starting point: Enter must not walk them out.)
@@ -1915,8 +1920,8 @@ function shortcut(key, e) {
   const popup = popupTop();
   if (key === 'h' && at !== 'results' && !popup) return at === 'help' ? closeHelp() : openHelp(), true;
 
-  if (at === 'home' || (at === 'help' && screen === 'home')) {
-    // the title scroll's entries (digits are a room code while Play is open)
+  if (at === 'home' || at === 'lobby' || (at === 'help' && screen === 'home')) {
+    // the main menu's entries, also while it is folded away beside a room (on Play the digits are a room's code)
     if (key === '1') return $('btn-play').click(), true;
     if (key === '2') return $('btn-practice').click(), true;
     if (key === '3') return $('btn-profile').click(), true;
@@ -1962,6 +1967,7 @@ function shortcut(key, e) {
   } else if (at === 'ask') {
     // the two answers sit side by side
     if (key === 'arrowleft' || key === 'arrowright') return moveFocus(key === 'arrowright' ? 1 : -1), true;
+    if (key === 'enter' && e.repeat) return true; // (a key held down from before the question is not an answer to it)
   } else if (at === 'pause') {
     if (key === 'q') return leaveIfSure(), true;
   } else if (at === 'results') {

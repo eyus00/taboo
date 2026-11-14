@@ -108,9 +108,9 @@ try {
     assert.equal(res.room.hostId, a.socket.id);
     assert.equal(res.room.players[0].name, 'Anascript');
     const { plan, ...rest } = res.room.settings;
-    assert.deepEqual(rest, { game: 'quick', rounds: 5, mode: 'potato', arena: 'random', theme: 'ink', duration: 60, powerups: true, open: false });
+    assert.deepEqual(rest, { game: 'quick', rounds: 5, mode: 'potato', arena: 'random', theme: 'random', duration: 60, powerups: true, open: false });
     assert.equal(plan.length, 7, 'a stage for every round a tournament can have');
-    assert.ok(plan.every((st) => st.arena === 'random' && st.theme === 'ink'));
+    assert.ok(plan.every((st) => st.arena === 'random' && st.theme === 'random'));
     a.room = res.room;
   });
 

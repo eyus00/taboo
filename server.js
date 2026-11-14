@@ -27,7 +27,6 @@ import {
   DURATIONS,
   DEFAULT_DURATION,
   THEME_IDS,
-  DEFAULT_THEME,
   MODE_IDS,
   CUP_ROUNDS,
   DEFAULT_CUP_ROUNDS,
@@ -727,7 +726,7 @@ io.on('connection', (socket) => {
       phase: 'lobby',
       // open: anyone can find the room under "Public"; otherwise it takes the code
       // arena / theme: what round 1 (and a quick match) is played on; plan: the same for every round of a tournament
-      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], arena: 'random', theme: DEFAULT_THEME, duration: DEFAULT_DURATION, powerups: true, open: msg?.open === true, plan: newPlan('random', DEFAULT_THEME) },
+      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], arena: 'random', theme: 'random', duration: DEFAULT_DURATION, powerups: true, open: msg?.open === true, plan: newPlan('random', 'random') },
       game: null,
       cup: null,
       nextTimer: null,
