@@ -88,7 +88,7 @@ body.in-game #scene, body.in-game #petals { display: none; }
 #ui { position: fixed; inset: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); }
 body.in-game #ui { pointer-events: none; overflow: hidden; }
 .screen {
-  grid-area: 1 / 1; display: grid; place-items: center; min-height: 100%;
+  grid-area: 1 / 1; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; min-height: 100%; /* (the column never grows past the screen, whatever is in it) */
   padding: max(10px, env(safe-area-inset-top)) max(26px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(26px, env(safe-area-inset-left));
 }
 .screen.home { justify-items: start; padding-left: clamp(26px, 9vw, 170px); }
@@ -514,6 +514,15 @@ body:not(.no-kbd) .touch-only { display: none; }
 @media (max-width: 1279.98px) {
   /* one thing at a time */
   body.has-panel .screen.home { display: none; }
+}
+/* a large screen: the menus are drawn larger instead of sitting small in the
+   middle of it (this is layout, not a stretched picture: lettering stays sharp) */
+#ui .scroll { zoom: var(--zoom, 1); }
+@media (min-width: 1700px) and (min-height: 940px) {
+  :root { --zoom: 1.2; }
+}
+@media (min-width: 2300px) and (min-height: 1260px) {
+  :root { --zoom: 1.5; }
 }
 @media (min-width: 1280px) and (max-height: 820px) {
   .scroll { gap: 11px; margin: 24px 0; padding-top: 18px; padding-bottom: 18px; }

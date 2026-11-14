@@ -167,6 +167,8 @@ function setOverlay(name) {
   $('s-results').hidden = name !== 'results';
   $('s-pause').hidden = name !== 'pause';
   $('s-stage').hidden = name !== 'stage';
+  // (the room behind the stage sheet is out of reach while the sheet is open - for Tab and for screen readers too)
+  for (const id of ['s-lobby', 's-home']) $(id).inert = name === 'stage';
   for (const p of PANELS) $(`s-${p}`).hidden = !(panel === p || (p === 'help' && name === 'help'));
   $('s-help').classList.toggle('over', name === 'help');
   input.active = screen === 'game' && !name;
@@ -560,8 +562,10 @@ function typeCode(next) {
   if (top() === 'rooms' && !isTouch && document.activeElement !== $('digits')) $('digits').focus({ preventScroll: true });
 }
 
-// Tapping the code opens our own little number pad under it (a phone has no keys).
-$('digits').addEventListener('click', () => {
+// Tapping the code opens our own little number pad under it (a phone has no
+// keys; with a mouse there is a keyboard, and the squares just take the focus).
+$('digits').addEventListener('click', (e) => {
+  if (!isTouch && e.pointerType !== 'touch') return;
   $('numpad').hidden = false;
   $('digits').classList.add('open');
   $('numpad').scrollIntoView({ block: 'nearest' });
@@ -583,7 +587,10 @@ $('btn-rooms-back').addEventListener('click', closePanel);
 addEventListener('paste', (e) => {
   if (top() !== 'rooms') return;
   const text = e.clipboardData?.getData('text') || '';
-  if (/\d/.test(text)) typeCode(text);
+  // an invite link (its ?room=), a code on its own, or any four digits standing together
+  const found = text.match(/[?&]room=(\d{4})(?!\d)/) || text.match(/(?<!\d)(\d{4})(?!\d)/);
+  if (found) typeCode(found[1]);
+  else if (/\d/.test(text)) typeCode(text);
 });
 
 // Open rooms: the ones anyone may join. The server is asked again every
@@ -665,8 +672,8 @@ const toOpenRooms = () => focusFirst($('games').querySelector('button') || $('bt
 // Every entry of OPTIONS writes one setting (`key`) - or says how with `set`.
 // `box` is where it is drawn and `type` how (a row of words unless it says
 // otherwise), `show` when, `hot` the key that steps it.
-const MODE_LINE = { potato: "Don't be the oni when time runs out", time: 'Least time as the oni wins', team: 'Two sides: hold the flags, pass the bombs' };
-const CUP_LINE = { potato: 'Everyone for themselves: least time as the oni scores', team: 'Two sides all the way: their points add up' };
+const MODE_LINE = { potato: "Don't be the oni when time runs out", time: 'Least time as the oni wins', team: 'Two sides: hold flags, pass bombs' };
+const CUP_LINE = { potato: 'Everyone for themselves: least time as the oni scores', team: 'Two sides all the way: their points add up each round' };
 const OPTIONS = [
   { id: 'game', key: 'game', hot: 'g', label: 'Format', only: 'online', box: 'opt-format', values: [['quick', 'One match'], ['cup', 'Tournament']] },
   { id: 'rounds', key: 'rounds', hot: 'n', label: 'Rounds', only: 'online', box: 'opt-format', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup' },
@@ -815,6 +822,7 @@ function radio(o, value, i) {
   inp.dataset.i = i;
   inp.addEventListener('change', () => {
     sfx.play('click');
+    hovered = null; // (a choice was made: the large view shows it, not whatever the pointer rests on)
     if (o.set) o.set(value);
     else changeSetting({ [o.key]: value });
   });
@@ -973,6 +981,7 @@ function renderStage() {
   const held = box.contains(act) ? act.dataset.i ?? 'hero' : null;
   box.textContent = '';
   box.className = cup ? `rm-prog n${plan.length}` : 'rm-stage';
+  box.style.setProperty('--n', plan.length);
   box.toggleAttribute('data-group', cup);
   plan.forEach((st, i) => box.append(cup ? roundTile(st, i, plan.length, host) : stageHero(st, host)));
   if (held != null) (held === 'hero' ? box.querySelector('button') : box.querySelector(`[data-i="${held}"]`))?.focus();
@@ -1010,8 +1019,8 @@ function roundTile(st, i, n, host) {
   cap.append(el('span', 'name', stageName('arena', st.arena, true)), el('small', '', stageName('theme', st.theme, true)));
   tile.append(stagePic(st.arena, st.theme, 240), el('b', 'no', String(i + 1)), cap);
   // what is special about this round
-  if (i === n - 1) tile.append(el('i', 'mark x2', 'x2'));
-  else if (i % 2 === 1) tile.append(el('i', 'mark', 'Twist'));
+  if (i === n - 1) tile.append(el('i', 'flag x2', 'x2'));
+  else if (i % 2 === 1) tile.append(el('i', 'flag', 'Twist'));
   return tile;
 }
 
@@ -1165,11 +1174,15 @@ function seat(p) {
   const f = el('i', 'face');
   f.dataset.ci = p.ci;
   f.style.setProperty('--c', INK_COLORS[p.ci]);
-  li.append(f, el('span', 'nm', p.name));
-  if (p.you) li.title = 'You';
-  if (p.host) li.append(el('span', 'tag', 'Host'));
-  if (p.bot) li.append(el('span', 'tag bot', 'Bot'));
-  if (p.score) li.append(el('span', 'score', p.score));
+  const who = el('span', 'who');
+  who.append(el('span', 'nm', p.name));
+  const role = [p.host && 'Host', p.bot && 'Bot', p.score].filter(Boolean);
+  if (role.length) who.append(el('small', p.host ? 'role host' : 'role', role.join(' - ')));
+  li.append(f, who);
+  if (p.you) {
+    li.title = 'You';
+    li.setAttribute('aria-label', `${p.name} (you)${role.length ? ', ' + role.join(', ') : ''}`);
+  }
   return li;
 }
 let faceRun = 0;
@@ -1221,6 +1234,7 @@ function renderLobby() {
   list.hidden = sided;
   $('squads').hidden = !sided;
   $('btn-shuffle').hidden = !(sided && amHost());
+  const inviting = document.activeElement?.classList.contains('invite');
   list.textContent = '';
   if (sided) renderSquads();
   else {
@@ -1236,7 +1250,8 @@ function renderLobby() {
         b.type = 'button';
         b.addEventListener('click', copyInvite);
         li.append(b);
-      }
+        if (inviting) queueMicrotask(() => b.focus());
+      } else li.setAttribute('aria-hidden', 'true');
       list.append(li);
     }
   }
@@ -1351,7 +1366,9 @@ function leaveRoom() {
   play.stop();
   toHome('', wasOnline ? $('btn-play') : $('btn-practice'));
 }
-$('btn-leave').addEventListener('click', leaveRoom);
+$('btn-leave').addEventListener('click', () => {
+  if (kind === 'practice' || twice('leave', 'Press again to leave the room')) leaveRoom();
+});
 $('btn-start').addEventListener('click', () => {
   sfx.play('click');
   if (kind === 'practice') play.practice(practice, myName);
@@ -1828,6 +1845,8 @@ function shortcut(key, e) {
     if (key === 'z' && shuffleSides()) return true;
     if (/^[a-z]$/.test(key)) return hotOption(key, e.shiftKey);
   } else if (at === 'stage') {
+    // (the keys are in use: the large view shows what is chosen, not the card the pointer rests on)
+    if (hovered) preview(null);
     // Enter is Done from anywhere but a button (a round's tab is already chosen once it has the focus)
     if (key === 'enter' && (!onButton || act.getAttribute('role') === 'radio')) return closeStage(), true;
     if (key === 'a' || key === 's' || key === 't') return hotOption(key, e.shiftKey);

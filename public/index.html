@@ -194,7 +194,7 @@
               <span class="say"><svg class="ic"><use href="#i-copy" /></svg><b id="copy-label">Invite</b><kbd>C</kbd></span>
             </button>
             <!-- who can come in: a switch, locked or open to the world -->
-            <button class="switch" id="btn-open" role="switch" aria-checked="false" hidden>
+            <button class="switch" id="btn-open" role="switch" aria-checked="false" aria-label="Open to everyone (V)" hidden>
               <span class="track"><span class="knob"><svg class="ic shut"><use href="#i-lock" /></svg><svg class="ic open"><use href="#i-globe" /></svg></span></span>
               <b id="open-label">Private</b><kbd>V</kbd>
             </button>
@@ -226,7 +226,7 @@
               </header>
               <ul class="rm-seats" id="players"></ul>
               <!-- team battle: the two sides face to face -->
-              <div class="rm-teams" id="squads" hidden></div>
+              <div class="rm-teams" id="squads" data-group hidden></div>
               <footer class="rm-go">
                 <p class="note" id="lobby-note"></p>
                 <p class="note" id="start-note"></p>
@@ -240,7 +240,7 @@
 
       <!-- 4b. choosing the stage: every arena and every art style as a picture,
            beside a large view of what is chosen. Opens over the room. -->
-      <section id="s-stage" class="screen over" hidden>
+      <section id="s-stage" class="screen over" role="dialog" aria-modal="true" aria-label="Choose the stage" hidden>
         <div class="scroll pk">
           <header class="bar">
             <button class="icon-btn" id="btn-stage-back" aria-label="Back to the room (Esc)"><svg class="ic"><use href="#i-back" /></svg></button>
@@ -256,7 +256,7 @@
               <h3>Style<kbd>S</kbd></h3>
               <div class="cards" id="style-cards" role="radiogroup" aria-label="Art style" data-group></div>
             </div>
-            <aside class="pk-view" aria-live="polite">
+            <aside class="pk-view">
               <figure class="pk-pic"><img id="pk-img" alt="" hidden /><span class="any" id="pk-any">?</span></figure>
               <b class="pk-name" id="pk-arena"></b>
               <p class="pk-blurb" id="pk-arena-blurb"></p>

@@ -153,6 +153,7 @@ test/                `npm test` - rules/physics checks and scripted online match
 - Only the moving things are drawn on top of that each frame: players, items, sparks. Anything fancy (glows, portals, name tags) is pre-rendered into small sprites.
 - The heads-up display is ordinary HTML, updated ten times a second; only the countdown and the item reel are looked at every frame, and written when they change.
 - Art styles are loaded only when a match needs them.
+- On a large screen (from about 1700 x 940) the menus are laid out 1.2 times larger rather than left small in the middle; pictures inside them are painted at that size, so they stay sharp.
 - If frames still take too long, the game drops ambient animation first and then the resolution of the moving layer.
 
 ## Changing things

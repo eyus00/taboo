@@ -109,7 +109,8 @@ export class Renderer {
     } else {
       cssW = Math.max(1, this.stage.clientWidth);
       cssH = Math.max(1, this.stage.clientHeight);
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      // (a picture inside a menu that is drawn larger - see "a large screen" in style.css - is painted larger too, so it stays sharp)
+      dpr = Math.min((window.devicePixelRatio || 1) * (this.stage.currentCSSZoom || 1), 2);
     }
     const fit = Math.min(cssW / A.w, cssH / A.h);
     const follow = !this.opts.whole;
