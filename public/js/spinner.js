@@ -206,10 +206,28 @@ function build(root, info, opts, T, my) {
       for (const q of p.gang) d.append(figure(el('span', 'one'), q));
       return d;
     };
-    // (two bombs or more: the reel rolls through the players and stops on the carriers, all of them together)
+    // Two bombs or more: every card on the reel is a full hand of carriers -
+    // as many from each side as really start with one - and it stops on the hand that was dealt.
     const gang = team && bombs.length > 1 ? { gang: bombs.map((slot) => players.find((p) => p.slot === slot)) } : null;
+    let hands = players;
+    if (gang) {
+      const key = (g) => g.map((p) => p.slot).sort().join();
+      const seen = new Set([key(gang.gang)]);
+      hands = [];
+      for (let tries = 0; tries < 60 && hands.length < 7; tries++) {
+        // (the same number from each side as in the real deal, drawn at random)
+        const hand = [0, 1].flatMap((t) => {
+          const side = players.filter((p) => info.teams[p.slot] === t).sort(() => Math.random() - 0.5);
+          return side.slice(0, gang.gang.filter((p) => info.teams[p.slot] === t).length);
+        });
+        if (hand.length !== gang.gang.length || seen.has(key(hand))) continue;
+        seen.add(key(hand));
+        hands.push({ gang: hand });
+      }
+      if (!hands.length) hands = [gang]; // (everyone carries one: there is no other hand to show)
+    }
     const land = gang || players.find((p) => p.slot === itSlot);
-    who = reel(team ? 'pic cast sided' : 'pic cast', team ? (bombs.length > 1 ? 'Bombs' : 'The bomb') : leader ? 'The leader is it' : 'Who is it?', players, land, whoCell, spinW, start + 180, tW);
+    who = reel(team ? 'pic cast sided' : 'pic cast', team ? (bombs.length > 1 ? 'Bombs' : 'The bomb') : leader ? 'The leader is it' : 'Who is it?', hands, land, whoCell, spinW && hands.length > 1, start + 180, tW);
     stamp(who, team ? 'fuse big' : 'oni big', spinW ? tW + 30 : 0, team ? BOMB : '鬼');
     rack.append(who);
     const mine = team ? bombs.includes(opts.me) : info.it === opts.me;

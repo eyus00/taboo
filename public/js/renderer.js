@@ -126,8 +126,7 @@ export class Renderer {
     const kCss = this.opts.zoom || (follow ? Math.min(clamp(cssH / VIEW_H, 0.5, 2.4), cssW / VIEW_W_MIN) : fit);
     const pad = follow ? this.opts.padBottom || 0 : 0;
     this.padB = pad / kCss; // the same, in world units
-    // how far the view pulls back to show everything - above that strip at the bottom, where the HUD's dock stands
-    this.zFit = Math.min(1, (follow ? Math.min(cssW / A.w, Math.max(1, cssH - pad) / A.h) : fit) / kCss);
+    this.zFit = Math.min(1, fit / kCss); // how far the view pulls back to show everything
     const bwCss = follow ? A.w * kCss : cssW;
     const bhCss = follow ? A.h * kCss + pad : cssH;
     const budget = MAX_BG_PIXELS * (follow && !this.opts.touch ? clamp((A.w * A.h) / USUAL_AREA, 1, BIG_BG) : 1);
@@ -949,10 +948,8 @@ export class Renderer {
         }
       }
     }
-    // (pulled right back, the arena stands in the middle of what is left above the dock)
-    const whole = Math.min(0, -(vh - A.h - (this.opts.padBottom || 0) / (this.kCss * z)) / 2);
     const tx = vw >= A.w ? (A.w - vw) / 2 : clamp(cx - vw / 2, 0, A.w - vw);
-    const ty = vh >= A.h + this.padB ? whole : clamp(cy - vh / 2, 0, A.h + this.padB - vh);
+    const ty = vh >= A.h + this.padB ? (A.h - vh) / 2 : clamp(cy - vh / 2, 0, A.h + this.padB - vh);
     if (!cam.set) {
       cam.fx = tx;
       cam.fy = ty;
@@ -964,7 +961,7 @@ export class Renderer {
       cam.fy += (ty - cam.fy) * k;
       // never show past the arena's edge while the zoom is still catching up
       cam.fx = vw >= A.w ? (A.w - vw) / 2 : clamp(cam.fx, 0, A.w - vw);
-      cam.fy = vh >= A.h + this.padB ? whole : clamp(cam.fy, 0, A.h + this.padB - vh);
+      cam.fy = vh >= A.h + this.padB ? (A.h - vh) / 2 : clamp(cam.fy, 0, A.h + this.padB - vh);
     }
     // whole scenery pixels (once the zoom has settled): the scenery is then copied exactly, pixel for pixel
     const kr = this.flat ? this.kf : this.kDev;

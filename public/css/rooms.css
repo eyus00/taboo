@@ -235,11 +235,11 @@ button.hub-room:active { scale: 0.99; }
    of whatever you are choosing, the players, and Start. */
 .rm-top { gap: var(--s2) var(--s3); }
 .rm-top h2 { margin-right: 0; }
-.rm-top .m-x { margin-left: var(--s1); }
+.rm-top .m-x { margin-left: auto; }
 
 /* who can come in: a lock on ink, or the world on red, and the word for it */
 .rm-door {
-  position: relative; margin-left: auto; display: inline-flex; align-items: center; gap: var(--s2); min-height: 40px; padding: 3px var(--s3) 3px 6px; color: var(--ink); font: 800 14.5px/1 var(--serif);
+  position: relative; display: inline-flex; align-items: center; gap: var(--s2); min-height: 40px; padding: 3px var(--s3) 3px 6px; color: var(--ink); font: 800 14.5px/1 var(--serif);
   background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); transition: scale var(--quick);
 }
 .rm-door .mark { width: 26px; height: 26px; flex: none; display: grid; place-items: center; margin: 0; font-size: 13px; color: var(--paper); background: var(--ink); clip-path: var(--seal-cut); transition: background-color var(--quick); }
@@ -347,44 +347,28 @@ button.hub-room:active { scale: 0.99; }
 .rm .card.shut .cap { color: #d9d2c2; }
 .rm .card.shut .for { position: absolute; left: 50%; top: 2px; translate: -50% 0; width: calc(100% - 4px); aspect-ratio: 16 / 9; display: grid; place-content: center; justify-items: center; gap: 1px; font: 800 11px/1 var(--serif); color: var(--ink); pointer-events: none; }
 .rm .card.shut .for .ic { font-size: 14px; }
+/* Random is the choice: a tick in the corner of every card says whether it is in the draw (press it to take the card out, or put it back) */
+.rm .card .pool { position: absolute; z-index: 2; left: 5px; top: 5px; width: 19px; height: 19px; display: none; place-items: center; padding: 0; font-size: 11px; color: transparent; background: var(--paper-lit); border: 2px solid var(--ink); transition: scale var(--quick), background-color var(--quick); }
+.rm .card .pool::after { content: ''; position: absolute; inset: -7px; }
+.rm .cards.drawing .card .pool { display: grid; }
+.rm .cards.drawing .card.in .pool { color: #fff3e0; background: var(--ink); }
+.rm .cards.drawing .card:not(.in):not(.shut):not([data-id='random']) { background: #8d877c; }
+.rm .cards.drawing .card:not(.in):not(.shut):not([data-id='random']) .pic { filter: grayscale(1) contrast(0.75) brightness(1.05); opacity: 0.6; }
+.rm .cards .card.shut .pool, .rm .cards.locked .card .pool { display: none; }
+.rm .card .pool:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+.rm .card .pool:active { scale: var(--press); }
 /* (a guest sees what is chosen, not what could have been) */
 .locked .card { cursor: default; }
 .locked .card:not(.on) { display: none; }
 .locked .card.on::after { display: none; }
 .locked .card .for { display: none; }
 
-/* --- the right side: a picture of whatever you are choosing ------------------ */
+/* --- the right side: who plays --------------------------------------------- */
 .rm-side { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; container-type: inline-size; }
-.pv { margin: 0; display: flex; flex-direction: column; gap: var(--s2); }
-.pv-art { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background-color: #d9cdb2; box-shadow: var(--edge); }
-.pv-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
-/* (a game, the lucky boxes, the clock: its sign in a brush circle) */
-.pv-art.sign { display: grid; place-items: center; background: var(--tex, none), var(--paper-lit); }
-.pv-art.sign .crest { height: 64%; aspect-ratio: 1; display: grid; place-items: center; font: 400 58px/1 var(--brush); color: var(--ink); background: var(--enso) center / 100% 100% no-repeat; }
-.pv-art.sign .crest .ic { font-size: 40px; }
-.pv-art.sign.any .crest { color: var(--red-deep); }
-.pv-art.sign.flame .crest, .pv-art.sign.bomb .crest { color: #fff3e0; background-image: var(--enso-red); }
-@media (prefers-reduced-motion: no-preference) {
-  .pv-art.sign .crest { animation: pv-bob 1.8s ease-in-out infinite; }
-  .pv-art.sign.glass .crest .ic { animation: pv-turn 2.6s cubic-bezier(0.6, 0, 0.3, 1) infinite; }
-  .pv-art.sign.bomb .crest { animation: pv-shake 0.9s linear infinite; }
-  .pv-art.sign.flame .crest .ic { animation: pv-flick 0.7s ease-in-out infinite alternate; }
-}
-@keyframes pv-bob { 50% { translate: 0 -5px; rotate: -4deg; } }
-@keyframes pv-turn { 0%, 55% { rotate: 0deg; } 80%, 100% { rotate: 180deg; } }
-@keyframes pv-shake { 0%, 100% { translate: 0 0; } 25% { translate: -2px 1px; } 50% { translate: 2px -1px; } 75% { translate: -1px -2px; } }
-@keyframes pv-flick { from { scale: 0.92 1; } to { scale: 1.06 1.1; } }
-.pv figcaption { display: flex; flex-direction: column; gap: 1px; height: calc(1.15 * 20px + 2 * 1.35 * 12.5px + 1px); overflow: hidden; }
-.pv-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
-.pv figcaption b { font: 400 20px/1.15 var(--brush); white-space: nowrap; }
-.pv figcaption small { flex: none; font: 800 11px/1 var(--serif); letter-spacing: 0.08em; text-transform: uppercase; color: var(--red-deep); white-space: nowrap; }
-.pv figcaption span { font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--soft); }
-
-/* --- the people ---------------------------------------------------------------- */
-.rm-people { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; padding: var(--s2) var(--s3) var(--s3); background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); }
-.rm-people > header { display: flex; align-items: center; gap: var(--s2); min-height: 30px; }
+.rm-people { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; padding: var(--s2) var(--s3) var(--s3); background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); }
+/* over the list: how many seats, all the bots at once, and (in a team game) a fresh deal */
+.rm-people > header { display: flex; align-items: center; gap: var(--s2); height: 38px; padding: 0 9px 5px 0; border-bottom: 2px solid var(--ink); }
 .rm-people > header .lab { margin-right: auto; }
-/* how many play: minus, the number, plus */
 .rm-step { display: inline-flex; align-items: center; gap: 2px; }
 .rm-step output { min-width: 1.4em; text-align: center; font: 800 16px/1 var(--serif); font-variant-numeric: tabular-nums; }
 .rm-pm { position: relative; width: 26px; height: 26px; flex: none; display: grid; place-items: center; padding: 0 0 2px; font: 800 17px/1 var(--serif); color: var(--ink); background: var(--paper-lit); border: 2px solid var(--ink); border-radius: 50%; transition: scale var(--quick), background-color var(--quick), color var(--quick); }
@@ -392,63 +376,64 @@ button.hub-room:active { scale: 0.99; }
 .rm-pm:disabled { color: rgba(28, 27, 31, 0.3); border-color: rgba(28, 27, 31, 0.25); background: none; cursor: default; }
 .rm-pm:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
 .rm-pm:not(:disabled):active { scale: var(--press); }
-/* bots in the empty seats: on or off */
-.rm-bots { position: relative; flex: none; display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 2px 11px 2px 6px; font: 800 12.5px/1 var(--serif); color: var(--soft); background: none; border: 2px solid rgba(28, 27, 31, 0.4); transition: scale var(--quick), background-color var(--quick), color var(--quick); }
+.rm-bots { position: relative; flex: none; display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 2px 11px 2px 6px; font: 800 12.5px/1 var(--serif); color: var(--ink); background: var(--paper-lit); border: 2px solid var(--ink); transition: scale var(--quick), background-color var(--quick), color var(--quick); }
 .rm-bots::after { content: ''; position: absolute; inset: -8px -2px; }
 .rm-bots .ic { font-size: 15px; }
-.rm-bots b { min-width: 1.7em; text-align: left; }
-.rm-bots[aria-pressed='true'] { color: #fff3e0; background: var(--ink); border-color: var(--ink); }
+.rm-bots b { min-width: 2.4em; text-align: left; }
+.rm-bots:disabled { color: rgba(28, 27, 31, 0.35); border-color: rgba(28, 27, 31, 0.25); background: none; cursor: default; }
+.rm-bots:disabled kbd { display: none; }
 .rm-bots kbd, .rm-people .rm-icon kbd { position: absolute; right: -5px; top: -9px; min-width: 16px; height: 16px; padding: 0 2px; font-size: 9.5px; color: var(--ink); background: var(--paper-lit); opacity: 1; }
-.rm-people > header { padding-right: 9px; }
 .rm-bots:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
-.rm-bots:active { scale: var(--press); }
+.rm-bots:not(:disabled):active { scale: var(--press); }
 .rm-people .rm-icon { width: 30px; height: 30px; }
 .rm-people .rm-icon .ring { width: 30px; height: 30px; font-size: 13px; }
-.rm-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s3); }
-/* a seat: the player's picture, their name with the width to itself, and under it what they are here */
-.rm-seat { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: var(--seat); padding: 2px 0; border-bottom: 1.5px solid var(--faint); }
-.rm-seat .face { width: var(--face); height: var(--face); margin: 0; }
-.rm-seat .who { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
-.rm-seat .nm { font: 400 16px/1.1 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 3px 0 0; }
-.rm-seat.me .nm { color: var(--red-deep); text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+
+/* the list: a row a seat - a person, a bot, or nobody yet */
+.rm-seats { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.rm-seat { display: flex; align-items: center; gap: 7px; flex: none; height: var(--seat); min-width: 0; padding: 0 1px; border-bottom: 1.5px solid var(--faint); }
+.rm-seat .face { width: var(--face); height: var(--face); flex: none; margin: 0; }
+.rm-seat .nm { flex: 0 1 auto; min-width: 0; font: 400 17px/1.15 var(--brush); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 2px 0 0; }
+.rm-seat.me .nm { color: var(--red-deep); }
 .rm-seat.bot .nm { color: var(--soft); }
-.rm-seat .role { font: 800 10px/1.1 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rm-seat .role.host { color: var(--red-deep); }
-/* a seat nobody has taken: an outline - and the first of them is the way to fill it */
+/* what they are here: small labels after the name */
+.rm-seat .tag { flex: none; padding: 2px 4px 1px; font: 800 9px/1 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; color: var(--soft); border: 1.5px solid rgba(28, 27, 31, 0.3); }
+.rm-seat .tag.you { color: #fff3e0; background: var(--red-deep); border-color: var(--red-deep); }
+.rm-seat .tag.host { color: var(--red-deep); border-color: currentColor; }
+.rm-seat .score { flex: none; font: 800 10.5px/1 var(--serif); color: var(--soft); white-space: nowrap; }
+/* at the end of the row: what can be done about it */
+.rm-seat .acts { flex: none; display: flex; align-items: center; gap: 4px; margin-left: auto; padding-left: 4px; }
+.rm-seat .act { position: relative; width: 24px; height: 24px; flex: none; display: grid; place-items: center; padding: 0; font-size: 10.5px; color: var(--soft); background: none; border: 1.5px solid rgba(28, 27, 31, 0.35); border-radius: 50%; transition: scale var(--quick), color var(--quick), background-color var(--quick), border-color var(--quick); }
+.rm-seat .act::after { content: ''; position: absolute; inset: -5px -3px; }
+.rm-seat .act.out { font-size: 9px; }
+.rm-seat .act.up .ic { rotate: 180deg; } /* (Moon stands under Sun: its way across is up) */
+.rm-seat .act:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; color: var(--ink); border-color: var(--ink); }
+.rm-seat .act:active { scale: var(--press); }
+/* a seat nobody has: an outline, and what to put in it */
 .rm-seat.free { border-bottom-style: dashed; }
-.rm-seat.free::before { content: ''; width: var(--face); height: var(--face); flex: none; border: 1.5px dashed rgba(28, 27, 31, 0.28); }
-.rm-seat.free:has(.invite)::before { content: '+'; display: grid; place-items: center; font: 800 16px/1 var(--serif); color: var(--soft); }
-.rm-seat .invite { align-self: stretch; flex: 1; min-width: 0; padding: 0; border: 0; background: none; text-align: left; font: 600 12.5px/1.2 var(--serif); color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 4px; }
-.rm-seat .invite:focus-visible { outline: 3px solid var(--red); outline-offset: -3px; color: var(--ink); }
-.rm-seat.none { color: var(--soft); font-style: italic; font-size: 12.5px; border-bottom: 0; }
-/* team battle: the two sides face to face, each under its own colour */
-.rm-teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); align-items: start; }
-.rm-team { --side: #777; --face: 22px; min-width: 0; }
-/* (the side's colour, a shade deeper, so the white lettering on it reads) */
-.rm-team > header { display: flex; align-items: baseline; gap: 6px; min-height: 26px; padding: 4px var(--s2) 1px 10px; color: #fff; background: linear-gradient(rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.16)), var(--side); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
-.rm-team header b { font: 400 18px/1 var(--brush); }
-.rm-team header .n { font: 800 11.5px/1 var(--serif); white-space: nowrap; }
-.rm-team header em { margin-left: auto; font: 800 10.5px/1 var(--serif); letter-spacing: 0.08em; text-transform: uppercase; font-style: normal; white-space: nowrap; }
-.rm-team .rm-seats { grid-template-columns: minmax(0, 1fr); }
-.rm-team .rm-seat { gap: 4px; }
-.rm-team .rm-seat .nm { font-size: 15px; padding-right: 0; }
-/* across to the other side: an arrow in a brush circle */
-.rm-seat .cross { position: relative; flex: none; width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: 0; color: var(--soft); font-size: 10.5px; background: var(--enso) center / 100% 100% no-repeat; opacity: 0.75; transition: scale var(--quick), opacity var(--quick); }
-.rm-seat .cross::after { content: ''; position: absolute; inset: -5px -8px; }
-.rm-seat .cross:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; opacity: 1; color: var(--ink); }
-.rm-seat .cross:active { scale: var(--press); }
-/* (a narrow column: a twelve-letter name still has to be whole - the lettering a size down, and on a side, where the colour says whose, no picture) */
+.rm-seat .face.none { background: none; border: 1.5px dashed rgba(28, 27, 31, 0.3); animation: none; }
+.rm-seat.free .nm { font: 600 12.5px/1.2 var(--serif); color: var(--soft); padding-top: 0; }
+.rm-seat .mini { position: relative; flex: none; min-height: 22px; padding: 2px 7px 1px; font: 800 11px/1 var(--serif); color: var(--ink); background: var(--paper-lit); border: 1.5px solid var(--ink); white-space: nowrap; transition: scale var(--quick), background-color var(--quick), color var(--quick); }
+.rm-seat .mini::after { content: ''; position: absolute; inset: -6px -2px; }
+.rm-seat .mini.invite { color: var(--soft); border-color: rgba(28, 27, 31, 0.4); }
+.rm-seat .mini:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+.rm-seat .mini:active { scale: var(--press); }
+.rm-seat.none { color: var(--soft); font-style: italic; font-size: 12.5px; }
+/* team battle: the same rows, under the name of their side */
+.rm-team { flex: none; display: flex; align-items: baseline; gap: 6px; height: 24px; margin-top: 3px; padding: 4px var(--s2) 0 10px; color: #fff; background: linear-gradient(rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.16)), var(--side); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
+.rm-team b { font: 400 17px/1 var(--brush); }
+.rm-team .n { font: 800 11.5px/1 var(--serif); }
+.rm-team em { margin-left: auto; font: 800 10px/1 var(--serif); letter-spacing: 0.08em; text-transform: uppercase; font-style: normal; white-space: nowrap; }
+/* (a narrow column: the header's parts a size down, so they stay in one line) */
 @container (max-width: 330px) {
-  .rm-people > header { gap: 5px; padding-right: 7px; }
-  .rm-people .lab { font-size: 11px; letter-spacing: 0.05em; }
+  .rm-people > header { gap: 4px; padding-right: 7px; }
+  .rm-people .lab { font-size: 11px; letter-spacing: 0.04em; }
+  .rm-bots b { min-width: 2.2em; }
   .rm-pm { width: 23px; height: 23px; }
   .rm-step { gap: 1px; }
   .rm-step output { min-width: 1.25em; }
   .rm-bots { gap: 4px; padding: 2px 9px 2px 5px; }
-  .rm-seat .nm { font-size: 15px; padding-right: 0; }
-  .rm-team .rm-seat .nm { font-size: 14.5px; }
-  .rm-team .rm-seat .face { display: none; }
-  .rm-team header em { display: none; }
+  .rm-seat { gap: 6px; }
+  .rm-seat .nm { font-size: 16px; }
 }
 /* go */
 .rm-go { display: flex; flex-direction: column; gap: var(--s2); }
@@ -462,16 +447,16 @@ button.hub-room:active { scale: 0.99; }
 @media (hover: hover) {
   .rm-icon:hover .ring { rotate: -10deg; }
   .rm-pm:hover:not(:disabled) { color: #fff3e0; background: var(--ink); }
-  .rm-bots:hover { color: var(--ink); border-color: var(--ink); }
-  .rm-bots[aria-pressed='true']:hover { color: #fff3e0; background: var(--red-deep); border-color: var(--red-deep); }
+  .rm-bots:hover:not(:disabled) { color: #fff3e0; background: var(--ink); }
+  .rm-seat .act:hover { color: var(--ink); border-color: var(--ink); }
+  .rm-seat .act.out:hover { color: #fff3e0; background: var(--red-deep); border-color: var(--red-deep); }
+  .rm-seat .mini:hover { color: #fff3e0; background: var(--ink); border-color: var(--ink); }
   .rm-door:hover:not(:disabled) .mark { background: var(--red-deep); }
   .rm-tab:hover:not(:disabled):not([aria-selected='true']) { color: var(--ink); border-color: var(--ink); }
   .info:hover { color: var(--ink); }
   .rm-mode:hover span { translate: 0 -2px; }
   .rm .card:hover { translate: 0 -2px; }
   .locked .rm-mode:hover span, .locked .card:hover { translate: none; }
-  .rm-seat .invite:hover { color: var(--ink); text-decoration-color: currentColor; }
-  .rm-seat .cross:hover { opacity: 1; color: var(--ink); }
 }
 
 /* ======================================================== "about" popups ==== */
@@ -497,12 +482,9 @@ button.hub-room:active { scale: 0.99; }
    as two sides; the line over Start is there even when it has nothing to say;
    and Quick Play keeps the place a tournament's round plan would take. */
 @media (min-width: 860.02px) {
-  .rm-people { --rows: calc(5 * var(--seat) + 26px); }
-  #players.rm-seats { height: var(--rows); grid-template-rows: repeat(5, minmax(0, 1fr)); grid-auto-flow: column; }
-  #players .rm-seat { min-height: 0; }
-  .rm-teams { height: var(--rows); }
+  #players.rm-seats { height: calc(10 * var(--seat) + 54px); overflow: hidden auto; scrollbar-width: thin; }
   #s-lobby:not(.guest) #lobby-note { display: block; min-height: 1.3em; }
-  .rm-setup > #round-strip[hidden] { display: flex !important; visibility: hidden; order: 9; min-height: 59px; }
+  .rm-setup > #round-strip[hidden] { display: flex !important; visibility: hidden; order: 9; }
   .guest .rm-setup > #round-strip[hidden] { display: none !important; }
 }
 /* a short screen: the room keeps to what is needed (the row of keys under it goes) */
@@ -517,7 +499,8 @@ button.hub-room:active { scale: 0.99; }
 }
 /* shorter still (1280 by 720): the seats and Start a size down */
 @media (max-height: 740px) {
-  .rm-people { --seat: 27px; --face: 21px; padding-top: var(--s1); padding-bottom: var(--s2); }
+  .rm-people { --seat: 28px; --face: 21px; padding-top: var(--s1); padding-bottom: var(--s2); }
+  .rm-seat .act { width: 22px; height: 22px; }
   .rm-go .btn.big { min-height: 48px; font-size: 25px; }
   .rm-go { gap: var(--s1); }
 }
@@ -531,12 +514,10 @@ button.hub-room:active { scale: 0.99; }
   .rm-grid { column-gap: 6px; }
   .rm .lab { gap: 6px; letter-spacing: 0.13em; }
 }
-/* not wide enough for two columns: the choices, then the picture and the
-   people - and Start stays in reach, in a bar along the foot of the screen */
+/* not wide enough for two columns: the choices, then the players - and
+   Start stays in reach, in a bar along the foot of the screen */
 @media (max-width: 860px) {
   .rm-body { grid-template-columns: minmax(0, 1fr); gap: var(--s4); }
-  .pv { display: none; } /* (the cards are the pictures here) */
-  .rm-seat.free:not(:has(.invite)) { display: none; }
   /* the page ends where the bar begins (its height is measured: --bar), so nothing can be under it - a notice neither */
   body.in-room #ui { bottom: var(--bar, 72px); }
   body.in-room #toasts { bottom: calc(var(--bar, 72px) + var(--s2)); }
@@ -603,8 +584,8 @@ button.hub-room:active { scale: 0.99; }
   .rm-tab > .ic { display: none; }
   .rm-tab .words { margin-right: 0; }
   .rm-tab b { font-size: 18px; }
-  .rm-seats, .rm-teams { grid-template-columns: minmax(0, 1fr); }
-  .rm-people > header { flex-wrap: wrap; row-gap: var(--s2); }
+  .rm-people > header { flex-wrap: wrap; height: auto; row-gap: var(--s2); }
+  .rm-seat .tag.you { display: none; } /* (the name is in red already) */
   .rm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .info-grid { grid-template-columns: minmax(0, 1fr); }
 }

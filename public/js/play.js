@@ -3,20 +3,23 @@
 // pictures, words and sound.
 //
 // The heads-up display, and where each part sits:
-//   top centre    the minimap
-//   top left      in a free-for-all, the list of players; in a team battle Sun's
-//                 players (Moon's are top right, under the menu button)
+//   top centre    the board: the clock, and in a team battle each side's score
+//                 and bombs beside it, that side's players beyond the score
+//                 (Sun left, Moon right), the flags and the round's name underneath
+//   top left      in a free-for-all, the list of players
 //   top right     the menu button
-//   bottom centre the "dock", from the top down: the kit (what you are - it /
-//                 carrying a bomb -, the item in your hands, boosts that are
-//                 running), then the board - the clock, big, and in a team
-//                 battle each side's score and bombs beside it and that side's
-//                 flag beyond - and under it the name of the round
-//   above the dock the item draw: a small reel that rolls while a lucky box's
+//   bottom right  the minimap (on a phone: under the menu button, clear of the thumbs)
+//   bottom left   the objectives: a small panel that says what this round asks of
+//                 you (and its twist, the tournament round, the keys in a first
+//                 match). Open for the first seconds, then folded to its title;
+//                 O, a click or the pointer over it opens it again. (On a phone:
+//                 top left, under the list of players.)
+//   bottom centre the "kit": what you are (it / carrying a bomb), the item in
+//                 your hands, boosts that are running
+//   above the kit the item draw: a small reel that rolls while a lucky box's
 //                 item is being armed, stops on it and drops into the item tile
-//   upper middle  for the 3-2-1 only: the objective card (what this mode asks
-//                 of you, who starts as it or with a bomb, the twist, who
-//                 leads, the controls in a first match)
+//   upper middle  for the 3-2-1 only: one card that says the game's name and
+//                 what YOU are this round - nothing else
 //
 // The menus (main.js) only call a handful of things here:
 //   play.init({ socket, isTouch, onStart(info), onEnd(results), onPause() })
@@ -47,6 +50,8 @@ const calm = matchMedia('(prefers-reduced-motion: reduce)');
 
 const ITEM_LAND_MS = 520; // the item draw, once it has stopped: its name for a moment, then into the tile (play.css: item-land)
 const FIRST_MATCHES = 3; // how many matches start with a reminder of the controls
+const TASKS_OPEN_MS = 7000; // the objectives stay open this long after GO (and after being asked for again), then fold to their title
+const TASKS_OPEN_TOUCH_MS = 2500; // (on a phone they cover a good part of the screen: there they fold much sooner)
 // How far a tag between two OTHER players carries, in world units (the view is about 1170 x 660 of them):
 const TAG_NEAR = 300; // right beside you: 80% of the sound, most of the shake
 const TAG_SCREEN = 1000; // within about a screen: 45% falling to 18%
@@ -98,26 +103,25 @@ export const play = {
     root.innerHTML = `${SPRITE}
       <div id="stage"></div>
       <div id="hud">
-        <canvas id="minimap" width="308" height="174" aria-hidden="true"></canvas>
-        <ul id="pills" aria-label="Players"></ul>
-        <ul id="roster-a" class="h-roster a" aria-label="${TEAM_NAMES[0]}" style="--side:${TEAM_COLORS[0]}"></ul>
-        <ul id="roster-b" class="h-roster b" aria-label="${TEAM_NAMES[1]}" style="--side:${TEAM_COLORS[1]}"></ul>
+        <div id="side">
+          <ul id="pills" aria-label="Players"></ul>
+          <div id="tasks" hidden><button class="t-hd" type="button" aria-expanded="true">${icon('twist')}<b>Objectives</b><kbd>O</kbd></button><ul class="t-list"></ul></div>
+        </div>
+        <div id="top">
+          <ul id="roster-a" class="h-roster a" aria-label="${TEAM_NAMES[0]}"></ul>
+          <b id="team-a" class="h-score" hidden></b>
+          <div id="timer" aria-label="Seconds left">60</div>
+          <b id="team-b" class="h-score" hidden></b>
+          <ul id="roster-b" class="h-roster b" aria-label="${TEAM_NAMES[1]}"></ul>
+          <div id="under"><div id="flags-a" class="h-flags" hidden></div><div id="round-label"></div><div id="flags-b" class="h-flags" hidden></div></div>
+        </div>
         <button id="btn-pause" class="hud-btn" aria-label="Menu (Esc)">${icon('menu')}</button>
         <kbd class="hud-key">Esc</kbd>
-        <div id="dock">
-          <div id="kit">
-            <div id="status" hidden><span class="sign"></span><b></b></div>
-            <div id="itemslot" hidden><span class="tile"><span class="pic"></span></span><kbd>E</kbd><span class="cap"></span></div>
-            <div id="buffs"></div>
-          </div>
-          <div id="board">
-            <div id="flags-a" class="h-flags" hidden></div>
-            <b id="team-a" class="h-score" hidden></b>
-            <div id="timer" aria-label="Seconds left">60</div>
-            <b id="team-b" class="h-score" hidden></b>
-            <div id="flags-b" class="h-flags" hidden></div>
-          </div>
-          <div id="round-label"></div>
+        <canvas id="minimap" width="308" height="174" aria-hidden="true"></canvas>
+        <div id="kit">
+          <div id="status" hidden><span class="sign"></span><b></b></div>
+          <div id="itemslot" hidden><span class="tile"><span class="pic"></span></span><kbd>E</kbd><span class="cap"></span></div>
+          <div id="buffs"></div>
         </div>
         <div id="itemdraw" hidden aria-hidden="true"><div class="box"><div class="win"><div class="strip"></div></div></div><div class="tag"><b></b><kbd>E</kbd></div></div>
         <div id="banner" role="status"></div>
@@ -133,7 +137,7 @@ export const play = {
           <button class="t-jump" data-bit="4" aria-label="Jump">${icon('up')}</button>
         </div>
       </div>`;
-    for (const id of ['stage', 'hud', 'pills', 'dock', 'board', 'timer', 'team-a', 'team-b', 'roster-a', 'roster-b', 'flags-a', 'flags-b', 'round-label', 'btn-pause', 'minimap', 'kit', 'status', 'itemslot', 'buffs', 'itemdraw', 'banner', 'brief', 'count', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
+    for (const id of ['stage', 'hud', 'pills', 'top', 'tasks', 'timer', 'team-a', 'team-b', 'roster-a', 'roster-b', 'flags-a', 'flags-b', 'round-label', 'btn-pause', 'minimap', 'kit', 'status', 'itemslot', 'buffs', 'itemdraw', 'banner', 'brief', 'count', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
     const E = this.el;
     E.use = E.touch.querySelector('.t-use');
     E.itemPic = E.itemslot.querySelector('.pic');
@@ -151,6 +155,14 @@ export const play = {
     this.input.bindTouch(this.el.touch);
     this.renderer.onEvent = (type, pv) => this.sfx.play(type, pv.local ? 1 : 0.35);
     this.el.btnPause.addEventListener('click', () => opts.onPause?.());
+    // the objectives: a click (or a tap) on their title, or O, opens and folds them
+    E.taskList = E.tasks.querySelector('.t-list');
+    E.taskHead = E.tasks.querySelector('.t-hd');
+    E.taskHead.addEventListener('click', () => this.showTasks(!this.hud.tasksOpen));
+    addEventListener('keydown', (e) => {
+      if (e.code !== 'KeyO' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || !this.running || !this.input.active) return;
+      this.showTasks(!this.hud.tasksOpen);
+    });
     const s = opts.socket;
     s.on('s', (m) => this.game === this.net && this.net.onSnap(m));
     s.on('go', (it, bombs) => this.game === this.net && this.net.onGo(it, bombs));
@@ -216,20 +228,12 @@ export const play = {
     E.hud.className = team ? 'team' : 'ffa';
     E.touch.hidden = !this.isTouch;
     document.body.classList.toggle('touch-on', this.isTouch);
-    // The dock stands at the bottom of the screen, in the middle - right where you
-    // would be standing on an arena's lowest floor. So the view may scroll that
-    // far past the floor: your feet stay above the dock (and the thumb buttons).
-    const named = E.roundLabel.textContent;
-    if (!named) E.roundLabel.textContent = '\u00b7'; // (the round's name, under the board, is written further down: stand in for it)
-    const dockTop = E.hud.getBoundingClientRect().bottom - E.board.getBoundingClientRect().top;
-    if (!named) E.roundLabel.textContent = '';
-    // (the kit, which comes and goes on top of the board, is one row on a computer and up to two on a phone)
-    this.renderer.opts.padBottom = Math.max(this.isTouch ? 104 : 24, dockTop > 0 ? Math.round(dockTop + (this.isTouch ? 70 : 48)) : 0);
     this.renderer.setScene(arena, themeId, info.cols || null);
     this.root.style.background = this.renderer.theme.letterbox;
     clearTimeout(h.itemTimer);
     clearTimeout(h.briefTimer);
-    Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], item: '', teams: '', crowd: 0, role: '', side: -2, briefOn: false });
+    clearTimeout(h.tasksTimer);
+    Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], item: '', teams: '', crowd: 0, sides: '', role: '', side: -2, briefOn: false });
     E.status.hidden = true;
     E.pills.textContent = '';
     E.rosterA.textContent = '';
@@ -273,13 +277,14 @@ export const play = {
       if (info.twist && info.twist !== 'none' && g.twist?.name) label += ` · ${g.twist.name}`;
     }
     E.roundLabel.textContent = label;
-    // the first few matches start with a reminder of the controls (on the objective card)
+    // the first few matches come with a reminder of the controls (among the objectives)
     let played = 0;
     try {
       played = Number(localStorage.getItem('tag.played')) || 0;
       localStorage.setItem('tag.played', String(played + 1));
     } catch {}
-    this.buildBrief(info, g, played < FIRST_MATCHES);
+    this.buildBrief(info, g);
+    this.buildTasks(info, g, played < FIRST_MATCHES);
     this.bakeMinimap(arena);
     this.start();
   },
@@ -388,7 +393,14 @@ export const play = {
       if (pill && pill.gone !== !seen[slot]) pill.li.classList.toggle('gone', (pill.gone = !seen[slot]));
     });
     const n = view.players.length;
-    if (!view.team && n !== h.crowd) {
+    if (view.team) {
+      // a side's players stand beside its score: up to three in one row, more in two
+      const sig = sizes.join();
+      if (sig !== h.sides) {
+        h.sides = sig;
+        [E.rosterA, E.rosterB].forEach((list, t) => list.style.setProperty('--rows', sizes[t] > 3 ? '2' : '1'));
+      }
+    } else if (n !== h.crowd) {
       // six or more: two columns
       h.crowd = n;
       E.pills.classList.toggle('many', n > 5);
@@ -468,12 +480,13 @@ export const play = {
     if (noMap !== h.noMap) E.minimap.hidden = h.noMap = noMap;
   },
 
-  // --- the objective card -----------------------------------------------------------------
-  // Shown for the 3-2-1 and gone at GO: the mode's name, a line per goal with
-  // its icon, then whatever is special about this round - the twist, the leader
-  // starting as it - and, in someone's first matches, the controls. The count
-  // itself is the seal on the card's corner.
-  buildBrief(info, g, teach) {
+  // --- before GO: one card -------------------------------------------------------------
+  // Shown for the 3-2-1 and gone at GO. It says two things and nothing else: the
+  // game's name, and what YOU are this round - the oni or not (and who is), with
+  // a bomb or without, and in a team battle which side you are on. The count is
+  // the seal on the card's corner. (What the round asks of you is in the
+  // objectives panel, which stays.)
+  buildBrief(info, g) {
     const b = this.el.brief;
     const me = this.mySlot();
     const team = info.mode === 'team';
@@ -490,52 +503,72 @@ export const play = {
       head.append(tag);
     }
     b.append(head);
-    const goals = el('ul', 'b-goals');
-    const goal = (ic, html) => {
-      const li = el('li');
-      li.innerHTML = `<i class="b-tile">${icon(ic)}</i><span>${html}</span>`;
-      goals.append(li);
-    };
-    if (team) {
-      goal('flag', '<b>Stand in a flag ring</b> to score');
-      goal('bomb', '<b>Pass bombs</b> to enemies before the buzzer');
-    } else if (info.mode === 'time') goal('clock', '<b>Least time as it</b> wins');
-    else goal('it', "<b>Don't be it</b> at the buzzer");
-    b.append(goals);
-    const extra = (cls, ic, strong, rest) => {
-      const p = el('p', `b-extra b-${cls}`);
-      p.innerHTML = icon(ic);
-      const words = el('span');
-      words.append(el('b', '', strong), rest);
-      p.append(words);
-      b.append(p);
-    };
-    // who starts as what: nobody has to wait for GO to find out
-    if (team) {
-      const bombs = (info.bombs || []).filter((slot) => slot !== me);
-      const mine = (info.bombs || []).includes(me);
-      const mates = bombs.filter((slot) => g.teamOf?.(slot) === side).length;
-      const who = bombs.length === 1 ? this.nameOf(bombs[0]) : bombs.length === 2 ? `${this.nameOf(bombs[0])} and ${this.nameOf(bombs[1])}` : '';
-      if (mine) extra('bomb mine', 'bomb', 'You start with a bomb', bombs.length ? ` - so ${bombs.length === 1 ? 'does' : 'do'} ${who || `${bombs.length} others`}` : '');
-      else if (who) extra('bomb', 'bomb', who, bombs.length > 1 ? ' start with the bombs' : ' starts with the bomb');
-      else if (bombs.length) extra('bomb', 'bomb', `${bombs.length} bombs`, side >= 0 ? `: ${mates} on your side, ${bombs.length - mates} on theirs` : ' to start with');
-    } else if (info.it >= 0 && !(info.cup && info.cup.leader >= 0)) {
-      if (info.it === me) extra('it mine', 'it', 'You start as the oni', ': catch someone');
-      else extra('it', 'it', this.nameOf(info.it), ' starts as the oni');
+    let ic = 'eye';
+    let words = 'You are watching this round';
+    let mine = false;
+    if (me >= 0 && team) {
+      mine = (info.bombs || []).includes(me);
+      ic = mine ? 'bomb' : 'flag';
+      words = mine ? 'You start with a bomb' : 'Your hands are free';
+    } else if (me >= 0) {
+      mine = info.it === me;
+      ic = 'it';
+      words = mine ? 'You are the oni' : info.it >= 0 ? `${this.nameOf(info.it)} is the oni` : 'Everyone for themselves';
     }
+    const you = el('p', mine ? 'b-you mine' : 'b-you');
+    you.innerHTML = `<i class="b-tile">${icon(ic)}</i>`;
+    you.append(el('b', '', words));
+    b.append(you);
+  },
+
+  // --- the objectives: what this round asks of you, there for the whole match -------------
+  // One line a goal; then whatever is special about this round - the twist, the
+  // tournament round, the leader starting as it - and, in someone's first
+  // matches, the controls. Open from the countdown until a few seconds after GO,
+  // then it folds to its title, out of the way.
+  buildTasks(info, g, teach) {
+    const E = this.el;
+    const me = this.mySlot();
+    const team = info.mode === 'team';
+    const list = E.taskList;
+    list.textContent = '';
+    const line = (ic, html, cls = '') => {
+      const li = el('li', cls);
+      li.innerHTML = `${icon(ic)}<span>${html}</span>`;
+      list.append(li);
+    };
+    if (team) {
+      line('flag', '<b>Stand in a flag ring</b> to score');
+      line('bomb', '<b>Pass your bomb</b> to an enemy before the buzzer');
+    } else if (info.mode === 'time') line('clock', '<b>Least time as the oni</b> wins');
+    else line('it', "<b>Don't be the oni</b> at the buzzer");
     const twist = info.twist && info.twist !== 'none' ? g.twist : null;
-    if (twist?.name) extra('twist', 'twist', `Twist: ${twist.name}`, `: ${twist.blurb.toLowerCase()}`);
-    if (!team && info.cup && info.cup.leader >= 0) {
-      if (info.cup.leader === me) extra('lead', 'crown', 'You lead', ', so you start as it');
-      else extra('lead', 'crown', this.nameOf(info.cup.leader), ' leads, so starts as it');
+    if (twist?.name) line('twist', `<b>${twist.name}</b>: ${twist.blurb.toLowerCase()}`, 't-twist');
+    if (info.cup) {
+      line('crown', info.cup.double ? '<b>Final round</b>: counts double' : `<b>Round ${info.cup.round}</b> of ${info.cup.rounds}`);
+      if (!team && info.cup.leader >= 0) line('crown', info.cup.leader === me ? '<b>You lead</b>, so you start as the oni' : `<b>${this.nameOf(info.cup.leader)}</b> leads, so starts as the oni`);
     }
     if (teach) {
-      const keys = el('div', 'b-keys');
+      const keys = el('li', 't-keys');
       keys.innerHTML = this.isTouch
         ? `<span><i class="b-tb b-wide">${icon('left')}${icon('right')}</i>Run</span><span><i class="b-tb">${icon('up')}</i>Jump, twice</span><span><i class="b-tb">${icon('down')}</i>Drop</span><span><i class="b-tb">${icon('box')}</i>Item</span>`
-        : `<span><kbd>A</kbd><kbd>D</kbd>Run</span><span><kbd>W</kbd>Jump, twice</span><span><kbd>S</kbd>Drop</span><span><kbd>E</kbd>Item</span><small>Arrows and Space work too</small>`;
-      b.append(keys);
+        : `<span><kbd>A</kbd><kbd>D</kbd>Run</span><span><kbd>W</kbd>Jump, twice</span><span><kbd>S</kbd>Drop</span><span><kbd>E</kbd>Item</span>`;
+      list.append(keys);
     }
+    E.tasks.hidden = false;
+    this.showTasks(true, false);
+  },
+
+  // open: show the lines; else only the title. It folds by itself a while after
+  // (once the round is on: during the countdown it stays open).
+  showTasks(open, timed = true) {
+    const h = this.hud;
+    const E = this.el;
+    h.tasksOpen = open;
+    E.tasks.classList.toggle('open', open);
+    E.taskHead.setAttribute('aria-expanded', String(open));
+    clearTimeout(h.tasksTimer);
+    if (open && timed) h.tasksTimer = setTimeout(() => this.showTasks(false), this.isTouch ? TASKS_OPEN_TOUCH_MS : TASKS_OPEN_MS);
   },
 
   showBrief(n, view) {
@@ -584,7 +617,7 @@ export const play = {
           const host = this.el.hud.getBoundingClientRect();
           const r = b.getBoundingClientRect();
           if (where === 'hi') natural = r.width;
-          else if (r.width < natural - 1) break; // no room for it down there (a phone on its side: the gap between the thumb controls)
+          else if (r.width < natural * 0.72) break; // no room for it down there (a phone on its side: the gap between the thumb controls is too narrow even with the line folded)
           // (the name and the YOU pointer stand well above a player's head)
           for (const [x, y, w] of spots) if (x > r.left - host.left - 50 && x < r.right - host.left + 50 && y > r.top - host.top - 26 && y < r.bottom - host.top + 96) cost += w;
         }
@@ -718,14 +751,9 @@ export const play = {
       const u = E.use.getBoundingClientRect();
       const size = 92;
       st.left = `${Math.min(host.width - size - 18, Math.max(18, u.left - host.left + u.width / 2 - size / 2))}px`; // (room for the pop it lands with)
-      // (above the item button - and above the dock, where that reaches higher: a phone held upright)
-      const d = E.dock.getBoundingClientRect();
-      const over = u.left < d.right && u.right > d.left ? Math.min(u.top, d.top) : u.top;
-      st.top = `${over - host.top - size - 34}px`;
+      st.top = `${u.top - host.top - size - 34}px`;
     } else {
-      // low in the middle, just above the dock - unless that is where you are standing: then a step to the side
-      const host = E.hud.getBoundingClientRect();
-      st.bottom = `${Math.round(host.bottom - E.dock.getBoundingClientRect().top + 30)}px`;
+      // low in the middle, just above the kit - unless that is where you are standing: then a step to the side
       const cam = this.renderer.viewRect();
       const me = cam && view.players.find((p) => p.local);
       if (me) {
@@ -733,7 +761,7 @@ export const play = {
         const H = this.renderer.cssH;
         const sx = ((me.x + PW / 2 - cam.x) / cam.w) * W;
         const sy = ((me.y + PH / 2 - cam.y) / cam.h) * H;
-        if (sy > H - 420 && Math.abs(sx - W / 2) < 150) st.setProperty('--dx', `${sx < W / 2 ? 190 : -190}px`);
+        if (sy > H - 300 && Math.abs(sx - W / 2) < 150) st.setProperty('--dx', `${sx < W / 2 ? 190 : -190}px`);
       }
     }
     R.className = still ? 'roll still' : 'roll';
@@ -822,13 +850,13 @@ export const play = {
     };
     const wide = (r) => r && { x0: r.x0 - 36, y0: r.y0 - 56, x1: r.x1 + 36, y1: r.y1 + 36 };
     const map = rect(E.minimap);
-    const lists = [E.pills, E.rosterA, E.rosterB].map(rect);
+    const lists = [E.pills, E.tasks].map(rect);
     m.rect = wide(map);
     m.lists = lists.map(wide);
     m.w = a.width;
     m.h = a.height;
-    const keep = [map, ...lists, rect(E.btnPause), rect(E.hud.querySelector('.hud-key')), rect(E.status), rect(E.itemslot), rect(E.buffs), rect(E.roundLabel)];
-    for (const e of E.board.children) keep.push(rect(e));
+    const keep = [map, ...lists, rect(E.btnPause), rect(E.hud.querySelector('.hud-key')), rect(E.status), rect(E.itemslot), rect(E.buffs)];
+    for (const e of E.top.children) keep.push(rect(e));
     if (!E.touch.hidden) for (const e of E.touch.querySelectorAll('.pad, .acts button')) keep.push(rect(e));
     this.renderer.avoid = keep.filter(Boolean);
     if (map && Math.abs(E.minimap.clientWidth - m.cssW) > 6) this.bakeMinimap(m.arena); // the window changed size: paint the map again at its new one
@@ -890,7 +918,7 @@ export const play = {
     under = inside(m.rect);
     if (under !== m.under) c.classList.toggle('aside', (m.under = under));
     m.underList ||= [];
-    [this.el.pills, this.el.rosterA, this.el.rosterB].forEach((list, i) => {
+    [this.el.pills, this.el.tasks].forEach((list, i) => {
       const u = inside(m.lists && m.lists[i]);
       if (u !== m.underList[i]) list.classList.toggle('aside', (m.underList[i] = u));
     });
@@ -968,7 +996,8 @@ export const play = {
     else if (type === 'go') {
       sfx.play('go');
       this.hud.count = 0;
-      this.showBrief(0); // the objective card makes way
+      this.showBrief(0); // the card makes way
+      if (this.hud.tasksOpen) this.showTasks(true); // (and the objectives fold a little later)
       this.pop('GO!');
       setTimeout(() => this.el.count.textContent === 'GO!' && (this.el.count.textContent = ''), 900);
       if (team) {

@@ -99,7 +99,7 @@
             <h1 class="title">Onigokko</h1>
             <i class="seal big" aria-hidden="true">鬼</i>
           </header>
-          <p class="lead"><span class="kana" lang="ja" aria-hidden="true">鬼ごっこ</span>Tag for 2–10 players. Don't be the oni when the clock runs out.</p>
+          <p class="lead">Tag for 2–10 players. Don't be the oni when the clock runs out.</p>
           <nav class="menu" aria-label="Main menu">
             <button class="entry primary" id="btn-play" data-autofocus><svg class="ic" aria-hidden="true"><use href="#i-oni" /></svg><span><b>Play</b></span><kbd>1</kbd></button>
           </nav>
@@ -164,20 +164,19 @@
            come in, its code and the way to pass it on. Then the format - one
            match or a tournament, two different things to set up - and under
            it, on the left, the choices (game, style, stage, rules) and, on the
-           right, a picture of whatever you are choosing, the players, Start. -->
+           right, the players and Start. -->
       <section id="s-lobby" class="screen panel" hidden>
         <div class="scroll rm">
           <header class="bar rm-top">
             <h2 id="lobby-title">Room</h2>
-            <!-- who can come in: one button that says which it is -->
-            <button class="rm-door" id="btn-open">
-              <span class="mark"><svg class="ic shut"><use href="#i-lock" /></svg><svg class="ic open"><use href="#i-globe" /></svg></span>
-              <b id="open-label">Private</b><kbd>V</kbd>
-            </button>
-            <!-- the room's code on a wooden tag, and beside it the way to pass it on -->
+            <!-- the room's code on a wooden tag, the way to pass it on, and who can come in -->
             <span class="rm-code" id="lobby-code" aria-label="Room code"></span>
             <button class="rm-icon" id="btn-copy" aria-label="Copy the invite link (C)" title="Copy the invite link">
               <span class="ring"><svg class="ic a"><use href="#i-share" /></svg><svg class="ic b"><use href="#i-check" /></svg></span><kbd>C</kbd>
+            </button>
+            <button class="rm-door" id="btn-open">
+              <span class="mark"><svg class="ic shut"><use href="#i-lock" /></svg><svg class="ic open"><use href="#i-globe" /></svg></span>
+              <b id="open-label">Private</b><kbd>V</kbd>
             </button>
             <button class="m-x" id="btn-leave" aria-label="Leave the room (Esc)"><kbd>Esc</kbd><span class="ring"><svg class="ic" aria-hidden="true"><use href="#i-close" /></svg></span></button>
           </header>
@@ -205,26 +204,20 @@
             </div>
 
             <aside class="rm-side">
-              <!-- a picture of whatever you are choosing -->
-              <figure class="pv" id="preview">
-                <div class="pv-art" id="pv-art" aria-hidden="true"></div>
-                <figcaption><span class="pv-top"><b id="pv-name"></b><small id="pv-for"></small></span><span id="pv-line"></span></figcaption>
-              </figure>
+              <!-- who plays: a row a seat - a person, a bot, or nobody yet -->
               <section class="rm-people" aria-labelledby="players-title">
                 <header>
                   <h3 class="lab" id="players-title">Players</h3>
-                  <!-- how many play; and whether bots take the seats nobody has -->
+                  <!-- how many seats; a bot in every open one (or every bot out); in a team game, deal the sides afresh -->
                   <div class="rm-step" id="size-step" role="group">
-                    <button class="rm-pm" id="btn-size-down" aria-label="One player fewer (minus key)">&minus;</button>
+                    <button class="rm-pm" id="btn-size-down" aria-label="One seat fewer (minus key)">&minus;</button>
                     <output id="size-num"></output>
-                    <button class="rm-pm" id="btn-size-up" aria-label="One player more (plus key)">+</button>
+                    <button class="rm-pm" id="btn-size-up" aria-label="One seat more (plus key)">+</button>
                   </div>
-                  <button class="rm-bots" id="btn-bots" aria-pressed="true"><svg class="ic" aria-hidden="true"><use href="#i-bot" /></svg><span class="vh">Bots: </span><b id="bots-label">On</b><kbd>B</kbd></button>
+                  <button class="rm-bots" id="btn-bots"><svg class="ic" aria-hidden="true"><use href="#i-bot" /></svg><b id="bots-label">Fill</b><kbd>B</kbd></button>
                   <button class="rm-icon" id="btn-shuffle" aria-label="Shuffle the teams (Z)" title="Shuffle the teams" hidden><span class="ring"><svg class="ic"><use href="#i-shuffle" /></svg></span><kbd>Z</kbd></button>
                 </header>
                 <ul class="rm-seats" id="players"></ul>
-                <!-- team battle: the two sides face to face -->
-                <div class="rm-teams" id="squads" data-group hidden></div>
               </section>
               <footer class="rm-go">
                 <p class="note" id="lobby-note"></p>
@@ -342,6 +335,7 @@
                 <li><span><kbd>&uarr;</kbd> <kbd>W</kbd> or <kbd>Space</kbd></span> Jump – again in the air for a second jump</li>
                 <li><span><kbd>&darr;</kbd> or <kbd>S</kbd></span> Drop through thin ledges and slopes, fall faster</li>
                 <li><span><kbd>E</kbd> <kbd>X</kbd> or <kbd>Shift</kbd></span> Use the item in your hands</li>
+                <li><span><kbd>O</kbd></span> The round's objectives (they fold away by themselves)</li>
                 <li><span><kbd>Esc</kbd></span> Pause menu</li>
               </ul>
               <ul class="plain touch-only">
@@ -365,7 +359,7 @@
                 <li><span><kbd>G</kbd> <kbd>R</kbd> <kbd>N</kbd></span> In a room: Quick Play or a tournament, which game, how many rounds</li>
                 <li><span><kbd>S</kbd> <kbd>A</kbd> <kbd>T</kbd></span> In a room: next style, next stage (with Shift: previous); in a tournament, T picks which round they are for</li>
                 <li><span><kbd>L</kbd> <kbd>P</kbd></span> In a room: round time, lucky boxes</li>
-                <li><span><kbd>&minus;</kbd> <kbd>+</kbd> <kbd>B</kbd></span> In a room: how many play, and whether bots take the seats nobody has</li>
+                <li><span><kbd>&minus;</kbd> <kbd>+</kbd> <kbd>B</kbd></span> In a room: how many seats, and a bot in every open one (or every bot out)</li>
                 <li><span><kbd>C</kbd> <kbd>V</kbd></span> In a room: copy the invite link, make the room public or private</li>
                 <li><span><kbd>X</kbd> <kbd>Z</kbd></span> Team battle, in a room: change sides; the host shuffles the teams</li>
                 <li><span><kbd>H</kbd></span> Menus: how to play</li>
@@ -376,7 +370,8 @@
               <h3>Rooms</h3>
               <ul class="plain">
                 <li>A room has 2 to 10 seats. <b>Bots</b> take the ones nobody has, give theirs up to anyone who walks in, and come back when someone leaves.</li>
-                <li>The host sets how many play and can send the bots away.</li>
+                <li>The host decides seat by seat: take a bot out, put one in, add or remove seats, send a player out.</li>
+                <li>With the stage or the style on Random, the tick on each picture says whether it is in the draw.</li>
                 <li>Stages come in two sizes: the small ones are for 2–6 players, the big ones for 5–10. One that does not suit the room is shut.</li>
               </ul>
             </section>

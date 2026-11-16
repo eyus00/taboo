@@ -100,26 +100,6 @@ for (let i = 0; i < 14; i++) {
   $('petals').append(p);
 }
 
-// The name in kana is a flourish: only shown where the device can draw it.
-(() => {
-  try {
-    const c = document.createElement('canvas');
-    c.width = c.height = 24;
-    const g = c.getContext('2d', { willReadFrequently: true });
-    const ink = (ch) => {
-      g.clearRect(0, 0, 24, 24);
-      g.font = `18px ${getComputedStyle(document.querySelector('.kana')).fontFamily}`;
-      g.textBaseline = 'top';
-      g.fillText(ch, 2, 2);
-      return g.getImageData(0, 0, 24, 24).data.join();
-    };
-    const blank = ink(' ');
-    const kana = ink(String.fromCharCode(0x3054)); // hiragana GO
-    // a glyph nobody has: if the kana looks the same as that, it is only a placeholder box
-    if (kana === blank || kana === ink(String.fromCharCode(0xffff))) document.body.classList.add('no-kana');
-  } catch {}
-})();
-
 // ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
@@ -769,8 +749,6 @@ async function joinGame(roomCode, btn) {
 // Every entry of OPTIONS writes one setting (`key`) - or says how with `set`.
 // `box` is where it is drawn and `type` how (a row of words unless it says
 // otherwise), `show` when, `hot` the key that steps it.
-const MODE_LINE = { potato: "Don't be the oni when time runs out", time: 'Least time as the oni wins', team: 'Two sides: hold flags, pass bombs' };
-const CUP_LINE = { potato: 'Everyone for themselves: least time as the oni scores', team: 'Two sides all the way: their points add up each round' };
 const OPTIONS = [
   { id: 'mode', key: 'mode', hot: 'r', label: 'Game', type: 'modes', box: 'opt-mode', info: 'game', values: MODES.map((m) => [m.id, m.name]), icon: (v) => MODE_ICON[v], show: (s) => s.game !== 'cup' },
   // a tournament is scored on time as the oni (everyone for themselves), or played as a team battle
@@ -843,10 +821,11 @@ function setSize(to) {
   changeSetting({ size });
   return true;
 }
+// (the button says which: a bot in every open seat, or - when no seat is open - every bot out)
 function toggleBots() {
-  if (!room || !amHost()) return false;
+  if (!room || !amHost() || $('btn-bots').disabled) return false;
   sfx.play('click');
-  changeSetting({ bots: !room.settings.bots });
+  changeSetting({ bots: $('btn-bots').dataset.does === 'fill' });
   return true;
 }
 $('btn-size-down').addEventListener('click', () => setSize(room.settings.size - 1));
@@ -884,8 +863,33 @@ function setStage(what, value) {
   syncOptions();
 }
 const stageList = (what) => (what === 'arena' ? ARENAS : THEMES);
-const stageName = (what, id, short) => (id === 'random' ? (short ? 'Random' : `Random ${what === 'arena' ? 'stage' : 'style'}`) : stageList(what).find((x) => x.id === id)?.name || id);
-const stageBlurb = (what, id) => (id === 'random' ? 'Picked at random when the round starts.' : stageList(what).find((x) => x.id === id)?.blurb || '');
+
+// --- what Random draws from: every stage (and every style) to begin with.
+// While Random is the choice, each card has a tick in its corner: the host
+// takes a stage out of the draw, or puts it back in. (An empty list means
+// all of them; one that only holds stages this many players cannot use
+// counts as all of them too.)
+const poolOf = (what) => {
+  const all = stageList(what).map((x) => x.id);
+  const chosen = room.settings.pool?.[what] || [];
+  return chosen.length ? all.filter((id) => chosen.includes(id)) : all;
+};
+const inPool = (what, id) => poolOf(what).includes(id);
+function togglePool(what, id) {
+  if (!amHost()) return;
+  const all = stageList(what).map((x) => x.id);
+  const now = poolOf(what);
+  let next = now.includes(id) ? now.filter((x) => x !== id) : all.filter((x) => now.includes(x) || x === id);
+  // (something has to be left to draw - for a stage, something this many players can use)
+  if (!next.some((x) => what !== 'arena' || stageFits(x))) return toast('Random needs at least one');
+  if (next.length === all.length) next = [];
+  const s = room.settings;
+  s.pool = { arena: [], theme: [], ...s.pool, [what]: next };
+  socket.emit('settings', { pool: { [what]: next } });
+  touched();
+  sfx.play('click');
+  syncOptions();
+}
 // the style a picture is painted in while the real one is still to be drawn
 const paintIn = (theme) => (!theme || theme === 'random' ? DEFAULT_THEME : theme);
 
@@ -915,18 +919,11 @@ function radio(o, value, i) {
   inp.dataset.i = i;
   inp.addEventListener('change', () => {
     sfx.play('click');
-    preview(o.id, value);
     if (o.set) o.set(value);
     else changeSetting({ [o.key]: value });
   });
   return inp;
 }
-// (pointing at a choice, or walking onto it with the keys, shows it in the picture beside the choices)
-function shows(node, what, value) {
-  node.addEventListener('pointerenter', () => preview(what, value));
-  node.addEventListener('focusin', () => preview(what, value));
-}
-
 // The name of a setting stands over it like the title of a section, with its
 // key beside it - and, where there is more to know, a button that explains.
 function title(o) {
@@ -952,7 +949,6 @@ function buildFormat() {
     b.append(words);
     if (game === 'quick') b.append(el('kbd', '', 'G'));
     b.addEventListener('click', () => setFormat(game));
-    shows(b, 'game', game);
     box.append(b);
   }
 }
@@ -976,6 +972,19 @@ function buildOptions() {
           pic.dataset.id = value;
         }
         card.append(radio(o, value, i), pic, el('span', 'cap', text));
+        card.dataset.id = value;
+        if (value !== 'random') {
+          // (shown while Random is the choice: whether this one is in the draw)
+          const tick = el('button', 'pool');
+          tick.type = 'button';
+          tick.innerHTML = svg('check');
+          tick.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            togglePool(o.id, value);
+          });
+          card.append(tick);
+        }
         if (o.id === 'arena' && value !== 'random') {
           // (shown when the stage is shut: how many players it is for)
           const tag = el('span', 'for');
@@ -984,7 +993,6 @@ function buildOptions() {
           card.append(tag);
           card.querySelector('input').setAttribute('aria-label', `${text}, for ${rangeText(value)} players`);
         }
-        shows(card, o.id, value);
         box.append(card);
       });
       continue;
@@ -1001,7 +1009,6 @@ function buildOptions() {
       // (a game carries its sign)
       if (o.type === 'modes') face.insertAdjacentHTML('afterbegin', svg(o.icon(value)));
       item.append(radio(o, value, i), face);
-      shows(item, o.id, value);
       group.append(item);
     });
     row.append(title(o), group);
@@ -1030,6 +1037,30 @@ function syncOptions() {
     const o = optionById(row.dataset.opt);
     row.hidden = !!o.show && !o.show(s);
   }
+  // Random is the choice: every card says whether it is in the draw (and the host can take it out, or put it back)
+  for (const what of ['theme', 'arena']) {
+    const box = $(what === 'theme' ? 'style-cards' : 'arena-cards');
+    box.classList.toggle('drawing', !lock && stageValue(what) === 'random');
+    const names = new Map(stageList(what).map((x) => [x.id, x.name]));
+    let left = 0;
+    let could = 0;
+    for (const card of box.children) {
+      const id = card.dataset.id;
+      const tick = card.querySelector('.pool');
+      if (!tick) continue;
+      const playable = what !== 'arena' || stageFits(id);
+      const on = inPool(what, id);
+      could += playable;
+      left += playable && on;
+      card.classList.toggle('in', on);
+      tick.setAttribute('aria-pressed', String(on));
+      tick.setAttribute('aria-label', `${names.get(id)}: ${on ? 'in the Random draw. Take it out' : 'not in the Random draw. Put it in'}`);
+      tick.title = on ? 'In the Random draw' : 'Not in the Random draw';
+    }
+    // (the Random card says how many it draws from, once that is not all of them)
+    const cap = box.querySelector('.card[data-id="random"] .cap');
+    if (cap) cap.textContent = left && left < could ? `Random · ${left}` : 'Random';
+  }
   // the format: which tab is up (a guest sees only the one that is)
   for (const tab of $('opt-format').children) {
     const on = s.game === tab.dataset.game;
@@ -1047,7 +1078,6 @@ function syncOptions() {
   door.setAttribute('aria-label', lock ? what : `${what}. Make it ${s.open ? 'private' : 'public'} (V)`);
   paintCards();
   paintFaces();
-  showPreview();
 }
 $('btn-open').addEventListener('click', () => {
   if (!amHost()) return;
@@ -1075,7 +1105,6 @@ function setFormat(game) {
   socket.emit('settings', { game, mode: to.mode, stage: { i: 0, ...to.first } });
   touched();
   stageSel = 'all';
-  preview('game', game);
   renderLobby();
 }
 
@@ -1106,7 +1135,6 @@ function hotOption(letter, back) {
   const open = o.values.filter(([v]) => o.id !== 'arena' || stageFits(v));
   const i = open.findIndex(([v]) => isOn(o, s, v));
   const next = open[(i + (back ? -1 : 1) + open.length) % open.length][0];
-  preview(o.id, next);
   if (o.set) o.set(next);
   else changeSetting({ [o.key]: next });
   const now = $('s-lobby').querySelector(`input[name="opt-${o.id}"]:checked`);
@@ -1124,7 +1152,11 @@ function renderRounds() {
   $('round-strip').hidden = !cup;
   if (!cup) {
     stageSel = 'all';
+    // (Quick Play keeps the strip's place, unseen, so the room is the same height either way: one chip stands in for the row)
     tabs.textContent = '';
+    const stand = el('label');
+    stand.append(el('span', '', 'Every round'));
+    tabs.append(stand);
     delete tabs.dataset.sig;
     return;
   }
@@ -1151,7 +1183,6 @@ function renderRounds() {
 function pickRound(value) {
   stageSel = value;
   sfx.play('click');
-  preview(null);
   syncOptions();
 }
 
@@ -1170,72 +1201,6 @@ function paintCards() {
   }
   jobs.push([themeId, () => (cardTheme = themeId)]);
   paintQueue(jobs, () => run === paintRun && panel === 'lobby');
-}
-
-// --- the picture beside the choices: whatever you are pointing at, walking
-// over with the keys or have just chosen - a stage in its style, a style, or
-// (for a game, the lucky boxes, the clock) its sign, moving a little. With
-// nothing in hand it shows the stage the match will be played on.
-const SIGNS = {
-  game: (v) => [v === 'cup' ? 'cup' : 'play', v === 'cup' ? 'Tournament' : 'Quick Play', v === 'cup' ? 'Several rounds: the points add up' : 'One round, winner takes it'],
-  mode: (v) => [MODE_ICON[v], nameOfMode(v), MODE_LINE[v]],
-  sides: (v) => [v === 'team' ? 'bomb' : 'crowd', v === 'team' ? 'Team Bomb' : 'Free-for-all', CUP_LINE[v]],
-  rounds: (v) => ['cup', `${v} rounds`, 'Every second round has a twist'],
-  duration: (v) => ['clock', `${v} seconds`, 'How long a round lasts'],
-  powerups: (v) => ['box', v ? 'Lucky boxes' : 'No lucky boxes', v ? 'Grab a box, draw an item, set it off' : 'Just running and tagging'],
-  size: (v) => ['crowd', `${v} players`, 'How many play each round'],
-  fill: (v) => ['bot', v ? 'Bots' : 'No bots', v ? 'Bots take the seats nobody has' : 'Only the people in the room play'],
-};
-let pv = null; // [what, value], or null: the stage as it stands
-let pvRun = 0;
-function preview(what, value) {
-  pv = what ? [what, value] : null;
-  if (panel === 'lobby') showPreview();
-}
-$('s-lobby').querySelector('.rm-setup').addEventListener('pointerleave', () => preview(null));
-function showPreview() {
-  const art = $('pv-art');
-  const [what, value] = pv || [];
-  const run = ++pvRun;
-  if (SIGNS[what]) {
-    const [icon, name, line] = SIGNS[what](value);
-    const key = `sign/${icon}`;
-    if (art.dataset.key !== key) {
-      art.dataset.key = key;
-      art.className = `pv-art sign ${icon}`;
-      art.innerHTML = `<span class="crest">${svg(icon)}</span>`;
-    }
-    $('pv-name').textContent = name;
-    $('pv-for').textContent = '';
-    $('pv-line').textContent = line;
-    return;
-  }
-  // a stage in its style; with no stage yet, a corner of a match in that style; with neither, a question mark
-  const arena = what === 'arena' ? value : stageValue('arena');
-  const theme = what === 'theme' ? value : stageValue('theme');
-  const style = what === 'theme';
-  $('pv-name').textContent = style ? stageName('theme', theme) : arena ? stageName('arena', arena) : 'A different stage each round';
-  $('pv-line').textContent = style ? stageBlurb('theme', theme) : arena ? stageBlurb('arena', arena) : 'Pick a round to see it';
-  const real = arena && arena !== 'random' && !style;
-  $('pv-for').textContent = real ? `${rangeText(arena)} players` : '';
-  const styled = theme && theme !== 'random';
-  const t = paintIn(theme);
-  const key = real ? picKey(arena, t, 480) : styled ? `still/${t}/480` : 'sign/any';
-  if (art.dataset.key === key) return;
-  const put = (url) => {
-    art.dataset.key = key;
-    art.className = url ? 'pv-art' : 'pv-art sign any';
-    art.innerHTML = url ? '<img alt="" />' : '<span class="crest">?</span>';
-    if (url) art.firstChild.src = url;
-  };
-  if (key === 'sign/any') return put('');
-  if (painted.has(key)) return put(painted.get(key));
-  art.classList.add('wait'); // (being painted: the frame pulses)
-  loadTheme(t).then(() => {
-    if (run !== pvRun || panel !== 'lobby') return;
-    painted.set(key, real ? scenePreview(arena, t, 480, 270) : styleStill(t, 480, 270));
-    put(painted.get(key));
-  });
 }
 
 // --- "about": a popup that shows and explains a part of the setup - every
@@ -1304,7 +1269,6 @@ function repaintPictures() {
   painted.clear();
   for (const img of $('s-lobby').querySelectorAll('.card img')) for (const k of ['in', 'done']) delete img.dataset[k];
   for (const f of $('s-lobby').querySelectorAll('.face')) delete f.dataset.in;
-  delete $('pv-art').dataset.key;
   if (panel === 'lobby') syncOptions();
 }
 
@@ -1314,29 +1278,80 @@ const measureBar = () => document.body.style.setProperty('--bar', `${document.qu
 function openLobby() {
   show('home', 'lobby');
   buildOptions();
-  pv = null;
   renderLobby();
   focusFirst();
 }
 
-// --- who is in it. A seat is a player's character as it will look in the
-// room's style (a square of their colour until it has been painted), their
-// name, and what they are here.
-function seat(p) {
+// --- who plays. One list, a row a seat: a person, a bot, or nobody yet. A
+// row is the player's character as it will look in the room's style (a
+// square of their colour until it has been painted), their name, what they
+// are here - and, at its end, what can be done about it: cross to the other
+// side (yourself; the host, anyone), take a bot out or send a person out
+// (the host). An open seat offers a bot, or the invite link.
+const act = (cls, icon, label, title, run) => {
+  const b = el('button', `act ${cls}`);
+  b.type = 'button';
+  b.dataset.act = cls.split(' ')[0];
+  b.innerHTML = svg(icon);
+  b.setAttribute('aria-label', label);
+  b.title = title;
+  b.addEventListener('click', run);
+  return b;
+};
+function seat(p, opts = {}) {
   const li = el('li', `rm-seat${p.you ? ' me' : ''}${p.bot ? ' bot' : ''}`);
+  li.dataset.group = '';
   const f = el('i', 'face');
   f.dataset.ci = p.ci;
   f.style.setProperty('--c', INK_COLORS[p.ci]);
-  const who = el('span', 'who');
-  who.append(el('span', 'nm', p.name));
-  const role = [p.host && 'Host', p.bot && 'Bot', p.score].filter(Boolean);
-  if (role.length) who.append(el('small', p.host ? 'role host' : 'role', role.join(' · ')));
-  li.append(f, who);
-  if (p.you) {
-    li.title = 'You';
-    li.setAttribute('aria-label', `${p.name} (you)${role.length ? ', ' + role.join(', ') : ''}`);
+  li.append(f, el('span', 'nm', p.name));
+  const tags = [p.you && 'You', p.host && 'Host', p.bot && 'Bot'].filter(Boolean);
+  for (const t of tags) li.append(el('small', `tag ${t.toLowerCase()}`, t));
+  if (p.score) li.append(el('small', 'score', p.score));
+  const acts = el('span', 'acts');
+  if (opts.cross != null) {
+    const to = TEAM_NAMES[opts.cross];
+    const b = act(opts.cross ? 'cross' : 'cross up', 'down', `Move ${p.you ? 'yourself' : p.name} to ${to}`, p.you ? 'Change sides (X)' : `Move ${p.name} to ${to}`, () => moveSide(p.id, opts.cross));
+    b.dataset.id = p.id;
+    acts.append(b);
   }
+  if (opts.out) {
+    const b = act('out', 'close', p.bot ? `Take the bot ${p.name} out` : `Send ${p.name} out of the room`, p.bot ? 'Take this bot out' : 'Send out of the room', () => sendOut(p));
+    b.dataset.id = p.id;
+    acts.append(b);
+  }
+  if (acts.childElementCount) li.append(acts);
+  if (p.you) li.setAttribute('aria-label', `${p.name} (you)${p.host ? ', host' : ''}`);
   return li;
+}
+// A seat nobody has: the host can put a bot in it, anyone can pass the invite on.
+function openSeat(first) {
+  const li = el('li', 'rm-seat free');
+  li.dataset.group = '';
+  const f = el('i', 'face none');
+  f.setAttribute('aria-hidden', 'true');
+  li.append(f, el('span', 'nm', 'Open seat'));
+  const acts = el('span', 'acts');
+  const mini = (cls, text, title, run) => {
+    const b = el('button', `mini ${cls}`, text);
+    b.type = 'button';
+    b.dataset.act = cls;
+    b.title = title;
+    b.addEventListener('click', run);
+    return b;
+  };
+  if (amHost()) acts.append(mini('add', '+ Bot', 'Put a bot in this seat', () => (sfx.play('click'), socket.emit('bot', { add: true }))));
+  if (first) acts.append(mini('invite', 'Invite', 'Copy the invite link', copyInvite));
+  if (acts.childElementCount) li.append(acts);
+  return li;
+}
+// (the host) a bot out of its seat, at once; a person out of the room, asked about first
+async function sendOut(p) {
+  if (!amHost() || p.id === socket.id) return;
+  if (p.bot) {
+    sfx.play('click');
+    socket.emit('bot', { remove: p.id });
+  } else if (await ask({ title: `Send ${p.name} out?`, yes: 'Send out', no: 'Keep' })) socket.emit('kick', p.id);
 }
 let faceRun = 0;
 function paintFaces() {
@@ -1379,50 +1394,36 @@ function renderLobby() {
   const s = room.settings;
   const host = amHost();
   $('btn-leave').setAttribute('aria-label', 'Leave the room');
-  // a team battle shows the two sides instead of one list
   const sided = s.mode === 'team';
   const list = $('players');
-  list.hidden = sided;
-  $('squads').hidden = !sided;
   $('btn-shuffle').hidden = !(sided && host);
   if (list.dataset.sided !== String(sided)) {
     // (not the first time it is shown; and with less motion, a fade only)
-    if (list.dataset.sided) (sided ? $('squads') : list).animate(calm.matches ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'ease-out' });
+    if (list.dataset.sided) list.animate(calm.matches ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'ease-out' });
     list.dataset.sided = String(sided);
   }
-  // how many play, and whether bots take the seats nobody has (the host's to say; everyone sees the number)
+  // how many seats (everyone sees the number; the host changes it)
   const here = people().length;
+  const bots = room.players.length - here;
+  const open = Math.max(0, s.size - room.players.length);
   $('size-num').textContent = s.size;
-  $('size-step').setAttribute('aria-label', `${s.size} players`);
+  $('size-step').setAttribute('aria-label', `${s.size} seats`);
   for (const [id, off] of [['btn-size-down', s.size <= Math.max(MIN_PLAYERS, here)], ['btn-size-up', s.size >= MAX_PLAYERS]]) {
     $(id).hidden = !host;
     $(id).disabled = off;
   }
-  const bots = $('btn-bots');
-  bots.hidden = !host;
-  bots.setAttribute('aria-pressed', String(!!s.bots));
-  $('bots-label').textContent = s.bots ? 'On' : 'Off';
-  bots.title = s.bots ? 'Bots take the seats nobody has. Turn them off (B)' : 'No bots. Turn them on (B)';
+  // one button for all the bots at once: one in every open seat, or - when no seat is open - every bot out
+  const all = $('btn-bots');
+  const fill = open > 0 || !bots;
+  all.hidden = !host;
+  all.disabled = fill && !open;
+  all.dataset.does = fill ? 'fill' : 'clear';
+  $('bots-label').textContent = fill ? 'Fill' : 'Clear';
+  const what = fill ? 'Put a bot in every open seat' : 'Take every bot out';
+  all.title = `${what} (B)`;
+  all.setAttribute('aria-label', `${what} (B)`);
 
-  const inviting = document.activeElement?.classList.contains('invite');
-  list.textContent = '';
-  if (sided) renderSquads();
-  else {
-    // people first, then the bots; then the seats still free (the first of them is the way to fill it)
-    const rows = room.players.slice().sort((a, b) => !!a.bot - !!b.bot || a.slot - b.slot);
-    for (const p of rows) list.append(seat({ ci: p.slot, name: p.name, host: p.id === room.hostId, you: p.id === socket.id, bot: p.bot, score: p.wins && !p.bot ? `${p.wins} win${p.wins > 1 ? 's' : ''}` : '' }));
-    for (let k = rows.length; k < s.size; k++) {
-      const li = el('li', 'rm-seat free');
-      if (k === rows.length) {
-        const b = el('button', 'invite', 'Invite a friend');
-        b.type = 'button';
-        b.addEventListener('click', copyInvite);
-        li.append(b);
-        if (inviting) queueMicrotask(() => b.focus());
-      } else li.setAttribute('aria-hidden', 'true');
-      list.append(li);
-    }
-  }
+  renderSeats(sided);
   for (const f of $('s-lobby').querySelectorAll('.face[data-ci]')) faceNow(f);
 
   const start = $('btn-start');
@@ -1439,7 +1440,7 @@ function renderLobby() {
     $('lobby-legend'),
     locked()
       ? [[['Esc'], 'leave the room'], [['C'], 'copy the invite link'], ...(sided ? [[['X'], 'change sides']] : [])]
-      : [[['↑', '↓'], 'move'], [['←', '→'], 'choose'], [['−', '+'], 'players'], ...(cup ? [[['T'], 'round']] : []), ...(sided ? [[['X'], 'change sides']] : []), [['Enter'], 'start'], [['Esc'], 'leave']],
+      : [[['↑', '↓'], 'move'], [['←', '→'], 'choose'], [['−', '+'], 'seats'], ...(cup ? [[['T'], 'round']] : []), ...(sided ? [[['X'], 'change sides']] : []), [['Enter'], 'start'], [['Esc'], 'leave']],
   );
   // Where the keyboard starts: the start button. (A guest gets no starting
   // point: Enter must not walk them out.)
@@ -1451,49 +1452,48 @@ function renderLobby() {
   syncOptions();
 }
 
-// Team battle: the two sides, face to face, everyone in the colour they will
-// wear. The sides are the room's: they stay as they are from match to match
-// until someone crosses over (their own arrow, or X) or the host moves people
-// (anyone's arrow) or shuffles (Z). The bots stand wherever a side is short.
-function renderSquads() {
-  const box = $('squads');
-  const mine = me();
+// The seats: the people (in the order they came), then the bots, then the
+// seats still open. In a team game the same rows stand under their side's
+// name - Sun, then Moon - in the colours they will wear; the sides are the
+// room's and stay as they are from match to match until someone crosses over
+// (their own arrow, or X), the host moves somebody, or shuffles (Z).
+function renderSeats(sided) {
+  const s = room.settings;
   const host = amHost();
-  const held = box.contains(document.activeElement) ? document.activeElement.dataset.id : '';
-  box.textContent = '';
-  // (colours are handed out in the order of the list, people first and bots last - the same way the server does it)
-  const seen = [0, 0];
-  const colour = (t) => TEAM_SLOTS[t][seen[t]++ % TEAM_SLOTS[t].length];
-  const cis = new Map(room.players.map((p) => [p.id, colour(p.side)]));
-  [0, 1].forEach((t) => {
-    const side = el('section', 'rm-team');
-    side.style.setProperty('--side', TEAM_COLORS[t]);
-    const head = el('header');
-    head.append(el('b', '', TEAM_NAMES[t]), el('span', 'n', String(room.players.filter((p) => p.side === t).length)));
-    if (mine && mine.side === t) head.append(el('em', '', 'Your side'));
-    const ul = el('ul', 'rm-seats');
-    for (const p of room.players) {
-      if (p.side !== t) continue;
-      const you = p.id === socket.id;
-      const li = seat({ ci: cis.get(p.id), name: p.name, host: p.id === room.hostId, you, bot: p.bot });
-      if (!p.bot && (you || host)) {
-        // across to the other side: your own arrow, and - for the host - everyone's (a bot goes where it is needed)
-        const go = el('button', 'cross');
-        go.type = 'button';
-        go.dataset.id = p.id;
-        go.setAttribute('aria-label', `Move ${you ? 'yourself' : p.name} to ${TEAM_NAMES[1 - t]}`);
-        go.innerHTML = svg(t ? 'left' : 'right');
-        go.title = you ? 'Change sides (X)' : `Move ${p.name} to ${TEAM_NAMES[1 - t]}`;
-        go.addEventListener('click', () => moveSide(p.id, 1 - t));
-        li.append(go);
-      }
-      ul.append(li);
+  const mine = me();
+  const list = $('players');
+  const at = list.contains(document.activeElement) ? document.activeElement : null;
+  const held = at ? [at.dataset.act, at.dataset.id || ''] : null;
+  list.textContent = '';
+  list.classList.toggle('sided', sided);
+  const order = (a, b) => !!a.bot - !!b.bot || a.slot - b.slot;
+  const row = (p, ci) =>
+    seat(
+      { id: p.id, ci, name: p.name, host: p.id === room.hostId, you: p.id === socket.id, bot: p.bot, score: p.wins && !p.bot ? `${p.wins} win${p.wins > 1 ? 's' : ''}` : '' },
+      { cross: sided && (p.id === socket.id || host) ? 1 - p.side : null, out: host && p.id !== socket.id },
+    );
+  if (sided) {
+    // (colours are handed out in the order of the list, people first and bots last - the same way the server does it)
+    const seen = [0, 0];
+    const colour = (t) => TEAM_SLOTS[t][seen[t]++ % TEAM_SLOTS[t].length];
+    const cis = new Map(room.players.map((p) => [p.id, colour(p.side)]));
+    for (const t of [0, 1]) {
+      const team = room.players.filter((p) => p.side === t).sort(order);
+      const head = el('li', 'rm-team');
+      head.style.setProperty('--side', TEAM_COLORS[t]);
+      head.append(el('b', '', TEAM_NAMES[t]), el('span', 'n', String(team.length)));
+      if (mine && mine.side === t) head.append(el('em', '', 'Your side'));
+      list.append(head);
+      for (const p of team) list.append(row(p, cis.get(p.id)));
+      if (!team.length) list.append(el('li', 'rm-seat none', 'Nobody yet'));
     }
-    if (!ul.childElementCount) ul.append(el('li', 'rm-seat none', 'Nobody yet'));
-    side.append(head, ul);
-    box.append(side);
-  });
-  if (held) box.querySelector(`[data-id="${held}"]`)?.focus();
+  } else for (const p of room.players.slice().sort(order)) list.append(row(p, p.slot));
+  for (let k = room.players.length; k < s.size; k++) list.append(openSeat(k === room.players.length));
+  // (the list was rebuilt under the keyboard: back to the same button of the same row - or, if that row is gone, the next one like it)
+  if (held) {
+    const same = [...list.querySelectorAll('button')].filter((b) => b.dataset.act === held[0]);
+    (same.find((b) => (b.dataset.id || '') === held[1]) || same[0] || list.querySelector('button') || $('btn-start')).focus();
+  }
 }
 function moveSide(id, to) {
   if (!room || room.settings.mode !== 'team') return false;
@@ -1945,6 +1945,15 @@ socket.on('room', (r) => {
       renderLobby();
     }
   } else if (overlay === 'results') renderResultButtons();
+});
+
+// The host sent us out of the room.
+socket.on('kicked', () => {
+  if (!room) return;
+  room = null;
+  rig = false;
+  play.stop();
+  toHome('The host sent you out of the room.', $('btn-play'));
 });
 
 socket.on('round', (msg) => {

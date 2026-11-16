@@ -1,16 +1,17 @@
 /* Onigokko - the match screen: canvases, heads-up display, touch controls.
 
    Where things sit (play.js builds them):
-     top centre    minimap
-     top left      free-for-all: the players. Team battle: Sun's players
-                   (Moon's are top right, under the menu button)
+     top centre    the board: the clock - in a team battle with each side's
+                   score and bombs beside it and that side's players beyond -
+                   and under it the flags and the round's name
+     top left      free-for-all: the players
      top right     menu button
-     bottom centre the dock: the kit (what you are, the item you hold, running
-                   boosts) over the board (the clock, big - in a team battle
-                   with each side's score, bombs and flag beside it) over the
-                   name of the round
-     above the dock the item draw (a small reel), only while a lucky box opens
-     upper middle  the objective card, only during the 3-2-1
+     bottom right  minimap (on a phone: under the menu button)
+     bottom left   the objectives, folded to their title after a few seconds
+                   (on a phone: top left)
+     bottom centre the kit: what you are, the item you hold, running boosts
+     above the kit the item draw (a small reel), only while a lucky box opens
+     upper middle  one card, only during the 3-2-1: the game, and what you are
    Everything is a dark slanted plaque with white text, so it reads on top of
    any art style. No filters or blur anywhere; the only animations are short
    one-offs (a pop, a slide) and they move transform / opacity only. */
@@ -37,7 +38,7 @@
 #hud {
   position: absolute; inset: 0; pointer-events: none; color: #fff; font-family: var(--f-ui);
   --pad-l: max(10px, env(safe-area-inset-left)); --pad-r: max(10px, env(safe-area-inset-right)); --pad-t: max(8px, env(safe-area-inset-top)); --pad-b: max(12px, env(safe-area-inset-bottom));
-  --mapw: clamp(184px, 16vw, 280px); --maph: calc(var(--mapw) * 0.5636); --mapt: var(--pad-t);
+  --mapw: clamp(184px, 16vw, 280px);
 }
 #hud ul { list-style: none; margin: 0; padding: 0; }
 #hud p { margin: 0; }
@@ -45,14 +46,16 @@
 #hud kbd { display: inline-grid; place-items: center; flex: none; min-width: 20px; height: 20px; padding: 0 4px; font: 800 11px/1 var(--f-ui); color: #fff; background: var(--coal); border: 1.5px solid rgba(255, 255, 255, 0.85); transform: none; opacity: 1; }
 body.no-kbd #hud kbd { display: none; }
 
-/* --- top centre: the arena in miniature (it turns faint while you stand under it) --- */
-#minimap { position: absolute; left: 50%; top: var(--mapt); width: var(--mapw); height: auto; aspect-ratio: 220 / 124; transform: translateX(-50%); opacity: 0.94; transition: opacity 0.16s; clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
+/* --- bottom right: the arena in miniature (it turns faint while you stand under it) --- */
+#minimap { position: absolute; right: var(--pad-r); bottom: var(--pad-b); width: var(--mapw); height: auto; aspect-ratio: 220 / 124; opacity: 0.94; transition: opacity 0.16s; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
 #minimap.aside { opacity: 0.14; }
 
 /* --- top left, free-for-all: the players. Up to five in one column; six to
    ten in two columns of equal plaques. Whoever is it is red, sticks out of the
    list and wears an IT tab. --- */
-#pills { position: absolute; left: var(--pad-l); top: var(--pad-t); display: flex; flex-direction: column; gap: 3px; transition: opacity 0.16s; }
+#side { position: absolute; left: var(--pad-l); top: var(--pad-t); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+#pills { display: flex; flex-direction: column; gap: 3px; transition: opacity 0.16s; }
+#hud.team #pills { display: none; }
 #pills.aside { opacity: 0.2; }
 #pills li { display: flex; align-items: center; gap: 6px; width: max-content; padding: 2px 14px 2px 10px; background: var(--plaque); font-size: clamp(12.5px, 1.3vmin, 15px); line-height: 1.36; clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
 #pills .chip, .h-roster .chip { width: 10px; height: 10px; flex: none; transform: rotate(45deg); box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9); }
@@ -69,39 +72,23 @@ body.no-kbd #hud kbd { display: none; }
 #pills.many li.it { transform: none; }
 #pills.many li.it .val { display: none; } /* (the tab takes the place of the seconds, so nothing moves) */
 
-/* --- team battle: each side's players down its own edge of the screen - Sun on
-   the left, Moon on the right, under the menu button (Sun's list starts level
-   with it). On top a tab with the side's name; then one plaque a player: colour
-   diamond, name, and a bomb while they carry one. Your own plaque is white. --- */
-.h-roster { position: absolute; top: calc(var(--pad-t) + 48px); display: flex; flex-direction: column; gap: 3px; transition: opacity 0.16s; }
-.h-roster.a { left: var(--pad-l); align-items: flex-start; }
-.h-roster.b { right: var(--pad-r); align-items: flex-end; }
-.h-roster.aside { opacity: 0.2; }
-#hud.ffa .h-roster { display: none; }
-.h-roster::before { content: attr(aria-label); padding: 2px 12px 1px; font: 800 11.5px/1.4 var(--f-ui); letter-spacing: 0.08em; text-transform: uppercase; color: #fff; background: var(--side); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
-.h-roster.mine::before { content: attr(aria-label) ' \00b7  you'; box-shadow: inset 0 -2px 0 #fff; }
-.h-roster li { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 12px 3px 10px; background: var(--plaque); font-size: clamp(12.5px, 1.3vmin, 15px); line-height: 1.4; clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
-.h-roster.b li { flex-direction: row-reverse; }
-.h-roster .nm { min-width: 0; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
-.h-roster .bm { display: none; width: 15px; height: 15px; flex: none; margin: 0 -2px; color: #ffb52e; }
-.h-roster li.it { background: var(--coal); box-shadow: inset 0 -3px 0 var(--fuse); }
-.h-roster li.it .bm { display: block; }
-.h-roster li.me { color: var(--coal); background: #fff; }
-.h-roster li.me .chip { box-shadow: 0 0 0 1.5px var(--coal); }
-.h-roster li.me .bm { color: #c44a06; }
-.h-roster li.gone { opacity: 0.45; }
-
-/* --- bottom centre: the dock. From the top down: the kit (what you are, the
-   item in your hands, boosts that are running); the board; the round's name.
-   The board is what you glance at, so it is big: the clock in the middle, and
-   in a team battle each side's score beside it - its name, its points, and a
-   bomb with the number of bombs it is holding - and that side's flag beyond. --- */
-#dock { position: absolute; left: 50%; bottom: var(--pad-b); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; width: max-content; max-width: 100%; }
-#board { display: grid; grid-auto-flow: column; align-items: center; gap: 8px; }
-#timer { min-width: 124px; text-align: center; padding: 3px 28px 0; background: var(--plaque); font: 800 clamp(40px, 7vmin, 60px)/1.08 var(--f-serif); font-variant-numeric: tabular-nums; clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 14px 100%, 0 50%); }
+/* --- top centre: the board. One row: [Sun's players][Sun's score] [clock] [Moon's score][Moon's players],
+   kept clear of the menu button on the right by a margin that is mirrored on the left, so the clock
+   stands in the very middle. Under it, in one line: flag A, the round's name, flag B. --- */
+#top {
+  position: absolute; top: var(--pad-t); --edge: calc(max(var(--pad-l), var(--pad-r)) + 96px); left: var(--edge); right: var(--edge);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: center; justify-items: center; gap: 5px 8px;
+}
+#roster-a { grid-column: 1; grid-row: 1; justify-self: end; }
+#team-a { grid-column: 2; grid-row: 1; }
+#timer { grid-column: 3; grid-row: 1; min-width: 124px; text-align: center; padding: 3px 28px 0; background: var(--plaque); font: 800 clamp(40px, 7vmin, 60px)/1.08 var(--f-serif); font-variant-numeric: tabular-nums; clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 14px 100%, 0 50%); }
 #timer.low { background: var(--hot); }
-#round-label { font-size: 12.5px; font-weight: 700; padding: 2px 16px; background: var(--plaque); white-space: nowrap; clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); }
+#team-b { grid-column: 4; grid-row: 1; }
+#roster-b { grid-column: 5; grid-row: 1; justify-self: start; }
+#under { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; justify-content: center; gap: 8px; }
+#round-label { font: 700 12.5px/18px var(--f-ui); padding: 3px 16px; background: var(--plaque); white-space: nowrap; clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); }
 #round-label:empty { display: none; }
+/* a side's score, in its colour: its name, its points, and a bomb with the number of bombs it is holding */
 .h-score { display: flex; align-items: center; gap: 9px; font: 800 clamp(24px, 4vmin, 34px)/1 var(--f-serif); padding: 9px 18px 6px; color: #fff; white-space: nowrap; clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
 .h-score .tn { font-size: 0.6em; letter-spacing: 0.02em; }
 .h-score .pts { min-width: 1.15em; text-align: center; font-variant-numeric: tabular-nums; }
@@ -112,21 +99,58 @@ body.no-kbd #hud kbd { display: none; }
 .h-score.mine { box-shadow: inset 0 -4px 0 #fff; }
 .h-score.mine::after { content: 'YOU'; font: 800 10px/1 var(--f-ui); letter-spacing: 0.08em; padding: 3px 5px 2px; color: var(--coal); background: #fff; }
 #team-b.mine::after { order: -1; }
+/* a side's players, right beside its score: colour diamond, name, and a bomb while
+   they carry one. Up to three stand in one row, more in two (the script says
+   which); the first is the one nearest the score. Your own chip is white. */
+.h-roster { display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--rows, 1), auto); gap: 3px; min-width: 0; }
+.h-roster.a { direction: rtl; }
+.h-roster li { direction: ltr; display: flex; align-items: center; gap: 5px; min-width: 0; padding: 3px 11px 3px 9px; background: var(--plaque); font-size: clamp(12.5px, 1.3vmin, 15px); line-height: 1.4; clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
+.h-roster .nm { min-width: 0; max-width: clamp(5ch, calc((50vw - 385px) / 3 - 42px), 12ch); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.h-roster .bm { display: none; width: 15px; height: 15px; flex: none; margin: 0 -3px 0 -2px; color: #ffb52e; }
+.h-roster li.it { background: var(--coal); box-shadow: inset 0 -3px 0 var(--fuse); }
+.h-roster li.it .bm { display: block; }
+.h-roster li.me { color: var(--coal); background: #fff; }
+.h-roster li.me .chip { box-shadow: 0 0 0 1.5px var(--coal); }
+.h-roster li.me .bm { color: #c44a06; }
+.h-roster li.gone { opacity: 0.45; }
 /* a flag: its letter, and a bar that fills with the colour of whoever is taking it */
 .h-flags { display: flex; gap: 6px; }
-.flagchip { display: flex; align-items: center; gap: 6px; padding: 7px 12px 7px 9px; background: var(--plaque); color: #e9e2cf; font: 800 17px/1 var(--f-ui); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
-#flags-b .flagchip { flex-direction: row-reverse; padding: 7px 9px 7px 12px; }
-.flagchip svg { width: 19px; height: 19px; display: block; }
-.flagchip .meter { display: block; width: clamp(50px, 6vw, 92px); height: 12px; background: rgba(255, 255, 255, 0.2); overflow: hidden; }
+.flagchip { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 11px 0 8px; background: var(--plaque); color: #e9e2cf; font: 800 14px/1 var(--f-ui); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
+#flags-b .flagchip { flex-direction: row-reverse; padding: 0 8px 0 11px; }
+.flagchip svg { width: 15px; height: 15px; display: block; }
+.flagchip .meter { display: block; width: clamp(46px, 5vw, 84px); height: 10px; background: rgba(255, 255, 255, 0.2); overflow: hidden; }
 .flagchip .meter i { display: block; width: 100%; height: 100%; transform-origin: 0 50%; transform: scaleX(0); transition: transform 0.12s linear; }
 .flagchip.held b { color: #fff; }
+
+/* --- bottom left: the objectives. What this round asks of you, there for the
+   whole match: open for the first seconds, then folded to its title. O, a click
+   on the title or the pointer over it opens it again. --- */
+#tasks { position: fixed; left: var(--pad-l); bottom: var(--pad-b); display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 3px; max-width: min(330px, 46vw); opacity: 0.8; transition: opacity 0.16s; }
+#tasks.open, #tasks:hover { opacity: 1; }
+#tasks.aside { opacity: 0.2; }
+#tasks .t-hd { pointer-events: auto; display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 13px 0 10px; border: 0; border-radius: 0; color: #fff; background: var(--plaque); font: 800 11.5px/1 var(--f-ui); letter-spacing: 0.07em; text-transform: uppercase; cursor: pointer; clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
+#tasks .t-hd .ic { font-size: 10.5px; color: var(--ready); }
+#hud #tasks .t-hd kbd { min-width: 17px; height: 17px; margin-left: 3px; font-size: 10px; }
+#tasks .t-list { display: none; flex-direction: column; gap: 4px; padding: 9px 16px 10px 11px; background: rgba(18, 16, 14, 0.9); clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%); }
+#tasks.open .t-list { display: flex; }
+@media (hover: hover) { #tasks:hover .t-list { display: flex; } }
+#tasks .t-list li { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 1.35; font-weight: 600; }
+#tasks .t-list li > .ic { font-size: 12px; margin-top: 2.5px; }
+#tasks .t-list b { font-weight: 800; }
+#tasks .t-twist > .ic { color: var(--ready); }
+#tasks .t-list .t-keys { flex-wrap: wrap; align-items: center; gap: 5px 12px; margin-top: 4px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.24); font-size: 12.5px; font-weight: 700; }
+#tasks .t-keys span { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+#hud #tasks .t-keys kbd { background: none; }
+#tasks .t-keys kbd:last-of-type, #tasks .t-keys .b-tb { margin-right: 3px; }
+#tasks .b-tb { display: grid; grid-auto-flow: column; place-items: center; width: 22px; height: 22px; font-size: 10px; border: 1.5px solid rgba(255, 255, 255, 0.85); border-radius: 50%; }
+#tasks .b-tb.b-wide { width: 42px; border-radius: 9px; gap: 4px; }
 
 /* --- top right: the menu --- */
 .hud-btn { position: absolute; right: var(--pad-r); top: var(--pad-t); width: 44px; height: 42px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 0; background: var(--plaque); color: #fff; font: inherit; cursor: pointer; pointer-events: auto; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
 #hud .hud-key { position: absolute; right: calc(var(--pad-r) + 50px); top: calc(var(--pad-t) + 9px); height: 24px; padding: 0 7px; background: var(--plaque); border-color: rgba(255, 255, 255, 0.7); opacity: 0.9; }
 
-/* --- the kit, on top of the dock, in one row: what you are (it / carrying a bomb), the item in your hands, boosts that are running --- */
-#kit { display: flex; align-items: center; gap: 10px; }
+/* --- bottom centre, the kit, in one row: what you are (it / carrying a bomb), the item in your hands, boosts that are running --- */
+#kit { position: absolute; left: 50%; bottom: var(--pad-b); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; }
 #buffs { display: flex; gap: 6px; }
 #buffs:empty { display: none; }
 #buffs div { display: flex; align-items: center; gap: 5px; padding: 4px 16px 4px 12px; background: var(--plaque); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); }
@@ -157,7 +181,7 @@ body.no-kbd #hud kbd { display: none; }
 /* --- the item draw: a small reel. The icons roll through its window for as
    long as the item takes to arm (one animation, set up by the script), it stops
    on yours with a pop and its name, and then drops into the item tile. --- */
-#itemdraw { position: absolute; --s: clamp(108px, 15.5vmin, 132px); left: calc(50% - var(--s) / 2 + var(--dx, 0px)); bottom: calc(var(--pad-b) + 190px); width: var(--s); display: flex; flex-direction: column; align-items: center; }
+#itemdraw { position: absolute; --s: clamp(108px, 15.5vmin, 132px); left: calc(50% - var(--s) / 2 + var(--dx, 0px)); bottom: calc(var(--pad-b) + 78px); width: var(--s); display: flex; flex-direction: column; align-items: center; }
 #itemdraw .box { width: var(--s); height: var(--s); display: grid; place-items: center; background: var(--coal); clip-path: var(--blot); }
 #itemdraw .win { position: relative; width: 84%; height: 84%; overflow: hidden; background: var(--cream); clip-path: var(--blot); }
 /* the reel is a drum: darker towards the top and the bottom edge */
@@ -185,50 +209,36 @@ body:not(.no-kbd) #hud #itemdraw.land .tag kbd { display: inline-grid; }
 @keyframes item-tag { 0%, 62% { opacity: 1; } 76%, 100% { opacity: 0; } }
 #itemdraw.still, #itemdraw.still * { animation: none !important; }
 
-#banner { position: absolute; left: 0; right: 0; top: max(21%, calc(var(--mapt) + var(--maph) + 14px)); text-align: center; font: 400 clamp(26px, 6vmin, 52px)/1.1 var(--f-brush); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6), 0 0 14px rgba(0, 0, 0, 0.5); opacity: 0; }
+#banner { position: absolute; left: 0; right: 0; top: max(21%, 126px); text-align: center; font: 400 clamp(26px, 6vmin, 52px)/1.1 var(--f-brush); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6), 0 0 14px rgba(0, 0, 0, 0.5); opacity: 0; }
 #banner.show { animation: hud-banner 1.7s ease-out forwards; }
 #banner.red { color: #ffd9d2; }
 @keyframes hud-banner { 0% { opacity: 0; transform: scale(0.8) rotate(-2deg); } 12% { opacity: 1; transform: scale(1.06) rotate(-2deg); } 20%, 75% { opacity: 1; transform: rotate(-2deg); } 100% { opacity: 0; transform: rotate(-2deg); } }
-/* GO! (the 3-2-1 before it is the seal on the objective card) */
+/* GO! (the 3-2-1 before it is the seal on the card) */
 #count { position: absolute; inset: 0; display: grid; place-items: center; font: 400 clamp(100px, 34vmin, 240px)/1 var(--f-brush); text-shadow: 0 4px 0 rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 0, 0, 0.4); }
 #count.pop { animation: hud-count 0.9s ease-out; }
 @keyframes hud-count { 0% { transform: scale(1.5); opacity: 0; } 20% { transform: none; opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0.2; } }
 
-/* --- the objective card: shown for the 3-2-1, gone at GO. It sits in the half
-   of the screen your own player is NOT in (.hi / .lo, decided by the script).
-   The count is the red seal on its corner. --- */
-#brief { --seal: clamp(60px, 8.4vmin, 84px); position: absolute; z-index: 0; left: 0; right: 0; margin: 0 auto; width: fit-content; min-width: 250px; max-width: min(92vw, max(480px, 62vmin)); padding: 0 0 12px; color: #fff; }
-#brief.hi { top: max(17%, calc(var(--mapt) + var(--maph) + 22px)); }
-#brief.lo { bottom: max(13%, 176px); }
-#brief .b-extra.mine { background: var(--hot); }
+/* --- the card before GO: shown for the 3-2-1 and gone at GO. Two things and
+   nothing else: the game's name, and what YOU are this round. It sits in the
+   half of the screen your own player is NOT in (.hi / .lo, decided by the
+   script). The count is the red seal on its corner. --- */
+#brief { --seal: clamp(60px, 8.4vmin, 84px); position: absolute; z-index: 0; left: 0; right: 0; margin: 0 auto; width: fit-content; min-width: 270px; max-width: min(92vw, 560px); padding: 0 0 14px; color: #fff; }
+#brief.hi { top: max(17%, 130px); }
+#brief.lo { bottom: max(13%, 96px); }
 #brief::before { content: ''; position: absolute; inset: 0; z-index: -1; background: rgba(18, 16, 14, 0.93); clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
 #brief .b-hd { display: flex; align-items: center; gap: 12px; padding: 8px 20px 6px calc(var(--seal) + 4px); min-height: calc(var(--seal) - 16px); box-shadow: inset 0 -2px 0 var(--hot); }
-#brief .b-title { font: 400 clamp(26px, 3.6vmin, 36px)/1.1 var(--f-brush); white-space: nowrap; padding-top: 2px; }
-#brief .b-side { margin-left: auto; padding: 3px 12px 2px; font: 800 11.5px/1.4 var(--f-ui); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
+#brief .b-title { font: 400 clamp(28px, 4vmin, 40px)/1.1 var(--f-brush); white-space: nowrap; padding-top: 2px; }
+#brief .b-side { margin-left: auto; padding: 3px 12px 2px; font: 800 12px/1.4 var(--f-ui); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
 #brief .b-n { position: absolute; left: -12px; top: -14px; width: var(--seal); height: var(--seal); display: grid; place-items: center; padding-top: 3px; font: 400 calc(var(--seal) * 0.69)/1 var(--f-brush); color: #fff; background: var(--hot); clip-path: var(--blot); transform: rotate(-6deg); }
 #brief .b-n.pop { animation: brief-n 0.3s cubic-bezier(0.2, 1.4, 0.4, 1); }
 @keyframes brief-n { from { transform: rotate(-6deg) scale(2); opacity: 0.3; } }
-#brief .b-goals { display: grid; gap: 7px; padding: 11px 22px 0 16px; }
-#brief .b-goals li { display: flex; align-items: center; gap: 11px; font-size: clamp(15.5px, 2.1vmin, 20px); line-height: 1.2; font-weight: 600; }
-#brief .b-goals b { font-weight: 800; }
-#brief .b-tile { display: grid; place-items: center; flex: none; width: 2em; height: 2em; color: #1c1b1f; background: var(--cream); clip-path: var(--blot); }
-#brief .b-extra { display: flex; align-items: center; gap: 7px; margin: 9px 16px 0; padding: 4px 12px 4px 9px; font-size: clamp(13.5px, 1.8vmin, 17px); line-height: 1.25; font-weight: 600; background: rgba(255, 255, 255, 0.12); }
-#brief .b-extra .ic { font-size: 12.5px; }
-#brief .b-extra b { font-weight: 800; }
-#brief .b-extra.b-twist { background: var(--hot); }
-#brief .b-extra.b-lead .ic { color: var(--ready); }
-#brief .b-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 11px 16px 0; padding-top: 9px; border-top: 1px solid rgba(255, 255, 255, 0.24); font-size: clamp(12.5px, 1.65vmin, 15.5px); font-weight: 700; }
-#brief .b-keys span { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
-#brief .b-keys kbd { margin-right: 1px; background: none; }
-#brief .b-keys kbd:last-of-type, #brief .b-keys .b-tb { margin-right: 4px; }
-#brief .b-keys small { flex-basis: 100%; font-size: 11.5px; font-weight: 600; opacity: 0.72; }
-#brief .b-tb { display: grid; grid-auto-flow: column; place-items: center; width: 24px; height: 24px; font-size: 11px; border: 1.5px solid rgba(255, 255, 255, 0.85); border-radius: 50%; }
-#brief .b-tb.b-wide { width: 46px; border-radius: 9px; gap: 4px; }
+#brief .b-you { display: flex; align-items: center; gap: 13px; padding: 14px 24px 0 18px; font-size: clamp(21px, 3.3vmin, 30px); line-height: 1.15; white-space: nowrap; }
+#brief .b-you b { font-weight: 800; }
+#brief .b-tile { display: grid; place-items: center; flex: none; width: 1.7em; height: 1.7em; color: #1c1b1f; background: var(--cream); clip-path: var(--blot); }
+#brief .b-tile .ic { font-size: 0.82em; }
+#brief .b-you.mine .b-tile { color: #fff; background: var(--hot); }
 #brief.in { animation: brief-in 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
-#brief.in .b-goals li, #brief.in .b-extra, #brief.in .b-keys { animation: brief-row 0.26s ease-out 0.14s both; }
-#brief.in .b-goals li + li { animation-delay: 0.22s; }
-#brief.in .b-extra { animation-delay: 0.3s; }
-#brief.in .b-keys { animation-delay: 0.36s; }
+#brief.in .b-you { animation: brief-row 0.26s ease-out 0.14s both; }
 #brief.out { animation: brief-out 0.2s ease-in forwards; }
 @keyframes brief-in { from { opacity: 0; transform: translateY(16px) scale(0.92); } }
 @keyframes brief-row { from { opacity: 0; transform: translateX(-10px); } }
@@ -251,94 +261,107 @@ body:not(.no-kbd) #hud #itemdraw.land .tag kbd { display: inline-grid; }
 .touch .t-use { width: 64px; height: 64px; font-size: 28px; }
 .touch .t-use.ready { background: rgba(255, 210, 63, 0.75) !important; color: #1c1b1f !important; border-color: #fff !important; }
 
-/* On a touch screen the dock stands between the run strip and the buttons. The
-   item itself is on its button, so there is no tile. The item draw appears
-   beside the item button (the script puts it there) and drops into it. */
-body.touch-on #dock { left: calc(max(14px, env(safe-area-inset-left)) + min(44vw, 230px) + 6px); right: calc(max(14px, env(safe-area-inset-right)) + 250px); bottom: max(12px, env(safe-area-inset-bottom)); transform: none; width: auto; gap: 4px; }
-body.touch-on #kit { justify-content: center; flex-wrap: wrap-reverse; gap: 4px 6px; }
+/* On a touch screen the kit sits at the bottom between the run strip and the
+   buttons. The item itself is on its button, so there is no tile. The item
+   draw appears beside the item button (the script puts it there) and drops
+   into it. The objectives stand top left, under the list of players. */
+body.touch-on #kit { left: calc(max(14px, env(safe-area-inset-left)) + min(44vw, 230px) + 8px); right: calc(max(14px, env(safe-area-inset-right)) + 252px); bottom: max(16px, env(safe-area-inset-bottom)); transform: none; justify-content: center; flex-wrap: wrap-reverse; gap: 5px 6px; }
+body.touch-on #tasks { position: static; flex-direction: column; max-width: min(250px, 60vw); }
+body.touch-on #tasks .t-list li { font-size: 12.5px; }
 body.touch-on #itemslot .tile, body.touch-on #hud #itemslot kbd { display: none; }
 body.touch-on #itemslot .cap { display: none; }
 body.touch-on #status { height: 28px; font-size: 12px; padding: 0 13px 0 9px; }
 body.touch-on #buffs div { padding: 3px 13px 3px 10px; font-size: 12px; }
 body.touch-on #itemdraw { --s: 92px; bottom: auto; }
-body.touch-on #brief.lo { bottom: max(13%, 190px); }
+body.touch-on #brief.lo { bottom: max(13%, 122px); }
 
 /* --- smaller screens: a side's players shrink to their colour diamonds (a bomb
-   still shows beside whoever carries one; yours is still the white one), and
-   the board stands in two rows: each side's flag over its score, the clock
-   beside them as tall as both --- */
-@media (max-width: 1023px), (max-height: 560px) {
+   still shows beside whoever carries one; yours is still the white one) --- */
+@media (max-width: 1151px), (max-height: 560px) {
   .h-roster .nm { display: none; }
   .h-roster li { gap: 3px; padding: 5px 9px 5px 8px; }
   .h-roster .bm { width: 13px; height: 13px; margin: -1px -3px -1px 1px; }
-  .h-roster::before { font-size: 10px; padding: 1px 8px 0; }
-  .h-roster.mine::before { content: attr(aria-label); }
+}
+@media (max-width: 1023px), (max-height: 560px) {
   #pills .val { display: none; }
   /* a crowd in a free-for-all: only the colours, five to a row (a red plaque says "it") */
   #pills.many { grid-auto-flow: row; grid-template-rows: none; grid-template-columns: repeat(5, auto); grid-auto-columns: auto; justify-content: start; gap: 3px 1px; }
   #pills.many .nm, #pills.many em { display: none !important; }
   #pills.many li { padding: 5px 9px 5px 8px; }
   #pills.many li.me { box-shadow: inset 0 -2px 0 #fff; }
-  #board { grid-auto-flow: row; grid-template-columns: auto auto auto; gap: 3px 6px; }
-  #flags-a { grid-column: 1; grid-row: 1; justify-self: end; }
-  #team-a { grid-column: 1; grid-row: 2; justify-self: end; }
-  #timer { grid-column: 2; grid-row: 1 / span 2; align-self: stretch; display: grid; place-items: center; min-width: 96px; padding: 2px 20px 0; font-size: clamp(38px, 11vmin, 50px); }
-  #team-b { grid-column: 3; grid-row: 2; justify-self: start; }
-  #flags-b { grid-column: 3; grid-row: 1; justify-self: start; }
   .h-score { font-size: 22px; padding: 6px 12px 4px; gap: 7px; }
   .h-score .tn, .h-score.mine::after { display: none; } /* (the colour says which side; yours keeps the white line under it) */
-  .flagchip { font-size: 13px; padding: 4px 9px 4px 7px; gap: 5px; }
-  #flags-b .flagchip { padding: 4px 7px 4px 9px; }
-  .flagchip svg { width: 14px; height: 14px; }
-  .flagchip .meter { width: 40px; height: 9px; }
+  .flagchip .meter { width: 44px; }
 }
 @media (max-height: 560px) {
-  /* a phone on its side */
-  #hud { --mapw: 178px; }
-  #hud.briefing #minimap { visibility: hidden; } /* (the objective card stands there for the 3-2-1) */
+  /* a phone on its side: the map under the menu button, clear of the thumbs */
+  #hud { --mapw: 132px; }
+  #hud.team #side { top: calc(var(--pad-t) + 74px); } /* (under the board: beside it there is no room for the objectives) */
+  #minimap { top: calc(var(--pad-t) + 50px); bottom: auto; clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
+  #top { --edge: calc(max(var(--pad-l), var(--pad-r)) + 54px); gap: 3px 5px; }
+  #timer { min-width: 76px; padding: 2px 12px 0; font-size: 36px; }
+  .h-score { font-size: 19px; padding: 5px 9px 3px; gap: 5px; }
+  .h-score .held { padding: 3px 5px 2px 3px; }
+  .flagchip { height: 20px; font-size: 12px; }
+  .flagchip svg { width: 13px; height: 13px; }
+  .flagchip .meter { width: 36px; height: 8px; }
   #pills li { font-size: 12px; line-height: 16px; }
   #round-label { display: none; } /* (no room: the card before the round has said it) */
   .touch .pad { height: 74px; }
   .touch .t-jump { width: 80px; height: 80px; }
-  body.touch-on #dock { right: calc(max(14px, env(safe-area-inset-right)) + 238px); }
-  /* (the board has to fit between the run strip and the buttons) */
-  #board { gap: 3px 4px; }
-  #timer { min-width: 76px; padding: 2px 11px 0; font-size: 38px; }
-  .h-score { font-size: 19px; padding: 5px 8px 3px; gap: 4px; }
-  .h-score .held { padding: 3px 5px 2px 3px; }
-  .flagchip .meter { width: 30px; }
-  #brief { --seal: 48px; max-width: min(92vw, 400px); padding-bottom: 7px; }
-  #brief.hi { top: 62px; }
-  #brief.lo, body.touch-on #brief.lo { bottom: 118px; }
+  body.touch-on #kit { right: calc(max(14px, env(safe-area-inset-right)) + 240px); }
+  #banner { top: max(21%, 92px); }
+  #brief { --seal: 48px; min-width: 230px; max-width: min(92vw, 420px); padding-bottom: 9px; }
+  #brief.hi { top: 88px; }
+  #brief.lo, body.touch-on #brief.lo { bottom: 10px; }
+  /* (on a touch screen: in the gap between the run strip and the buttons - the script only puts it there if it fits) */
+  body.touch-on #brief.lo { left: calc(max(14px, env(safe-area-inset-left)) + min(44vw, 230px) + 8px); right: calc(max(14px, env(safe-area-inset-right)) + 240px); min-width: 0; }
   #brief .b-hd { padding: 5px 16px 4px 52px; }
-  #brief .b-title { font-size: 21px; }
+  #brief .b-title { font-size: 23px; }
   #brief .b-n { left: -10px; top: -12px; }
-  #brief .b-goals { gap: 4px; padding: 7px 16px 0 12px; }
-  #brief .b-goals li { font-size: 13px; gap: 8px; }
-  #brief .b-extra { margin: 5px 12px 0; padding: 2px 10px 2px 8px; font-size: 12.5px; }
-  #brief .b-keys { margin: 6px 12px 0; padding-top: 5px; gap: 4px 10px; font-size: 12px; }
-  #brief .b-tb { width: 22px; height: 22px; }
-  #brief .b-tb.b-wide { width: 42px; }
+  #brief .b-you { padding: 8px 18px 0 13px; font-size: 19px; gap: 10px; }
+  /* (in that gap the card may fold its line in two; and it stands where the sign that says the same thing would be) */
+  body.touch-on #brief.lo .b-you { white-space: normal; }
+  body.touch-on #brief.lo .b-hd { gap: 8px; padding-right: 10px; }
+  body.touch-on #brief.lo .b-title { font-size: 20px; }
+  body.touch-on #brief.lo .b-side { font-size: 10.5px; padding: 2px 8px 1px; }
+  #hud.briefing #status { visibility: hidden; }
 }
 @media (max-width: 540px) {
-  /* A phone held upright. The map in the middle of the top edge, the players
-     in the corners beside it; the dock right across, above the thumb controls. */
-  #hud { --mapw: 156px; }
+  /* A phone held upright. The top is narrow: the clock with a score either
+     side takes the first row, each side's players stand under their score,
+     then the flags and the round. The map is under the menu button, the
+     objectives across from it under the list of players. */
+  #hud { --mapw: 140px; }
+  #minimap { top: calc(var(--pad-t) + 86px); bottom: auto; clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
+  #hud.team #minimap, #hud.team #side { top: calc(var(--pad-t) + 138px); }
+  body.touch-on #tasks, #tasks { max-width: 54vw; }
+  #top { --edge: calc(max(var(--pad-l), var(--pad-r)) + 44px); grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 3px 5px; }
+  #team-a { grid-column: 1; justify-self: end; }
+  #timer { grid-column: 2; min-width: 84px; padding: 2px 14px 0; font-size: 38px; }
+  #team-b { grid-column: 3; justify-self: start; }
+  #roster-a { grid-column: 1; grid-row: 2; align-self: start; }
+  #roster-b { grid-column: 3; grid-row: 2; align-self: start; }
+  #under { grid-row: 3; gap: 5px; }
+  .h-score { font-size: 20px; padding: 6px 10px 4px; gap: 5px; }
+  .h-score .held { padding: 3px 5px 2px 3px; }
   .h-roster li { gap: 0; padding: 5px 6px 5px 5px; clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%); }
   .h-roster .bm { width: 12px; height: 12px; margin: -1px -3px -1px 0; }
+  .flagchip { height: 20px; font-size: 12px; }
+  .flagchip svg { width: 13px; height: 13px; }
+  .flagchip .meter { width: 34px; height: 8px; }
+  #round-label { font-size: 11.5px; line-height: 16px; padding: 2px 11px; }
   #pills li { font-size: 11.5px; line-height: 16px; padding: 2px 11px 2px 9px; gap: 5px; }
   #pills .nm { max-width: 7ch; }
-  #pills.many { grid-template-columns: repeat(2, auto); } /* (beside the map there is room for two colours abreast) */
-  #banner { top: max(27%, 216px); }
-  #brief { max-width: 90vw; padding-bottom: 10px; }
+  #pills.many { grid-template-columns: repeat(2, auto); } /* (beside the clock there is room for two colours abreast) */
+  #banner { top: max(27%, 232px); }
+  #brief { min-width: 240px; max-width: 92vw; padding-bottom: 11px; }
   #brief .b-n { left: -7px; top: -8px; }
-  #brief .b-goals { gap: 6px; padding-top: 9px; }
-  #brief .b-keys { margin-top: 9px; padding-top: 7px; }
-  #brief.hi, #hud.ffa #brief.hi { top: 204px; } /* (under the map and the lists of players) */
-  #brief.lo, body.touch-on #brief.lo { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 300px); } /* (clear of the dock) */
-  #brief .b-goals li { font-size: 14.5px; }
-  /* the dock: right across, above the buttons */
-  body.touch-on #dock { left: 0; right: 0; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 180px); }
+  #brief .b-you { font-size: 20px; padding: 11px 16px 0 13px; gap: 10px; }
+  #brief.hi, #hud.ffa #brief.hi { top: 238px; } /* (under the map and the list of players) */
+  #brief.lo, body.touch-on #brief.lo { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 176px); } /* (clear of the item button) */
+  /* what you are / what is running: just above the run strip, near your thumb */
+  body.touch-on #kit { left: max(14px, env(safe-area-inset-left)); right: auto; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 96px); max-width: 46vw; justify-content: flex-start; }
   /* the item button sits above jump, clear of the run strip */
   .touch .acts { display: grid; grid-template-columns: auto auto; gap: 10px; justify-items: end; align-items: end; }
   .touch .t-use { grid-column: 2; grid-row: 1; justify-self: center; }
