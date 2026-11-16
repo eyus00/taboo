@@ -471,23 +471,50 @@ body:not(.no-kbd) .touch-only { display: none; }
 
 
 /* ---------------------------------------------------------- the result */
-.outcome { gap: 12px; }
-.verdict { display: flex; align-items: center; gap: 16px; }
-.verdict .seal.big { margin-left: 0; font-size: 42px; transform: rotate(-6deg); }
+.outcome { gap: 14px; }
+#s-results .scroll.mid { max-width: 760px; }
+#s-results.teams .scroll.mid { max-width: 860px; }
+/* One card. At the top the moment itself: on the left you, under the seal
+   (or the first three on a podium), rays turning behind a winner; beside it
+   the word for it, large, a line of praise, and what you did in a few small
+   numbers. Under that everyone's numbers; at the foot, what happens next. */
+.verdict { position: relative; display: flex; align-items: center; gap: clamp(16px, 3vw, 30px); min-height: 124px; }
+.verdict .stage { position: relative; flex: none; display: grid; place-items: center; }
+.verdict .words { position: relative; z-index: 1; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.verdict .kicker { margin: 0; }
 .verdict .res-title { font-size: clamp(26px, 4.4vw, 40px); }
-.verdict .lead { font-size: 15px; }
-/* the verdict lands: the seal is stamped on, the headline comes up behind it (red for a win, ink for a loss) */
-.verdict { position: relative; }
-#s-results[data-mood] .verdict .seal { animation: stamp 0.42s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+.verdict .praise { font: 400 clamp(18px, 2.4vw, 23px)/1.15 var(--brush); color: var(--ink); }
+.verdict .praise:empty { display: none; }
+.verdict .lead { font-size: 14px; }
+/* you, in a brush circle, with the seal stamped on its corner */
+.medal { position: relative; z-index: 1; width: 116px; height: 116px; flex: none; display: grid; place-items: center; background: var(--enso) center / 100% 100% no-repeat; }
+.medal[hidden] { display: none; }
+.medal .face.xl { width: 80px; height: 80px; margin: 0; }
+.medal .seal.big { position: absolute; right: -12px; bottom: -4px; margin: 0; font-size: 30px; transform: rotate(-8deg); }
+/* rays behind a winner, turning slowly */
+.verdict .rays { position: absolute; left: 50%; top: 50%; width: 380px; height: 380px; margin: -190px 0 0 -190px; pointer-events: none; opacity: 0; background: repeating-conic-gradient(from 0deg, rgba(217, 165, 58, 0.36) 0deg 9deg, rgba(217, 165, 58, 0) 9deg 20deg); -webkit-mask: radial-gradient(closest-side, #000 24%, rgba(0, 0, 0, 0.5) 54%, transparent 80%); mask: radial-gradient(closest-side, #000 24%, rgba(0, 0, 0, 0.5) 54%, transparent 80%); }
+#s-results[data-mood='win'] .verdict .rays { opacity: 1; animation: rays-in 0.7s ease-out both, rays-turn 26s linear infinite; }
+@keyframes rays-in { from { opacity: 0; scale: 0.5; } }
+@keyframes rays-turn { to { rotate: 360deg; } }
+/* the verdict lands: the seal is stamped on, the headline comes up (red for a win, ink for a loss) */
+#s-results[data-mood] .verdict .seal.big { animation: stamp 0.42s cubic-bezier(0.2, 1.5, 0.4, 1) 0.18s both; }
 @keyframes stamp { from { opacity: 0; transform: scale(2.3) rotate(10deg); } }
-#s-results[data-mood='win'] .res-title, #s-results[data-mood='lose'] .res-title, #s-results[data-mood='level'] .res-title { font-size: clamp(34px, 5.6vw, 54px); line-height: 1; }
-#s-results[data-mood='win'] .res-title { color: var(--red-deep); animation: verdict-up 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) 0.08s both; }
-#s-results[data-mood='lose'] .res-title { color: var(--ink); animation: verdict-down 0.36s ease-out 0.08s both; }
-#s-results[data-mood=''] .verdict .seal { animation: none; }
+#s-results[data-mood='win'] .res-title, #s-results[data-mood='lose'] .res-title, #s-results[data-mood='level'] .res-title { font-size: clamp(40px, 6vw, 58px); line-height: 1; }
+#s-results[data-mood='win'] .res-title { color: var(--red-deep); transform-origin: 0 60%; animation: verdict-up 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) 0.1s both; }
+#s-results[data-mood='lose'] .res-title { color: var(--ink); animation: verdict-down 0.36s ease-out 0.1s both; }
+#s-results[data-mood=''] .verdict .seal.big { animation: none; }
 @keyframes verdict-up { from { opacity: 0; transform: translateY(12px) scale(0.7) rotate(-3deg); } }
 @keyframes verdict-down { from { opacity: 0; transform: translateY(-16px); } }
-/* a burst of petals from behind the headline, for a win */
-.res-fx { position: absolute; left: clamp(70px, 24%, 190px); top: 50%; width: 0; height: 0; pointer-events: none; z-index: 2; }
+/* a winner hops for joy; a loser hangs their head */
+#s-results[data-mood='win'] .medal { animation: medal-in 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+#s-results[data-mood='win'] .medal .face, #s-results[data-mood='win'] .podium .p1 .face { animation: hop 1.5s cubic-bezier(0.3, 0, 0.4, 1) 0.5s 3; }
+#s-results[data-mood='lose'] .medal .face { rotate: -9deg; translate: 0 4px; filter: saturate(0.55); }
+#s-results[data-mood='win'] .praise { animation: rise 0.4s ease-out 0.42s both; }
+@keyframes medal-in { from { opacity: 0; scale: 0.5; rotate: -14deg; } }
+@keyframes hop { 0%, 44%, 100% { translate: 0 0; } 14% { translate: 0 -13px; rotate: -5deg; } 28% { translate: 0 0; rotate: 0deg; } 36% { translate: 0 -6px; rotate: 4deg; } }
+@keyframes rise { from { opacity: 0; translate: 0 8px; } }
+/* a burst of petals from behind the picture, for a win */
+.res-fx { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; z-index: 2; }
 .res-fx i { position: absolute; left: 0; top: 0; width: var(--size, 10px); height: calc(var(--size, 10px) * 0.72); background: #e98aa4; border-radius: 80% 10% 80% 10%; opacity: 0; animation: petal-burst 1.5s cubic-bezier(0.15, 0.7, 0.3, 1) var(--wait, 0ms) both; }
 .res-fx i.gold { background: #d9a53a; border-radius: 2px; }
 @keyframes petal-burst {
@@ -495,6 +522,35 @@ body:not(.no-kbd) .touch-only { display: none; }
   12% { opacity: 1; }
   60% { opacity: 1; transform: translate(var(--dx), var(--dy)) rotate(var(--turn)) scale(1); }
   100% { opacity: 0; transform: translate(calc(var(--dx) * 1.12), calc(var(--dy) + 70px)) rotate(calc(var(--turn) * 1.4)) scale(0.9); }
+}
+/* what you did: a few small numbers in a row (gold, with a star, where nobody did better) */
+.feats { display: flex; flex-wrap: wrap; gap: 6px; margin: 5px 0 0; padding: 0; list-style: none; }
+.feats:empty { display: none; }
+.feat { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 2px 9px 1px 7px; font: 600 12.5px/1 var(--serif); color: var(--soft); white-space: nowrap; background: var(--paper-lit); border: 1.5px solid rgba(28, 27, 31, 0.45); animation: rise 0.36s ease-out calc(0.34s + var(--i, 0) * 0.11s) both; }
+.feat > .ic { font-size: 12px; color: var(--ink); }
+.feat b { font: 800 14px/1 var(--serif); color: var(--ink); font-variant-numeric: tabular-nums; }
+.feat.best { border-color: #a9741a; background: #fbf0d2; }
+.feat.best em { display: inline-flex; color: #a9741a; font-size: 11px; }
+/* everyone's numbers */
+.scores { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 2px solid var(--ink); }
+/* at the foot: what happens next, then the way back and the way on - in one line */
+.outcome .actions { flex-wrap: nowrap; gap: 12px; }
+.outcome .actions .note { margin: 0 auto 0 0; min-width: 0; text-align: left; }
+.outcome .actions .note:empty { display: block; }
+.next { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin: 0; padding: 4px 16px 3px 12px; font: 800 12px/1 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; color: #fff3e0; background: var(--ink); clip-path: polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%); }
+.next[hidden] { display: none; }
+.next .ic { font-size: 15px; }
+.next b { min-width: 0.7em; font: 400 26px/1 var(--brush); letter-spacing: 0; color: #ffd9a3; text-align: center; }
+/* a narrow screen: the picture over the words, everything in the middle; the two buttons share the width */
+@media (max-width: 640px) {
+  .verdict { flex-direction: column; gap: 8px; min-height: 0; text-align: center; }
+  .verdict .words { align-items: center; flex: none; }
+  #s-results[data-mood='win'] .res-title { transform-origin: 50% 60%; }
+  .feats { justify-content: center; }
+  .outcome .actions { flex-wrap: wrap; }
+  .outcome .actions .note:empty { display: none; }
+  .outcome .actions .note, .next { flex: 1 1 100%; justify-content: center; text-align: center; margin: 0; }
+  .outcome .actions .btn { flex: 1 1 0; }
 }
 /* a player's face: their character in the style of the match (their colour until it is painted) */
 .face { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; margin-right: 9px; vertical-align: -8px; overflow: hidden; background: var(--c, #888); clip-path: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%); }
@@ -510,6 +566,18 @@ body:not(.no-kbd) .touch-only { display: none; }
 .step.p2 .block { height: 38px; }
 .step .block .seal { font: 800 15px/1 var(--serif); }
 .step.me .nm { color: var(--red-deep); }
+/* (on the results card it stands where the medal would: three small steps) */
+.verdict .podium { position: relative; z-index: 1; width: 250px; gap: 5px; }
+.verdict .podium[hidden] { display: none; }
+.verdict .step { width: 32%; }
+.verdict .step .face.lg { width: 46px; height: 46px; }
+.verdict .step .nm { padding: 2px 2px 0; font-size: 15.5px; }
+.verdict .step .nm.long { font-size: 12px; letter-spacing: -0.01em; overflow: visible; }
+.verdict .step .stat { font-size: 11px; }
+.verdict .step .block { height: 16px; padding-top: 2px; }
+.verdict .step.p1 .block { height: 34px; }
+.verdict .step.p2 .block { height: 24px; }
+.verdict .step .block .seal { font-size: 12px; }
 /* everyone, one line each, with a bar for their time as the oni */
 .board { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
 .board li { display: grid; grid-template-columns: 22px minmax(0, 1.25fr) minmax(96px, 1fr) 44px; align-items: center; gap: 10px; padding: 4px 8px; border-bottom: 1.5px solid var(--faint); font-weight: 600; }
@@ -528,7 +596,7 @@ body:not(.no-kbd) .touch-only { display: none; }
 .board li.me { background: rgba(200, 55, 45, 0.08); }
 #s-results.crowd .board li { padding-top: 2px; padding-bottom: 1px; }
 #s-results.crowd .board .who { font-size: 19px; }
-#s-results.crowd .face { width: 22px; height: 22px; vertical-align: -6px; }
+#s-results.crowd .scores .face { width: 22px; height: 22px; vertical-align: -6px; }
 #s-results.crowd .side li { padding-top: 4px; padding-bottom: 3px; }
 #s-results.crowd .scroll { gap: 9px; }
 .side .face { width: 24px; height: 24px; vertical-align: -6px; margin-right: 8px; }
@@ -658,7 +726,7 @@ body:not(.no-kbd) .touch-only { display: none; }
   .conn-note { transition: opacity 0.25s; transform: none; }
   /* a notice fades in where it is; a seal is simply there */
   #toasts div { animation-name: toast-calm; }
-  .verdict .seal, .verdict .res-title { animation: none !important; }
+  .verdict .seal, .verdict .res-title, .verdict .rays, .medal, .medal .face, .podium .face, .verdict .praise, .feat { animation: none !important; }
   .res-fx { display: none; }
 }
 @keyframes toast-calm { 0% { opacity: 0; } 8%, 85% { opacity: 1; } 100% { opacity: 0; } }

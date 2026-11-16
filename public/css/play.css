@@ -88,6 +88,21 @@ body.no-kbd #hud kbd { display: none; }
 #under { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; justify-content: center; gap: 8px; }
 #round-label { font: 700 12.5px/18px var(--f-ui); padding: 3px 16px; background: var(--plaque); white-space: nowrap; clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); }
 #round-label:empty { display: none; }
+/* what is special about this round, for all of it: tags under the round's name -
+   the tournament round (plain), the twist (yellow), double points (red) */
+#tags { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; justify-content: center; gap: 6px; max-width: 100%; }
+.tag { pointer-events: auto; display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 12px 0 10px; font: 800 11.5px/1 var(--f-ui); letter-spacing: 0.07em; text-transform: uppercase; white-space: nowrap; color: #fff; background: var(--plaque); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
+.tag .ic { font-size: 10.5px; }
+.tag .short { display: none; }
+.tag.twist { color: #1c1b1f; background: var(--ready); }
+.tag.x2 { background: var(--hot); font-size: 12.5px; letter-spacing: 0.05em; }
+/* While the round is about to begin (the 3-2-1 and a beat after GO) the twist and
+   the double points draw the eye: a white edge, and each swells in turn - by
+   transform only, so nothing on the board moves, now or when they settle. */
+.tag.twist, .tag.x2 { position: relative; transform-origin: 50% 0; transition: transform 0.25s ease-out; }
+#tags.intro .tag.twist, #tags.intro .tag.x2 { z-index: 1; box-shadow: inset 0 0 0 2px #fff; animation: tag-call 1.2s ease-in-out infinite; }
+#tags.intro .tag.x2 { animation-delay: 0.6s; }
+@keyframes tag-call { 0%, 55%, 100% { transform: none; } 22% { transform: scale(1.36); } }
 /* a side's score, in its colour: its name, its points, and a bomb with the number of bombs it is holding */
 .h-score { display: flex; align-items: center; gap: 9px; font: 800 clamp(24px, 4vmin, 34px)/1 var(--f-serif); padding: 9px 18px 6px; color: #fff; white-space: nowrap; clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
 .h-score .tn { font-size: 0.6em; letter-spacing: 0.02em; }
@@ -95,10 +110,13 @@ body.no-kbd #hud kbd { display: none; }
 .h-score .held { display: inline-flex; align-items: center; gap: 3px; padding: 4px 8px 3px 5px; font: 800 0.72em/1 var(--f-ui); font-variant-numeric: tabular-nums; color: #fff; background: var(--coal); }
 .h-score .held svg { width: 1.1em; height: 1.1em; display: block; color: #ffb52e; }
 .h-score .held.none { opacity: 0.42; }
-/* your own side's score has a white line under it and a small "you" */
+/* Both plates are the same width (the script sees to that) and mirror each other:
+   the name at the outer end, points and bombs against the clock. Your own
+   side's has a white line under it - nothing inside the plate says so, so the
+   two halves of the board stay alike. */
+#team-a .tn { margin-right: auto; }
+#team-b .tn { margin-left: auto; }
 .h-score.mine { box-shadow: inset 0 -4px 0 #fff; }
-.h-score.mine::after { content: 'YOU'; font: 800 10px/1 var(--f-ui); letter-spacing: 0.08em; padding: 3px 5px 2px; color: var(--coal); background: #fff; }
-#team-b.mine::after { order: -1; }
 /* a side's players, right beside its score: colour diamond, name, and a bomb while
    they carry one. Up to three stand in one row, more in two (the script says
    which); the first is the one nearest the score. Your own chip is white. */
@@ -131,13 +149,17 @@ body.no-kbd #hud kbd { display: none; }
 #tasks .t-hd { pointer-events: auto; display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 13px 0 10px; border: 0; border-radius: 0; color: #fff; background: var(--plaque); font: 800 11.5px/1 var(--f-ui); letter-spacing: 0.07em; text-transform: uppercase; cursor: pointer; clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
 #tasks .t-hd .ic { font-size: 10.5px; color: var(--ready); }
 #hud #tasks .t-hd kbd { min-width: 17px; height: 17px; margin-left: 3px; font-size: 10px; }
-#tasks .t-list { display: none; flex-direction: column; gap: 4px; padding: 9px 16px 10px 11px; background: rgba(18, 16, 14, 0.9); clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%); }
+#tasks.open { pointer-events: auto; } /* (so the pointer resting on it holds its clock) */
+#tasks .t-list { position: relative; display: none; flex-direction: column; gap: 4px; padding: 9px 16px 10px 11px; background: rgba(18, 16, 14, 0.9); clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%); }
 #tasks.open .t-list { display: flex; }
 @media (hover: hover) { #tasks:hover .t-list { display: flex; } }
+/* its clock: a thin bar along the bottom of the card, draining for as long as it stays open */
+#tasks.timed .t-list::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--ready); transform-origin: 0 50%; animation: tasks-drain var(--ms, 7000ms) linear forwards; }
+#tasks.wait .t-list::after { animation-play-state: paused; }
+@keyframes tasks-drain { to { transform: scaleX(0); } }
 #tasks .t-list li { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 1.35; font-weight: 600; }
 #tasks .t-list li > .ic { font-size: 12px; margin-top: 2.5px; }
 #tasks .t-list b { font-weight: 800; }
-#tasks .t-twist > .ic { color: var(--ready); }
 #tasks .t-list .t-keys { flex-wrap: wrap; align-items: center; gap: 5px 12px; margin-top: 4px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.24); font-size: 12.5px; font-weight: 700; }
 #tasks .t-keys span { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
 #hud #tasks .t-keys kbd { background: none; }
@@ -224,6 +246,7 @@ body:not(.no-kbd) #hud #itemdraw.land .tag kbd { display: inline-grid; }
    script). The count is the red seal on its corner. --- */
 #brief { --seal: clamp(60px, 8.4vmin, 84px); position: absolute; z-index: 0; left: 0; right: 0; margin: 0 auto; width: fit-content; min-width: 270px; max-width: min(92vw, 560px); padding: 0 0 14px; color: #fff; }
 #brief.hi { top: max(17%, 130px); }
+#hud.tagged #brief.hi { top: max(17%, 150px); } /* (a line of tags under the board: clear of it, also while they swell) */
 #brief.lo { bottom: max(13%, 96px); }
 #brief::before { content: ''; position: absolute; inset: 0; z-index: -1; background: rgba(18, 16, 14, 0.93); clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px)); }
 #brief .b-hd { display: flex; align-items: center; gap: 12px; padding: 8px 20px 6px calc(var(--seal) + 4px); min-height: calc(var(--seal) - 16px); box-shadow: inset 0 -2px 0 var(--hot); }
@@ -290,7 +313,7 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
   #pills.many li { padding: 5px 9px 5px 8px; }
   #pills.many li.me { box-shadow: inset 0 -2px 0 #fff; }
   .h-score { font-size: 22px; padding: 6px 12px 4px; gap: 7px; }
-  .h-score .tn, .h-score.mine::after { display: none; } /* (the colour says which side; yours keeps the white line under it) */
+  .h-score .tn { display: none; } /* (the colour says which side; yours keeps the white line under it) */
   .flagchip .meter { width: 44px; }
 }
 @media (max-height: 560px) {
@@ -307,6 +330,13 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
   .flagchip .meter { width: 36px; height: 8px; }
   #pills li { font-size: 12px; line-height: 16px; }
   #round-label { display: none; } /* (no room: the card before the round has said it) */
+  /* (tags in their short form; the plain round tag makes way for the twist and the double points) */
+  .tag { height: 19px; padding: 0 9px 0 8px; font-size: 10.5px; }
+  .tag.x2 { font-size: 11.5px; }
+  .tag .long { display: none; }
+  .tag .short { display: inline; }
+  #hud.tagged.team #side { top: calc(var(--pad-t) + 96px); }
+  #hud.tagged #brief.hi { top: 114px; } /* (clear of the tags, also while they swell) */
   .touch .pad { height: 74px; }
   .touch .t-jump { width: 80px; height: 80px; }
   body.touch-on #kit { right: calc(max(14px, env(safe-area-inset-right)) + 240px); }
@@ -336,6 +366,14 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
   #minimap { top: calc(var(--pad-t) + 86px); bottom: auto; clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
   #hud.team #minimap, #hud.team #side { top: calc(var(--pad-t) + 138px); }
   body.touch-on #tasks, #tasks { max-width: 54vw; }
+  #hud.tagged.team #minimap, #hud.tagged.team #side { top: calc(var(--pad-t) + 162px); }
+  #hud.tagged.ffa #minimap { top: calc(var(--pad-t) + 110px); }
+  #hud.tagged #brief.hi, #hud.tagged.ffa #brief.hi { top: 264px; }
+  #tags { grid-row: 4; gap: 4px; }
+  .tag { height: 19px; padding: 0 9px 0 8px; font-size: 10.5px; }
+  .tag.x2 { font-size: 11.5px; }
+  .tag .long { display: none; }
+  .tag .short { display: inline; }
   #top { --edge: calc(max(var(--pad-l), var(--pad-r)) + 44px); grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 3px 5px; }
   #team-a { grid-column: 1; justify-self: end; }
   #timer { grid-column: 2; min-width: 84px; padding: 2px 14px 0; font-size: 38px; }
@@ -372,6 +410,8 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
 /* no motion wanted: words and signs simply appear and go; the item draw shows its result at once (the script sees to that) */
 @media (prefers-reduced-motion: reduce) {
   .flash.go, #itemslot .tile, #status.bomb.hot, #brief.in, #brief.in *, #brief .b-n.pop, #itemdraw, #itemdraw * { animation: none !important; }
+  #tasks.timed .t-list::after { display: none; } /* (no draining bar: the objectives still close when their time is up) */
+  #tags.intro .tag.twist, #tags.intro .tag.x2 { animation: none; } /* (no swelling: the white edge alone says "look here") */
   #brief.out { animation: none; visibility: hidden; }
   #banner.show { animation-name: hud-banner-calm; }
   #count.pop { animation-name: hud-count-calm; }

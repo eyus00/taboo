@@ -1,13 +1,15 @@
 // A match that runs entirely in the browser: practice against bots.
 // Same rules code as the server, so it plays exactly like an online match.
 
-import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, MAX_PLAYERS, TEAM_SLOTS, BOMB_END_TICKS, FLAG_CAP_TICKS } from '/shared/config.js';
+import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, MAX_PLAYERS, TEAM_SLOTS, BOMB_END_TICKS, FLAG_CAP_TICKS, twistById } from '/shared/config.js';
 import { Sim, standings, makeTeams } from '/shared/sim.js';
 import { makeBot, botThink, prepareBots, BOT_NAMES } from '/shared/bots.js';
 
 export class LocalGame {
-  // opts: { arena, mode, duration, powerups, name, bots, input, onEvent, intro, squad }
+  // opts: { arena, mode, duration, powerups, name, bots, input, onEvent, intro, squad, twist, cup }
   //   squad: { names, teams } from the match before, to play again with the same bots on the same sides
+  //   twist: a twist's id, to try one out here; cup: what a tournament round would say about itself
+  //   ({ round, rounds, double, leader }) - it changes nothing in the round, only what the display is told
   constructor(opts) {
     this.arena = opts.arena;
     this.mode = opts.mode || 'potato';
@@ -16,6 +18,9 @@ export class LocalGame {
     this.onEvent = opts.onEvent || (() => {});
     this.sim = new Sim(this.arena);
     this.sim.powerups = opts.powerups !== false;
+    this.twistId = opts.twist && opts.twist !== 'none' ? twistById(opts.twist).id : 'none';
+    if (this.twistId !== 'none') this.sim.twist = twistById(this.twistId);
+    this.cup = opts.cup || null;
     this.names = [opts.name];
     this.bots = new Array(MAX_PLAYERS).fill(null);
     this.human = 0;
@@ -66,8 +71,8 @@ export class LocalGame {
     return {
       mode: this.mode,
       duration: this.duration,
-      twist: 'none',
-      cup: null,
+      twist: this.twistId,
+      cup: this.cup,
       it: this.teams ? -1 : this.startIt,
       bombs: this.teams ? this.sim.bombPlan : null, // team battle: who starts with a bomb
       teams: this.teams,

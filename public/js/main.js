@@ -1680,71 +1680,171 @@ function showResults(res) {
   $('res-sub').textContent = sub;
   // the seal says it in one sign: won, lost, level - or, between rounds, which round that was
   const between = !!cup && !cup.final;
-  const mine = res.rows.find((r) => r.slot === mySlot);
   const level = team ? (cup && team.total ? team.total[0] === team.total[1] : team.win < 0) : false;
   const seal = $('res-seal');
   seal.textContent = between ? String(cup.round) : level ? '分' : iWon ? '勝' : '負';
   seal.className = `seal big${between || level ? ' dark' : iWon ? '' : ' dark'}`;
-  $('s-results').classList.toggle('won', !between && iWon && !level);
-  $('s-results').dataset.mood = mood;
-  $('res-teams').hidden = !team;
-  $('res-table').hidden = !!team;
-  $('s-results').classList.toggle('teams', !!team);
-  $('s-results').classList.toggle('crowd', res.rows.length > 6); // seven or more: a tighter board
+  const box = $('s-results');
+  box.classList.toggle('won', !between && iWon && !level);
+  box.dataset.mood = mood;
+  box.classList.toggle('teams', !!team);
+  box.classList.toggle('crowd', res.rows.length > 6); // seven or more: a tighter board
   // a podium for the first three, where there is a ranking to speak of: a
   // finished tournament, or a match scored on time as the oni
   const ranked = !team && !forfeit && (cup ? cup.final : res.mode !== 'potato');
   $('res-podium').hidden = !ranked;
   if (ranked) paintPodium(res, mySlot);
+  // The hero of the screen: your own character (whoever won, for someone
+  // watching) under the seal - unless the podium is up, which is that already.
+  const star = watching ? res.winners[0] ?? res.rows[0]?.slot : mySlot;
+  const medal = $('res-medal');
+  medal.hidden = ranked || star == null;
+  if (!medal.hidden) {
+    const f = $('res-face');
+    f.style.setProperty('--c', play.colorOf(star));
+    const url = portraitOf(star, 144);
+    f.textContent = '';
+    if (url) {
+      const img = el('img');
+      img.alt = '';
+      img.src = url;
+      f.append(img);
+    }
+  }
+  $('res-praise').textContent = praise(res, mySlot, mood, watching || between);
+  paintFeats(res, mySlot);
+  // everyone's numbers, on the same card
+  $('res-teams').hidden = !team;
+  $('res-table').hidden = !!team;
   if (team) paintSides(res, mySlot);
   else paintBoard(res, mySlot, ranked);
 
   renderResultButtons();
   setOverlay('results');
   celebrate(mood);
-  if (cup && !cup.final) {
-    // the next round starts by itself
+  // a tournament between rounds: the next one starts by itself - a tag at the foot of the card counts it down
+  $('res-next').hidden = !between;
+  if (between) {
     const until = performance.now() + cup.next;
     const tick = () => {
       const left = Math.max(0, Math.ceil((until - performance.now()) / 1000));
-      if (lastResults === res) $('res-note').textContent = `Next round in ${left}…`;
+      if (lastResults === res) $('res-next-n').textContent = left;
     };
     tick();
     nextTimer = setInterval(tick, 250);
   }
   sfx.play(iWon || (cup && !cup.final && res.loser !== mySlot) ? 'win' : 'lose');
-  void mine;
 }
 
-// The moment the result lands: for a win, a burst of petals from behind the
-// headline; for a loss, the scroll takes the blow. (Only where motion is
-// welcome; either way the headline and the seal already say it.)
+// A line of praise under the verdict (or of comfort): about how YOU played.
+function praise(res, mySlot, mood, silent) {
+  if (silent || !mood) return '';
+  const mine = res.rows.find((r) => r.slot === mySlot);
+  const any = (...lines) => lines[Math.floor(Math.random() * lines.length)];
+  if (mood === 'level') return any('Nothing between you', 'Honours even');
+  if (res.team) {
+    if (mood === 'win') return mine?.caps ? any('Flag keeper!', 'You held the line') : mine && !mine.boom ? any('Clean hands at the buzzer', 'Bomb squad!') : any('Your side pulled it off', 'A win is a win!');
+    return mine?.boom ? any('That bomb had your name on it', 'Boom. Pass it on next time') : any('So close. Go again!', 'They got lucky. Rematch?');
+  }
+  if (res.cup) return mood === 'win' ? any('Champion!', 'Top of the table') : any('A good run', 'The next one is yours');
+  if (res.reason === 'forfeit') return mood === 'win' ? 'Last one standing' : '';
+  if (res.mode === 'potato') {
+    if (mood === 'win') return mine && mine.ms === 0 ? any('Never caught once!', 'Untouchable!') : any('Slipped away in time', 'A clean getaway');
+    return any('Stuck with it at the buzzer', 'The oni had the last laugh');
+  }
+  return mood === 'win' ? any('Hardest to catch', 'Light on your feet') : any('Caught a little too often', 'Shake them off next time');
+}
+
+// What you did, in a few small numbers that count up (gold, with a star,
+// where nobody did better).
+const ordinal = (n) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
+let featRun = 0;
+function paintFeats(res, mySlot) {
+  const box = $('res-feats');
+  const run = ++featRun;
+  box.textContent = '';
+  const rows = res.rows;
+  const mine = rows.find((r) => r.slot === mySlot);
+  if (!mine) return;
+  const cup = res.cup;
+  const least = (k) => Math.min(...rows.map((r) => r[k] || 0));
+  const most = (k) => Math.max(...rows.map((r) => r[k] || 0));
+  const whole = (v) => String(Math.round(v));
+  const feats = []; // [icon, value, how to write it, what it is, nobody did better]
+  if (res.team) {
+    feats.push(['bomb', mine.ms, secs, 'with a bomb', rows.length > 2 && mine.ms === least('ms')]);
+    feats.push(['swap', mine.tags, whole, mine.tags === 1 ? 'pass' : 'passes', mine.tags > 0 && mine.tags === most('tags')]);
+    feats.push(['flag', mine.caps || 0, whole, mine.caps === 1 ? 'flag' : 'flags', mine.caps > 0 && mine.caps === most('caps')]);
+  } else {
+    feats.push(['oni', mine.ms, secs, 'as the oni', rows.length > 2 && mine.ms === least('ms')]);
+    feats.push(['target', mine.tags, whole, mine.tags === 1 ? 'tag' : 'tags', mine.tags > 0 && mine.tags === most('tags')]);
+    const table = cup ? cup.table : res.mode !== 'potato' && res.reason !== 'forfeit' ? rows : null; // (both come best first)
+    const place = table ? table.findIndex((r) => r.slot === mySlot) : -1;
+    if (place >= 0) feats.push(['star', place + 1, ordinal, `of ${table.length}`, place === 0]);
+  }
+  const counting = [];
+  feats.forEach(([icon, value, write, label, best], i) => {
+    const li = el('li', best ? 'feat best' : 'feat');
+    li.style.setProperty('--i', i);
+    li.innerHTML = svg(icon);
+    const num = el('b', '', write(calm.matches ? value : 0));
+    li.append(num, el('span', '', label));
+    if (best) {
+      li.insertAdjacentHTML('beforeend', `<em>${svg('star')}</em>`);
+      li.title = 'Nobody did better';
+    }
+    box.append(li);
+    if (!calm.matches && value) counting.push([num, value, write, i]);
+  });
+  // the numbers run up to what they are, one after the other
+  if (!counting.length) return;
+  const t0 = performance.now() + 380;
+  const step = (now) => {
+    if (run !== featRun) return;
+    let going = false;
+    for (const [num, value, write, i] of counting) {
+      const k = Math.min(1, Math.max(0, (now - t0 - i * 130) / 620));
+      num.textContent = write(value * (1 - (1 - k) ** 3));
+      if (k < 1) going = true;
+    }
+    if (going) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// The moment the result lands: for a win, petals burst from behind your
+// character, twice; for a loss, the scroll takes the blow. (Only where motion
+// is welcome; either way the headline and the seal already say it.)
 function celebrate(mood) {
   const head = document.querySelector('#s-results .verdict');
-  head.querySelector('.res-fx')?.remove();
+  const stage = head.querySelector('.stage');
+  for (const old of head.querySelectorAll('.res-fx')) old.remove();
   for (const a of head.getAnimations()) a.cancel();
   if (calm.matches || !mood) return;
   if (mood === 'lose') {
     head.animate([{ transform: 'translateY(-14px)', opacity: 0 }, { transform: 'translateY(5px)', opacity: 1, offset: 0.55 }, { transform: 'translateY(-2px)', offset: 0.78 }, { transform: 'none' }], { duration: 460, easing: 'ease-out' });
     return;
   }
-  const fx = el('span', 'res-fx');
-  fx.setAttribute('aria-hidden', 'true');
-  const many = mood === 'win' ? 26 : 10;
-  for (let i = 0; i < many; i++) {
-    const p = el('i');
-    const a = -Math.PI * (0.08 + 0.84 * Math.random()); // up and out, in a fan
-    const far = 90 + Math.random() * 190;
-    p.style.setProperty('--dx', `${Math.round(Math.cos(a) * far)}px`);
-    p.style.setProperty('--dy', `${Math.round(Math.sin(a) * far * 0.8)}px`);
-    p.style.setProperty('--turn', `${Math.round(Math.random() * 540 - 270)}deg`);
-    p.style.setProperty('--wait', `${Math.round(Math.random() * 160)}ms`);
-    p.style.setProperty('--size', `${7 + Math.round(Math.random() * 7)}px`);
-    if (i % 4 === 0) p.className = 'gold';
-    fx.append(p);
-  }
-  head.append(fx);
-  setTimeout(() => fx.remove(), 2200);
+  const burst = (many, wait, reach) => {
+    const fx = el('span', 'res-fx');
+    fx.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < many; i++) {
+      const p = el('i');
+      const a = -Math.PI * (0.04 + 0.92 * Math.random()); // up and out, in a fan
+      const far = reach * (0.45 + Math.random() * 0.75);
+      p.style.setProperty('--dx', `${Math.round(Math.cos(a) * far)}px`);
+      p.style.setProperty('--dy', `${Math.round(Math.sin(a) * far * 0.8)}px`);
+      p.style.setProperty('--turn', `${Math.round(Math.random() * 540 - 270)}deg`);
+      p.style.setProperty('--wait', `${wait + Math.round(Math.random() * 160)}ms`);
+      p.style.setProperty('--size', `${7 + Math.round(Math.random() * 7)}px`);
+      if (i % 4 === 0) p.className = 'gold';
+      fx.append(p);
+    }
+    stage.append(fx);
+    setTimeout(() => fx.remove(), wait + 2300);
+  };
+  burst(mood === 'win' ? 30 : 10, 0, 230);
+  if (mood === 'win') burst(18, 620, 300);
 }
 
 // Everyone in the order they finished: tournament points first, else the least time as the oni.
@@ -1766,11 +1866,11 @@ function face(slot, size = 'sm') {
   }
   return box;
 }
-function portraitOf(slot) {
+function portraitOf(slot, size) {
   try {
     const cols = play.info?.cols;
     const theme = play.renderer.theme?.id;
-    return theme && typeof art.playerPortrait === 'function' ? art.playerPortrait(theme, cols ? cols[slot] ?? slot : slot) || '' : '';
+    return theme && typeof art.playerPortrait === 'function' ? art.playerPortrait(theme, cols ? cols[slot] ?? slot : slot, size ? { size } : undefined) || '' : '';
   } catch {
     return '';
   }
@@ -1786,7 +1886,7 @@ function paintPodium(res, mySlot) {
     const r = top[i];
     if (!r) return;
     const step = el('div', `step p${i + 1}${r.slot === mySlot ? ' me' : ''}`);
-    step.append(face(r.slot, 'lg'), el('b', 'nm', r.name));
+    step.append(face(r.slot, 'lg'), el('b', r.name.length > 9 ? 'nm long' : 'nm', r.name)); // (a long name a size down, so it is whole)
     step.append(el('span', 'stat', cup ? `${r.pts} pts` : r.row ? secs(r.row.ms) : ''));
     const block = el('div', 'block');
     block.append(el('i', i === 0 ? 'seal' : 'seal dark', String(i + 1)));
@@ -1893,10 +1993,9 @@ function renderResultButtons() {
     again.hidden = !host || between;
     setLabel(again, res.cup ? 'New tournament' : 'Play again', 'Enter');
     again.disabled = !room || room.players.length < MIN_PLAYERS;
-    if (!between) {
-      const h = room?.players.find((p) => p.id === room.hostId);
-      $('res-note').textContent = host ? (again.disabled ? 'Waiting for another player…' : '') : `Waiting for ${h ? h.name : 'the host'}…`;
-    }
+    const h = room?.players.find((p) => p.id === room.hostId);
+    // (between rounds the tag beside it counts down to the next one: nothing to add)
+    $('res-note').textContent = between ? '' : host ? (again.disabled ? 'Waiting for another player…' : '') : `Waiting for ${h ? h.name : 'the host'}…`;
   }
   again.toggleAttribute('data-autofocus', !again.hidden);
   back.toggleAttribute('data-autofocus', again.hidden);

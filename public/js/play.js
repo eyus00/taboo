@@ -51,6 +51,8 @@ const calm = matchMedia('(prefers-reduced-motion: reduce)');
 const ITEM_LAND_MS = 520; // the item draw, once it has stopped: its name for a moment, then into the tile (play.css: item-land)
 const FIRST_MATCHES = 3; // how many matches start with a reminder of the controls
 const TASKS_OPEN_MS = 7000; // the objectives stay open this long after GO (and after being asked for again), then fold to their title
+const TAGS_LIT_MS = 1600; // how long after GO the twist and x2 tags stay lit up (they are from the moment the 3-2-1 starts)
+const TWIST_ICONS = { moon: 'eclipse', turbo: 'speed', frenzy: 'box' }; // the tag for a round's twist wears one of the item icons
 const TASKS_OPEN_TOUCH_MS = 2500; // (on a phone they cover a good part of the screen: there they fold much sooner)
 // How far a tag between two OTHER players carries, in world units (the view is about 1170 x 660 of them):
 const TAG_NEAR = 300; // right beside you: 80% of the sound, most of the shake
@@ -114,6 +116,7 @@ export const play = {
           <b id="team-b" class="h-score" hidden></b>
           <ul id="roster-b" class="h-roster b" aria-label="${TEAM_NAMES[1]}"></ul>
           <div id="under"><div id="flags-a" class="h-flags" hidden></div><div id="round-label"></div><div id="flags-b" class="h-flags" hidden></div></div>
+          <div id="tags" hidden></div>
         </div>
         <button id="btn-pause" class="hud-btn" aria-label="Menu (Esc)">${icon('menu')}</button>
         <kbd class="hud-key">Esc</kbd>
@@ -137,7 +140,7 @@ export const play = {
           <button class="t-jump" data-bit="4" aria-label="Jump">${icon('up')}</button>
         </div>
       </div>`;
-    for (const id of ['stage', 'hud', 'pills', 'top', 'tasks', 'timer', 'team-a', 'team-b', 'roster-a', 'roster-b', 'flags-a', 'flags-b', 'round-label', 'btn-pause', 'minimap', 'kit', 'status', 'itemslot', 'buffs', 'itemdraw', 'banner', 'brief', 'count', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
+    for (const id of ['stage', 'hud', 'pills', 'top', 'tags', 'tasks', 'timer', 'team-a', 'team-b', 'roster-a', 'roster-b', 'flags-a', 'flags-b', 'round-label', 'btn-pause', 'minimap', 'kit', 'status', 'itemslot', 'buffs', 'itemdraw', 'banner', 'brief', 'count', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
     const E = this.el;
     E.use = E.touch.querySelector('.t-use');
     E.itemPic = E.itemslot.querySelector('.pic');
@@ -159,6 +162,15 @@ export const play = {
     E.taskList = E.tasks.querySelector('.t-list');
     E.taskHead = E.tasks.querySelector('.t-hd');
     E.taskHead.addEventListener('click', () => this.showTasks(!this.hud.tasksOpen));
+    // while the pointer is over the card, or its title has the keyboard's focus, its clock waits
+    const hold = (what, on) => {
+      this.hud[what] = on;
+      this.runTasks();
+    };
+    E.tasks.addEventListener('pointerenter', (e) => e.pointerType === 'mouse' && hold('tasksOver', true));
+    E.tasks.addEventListener('pointerleave', () => hold('tasksOver', false));
+    E.taskHead.addEventListener('focus', () => E.taskHead.matches(':focus-visible') && hold('tasksFocus', true));
+    E.taskHead.addEventListener('blur', () => hold('tasksFocus', false));
     addEventListener('keydown', (e) => {
       if (e.code !== 'KeyO' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || !this.running || !this.input.active) return;
       this.showTasks(!this.hud.tasksOpen);
@@ -201,7 +213,7 @@ export const play = {
     // "play again" keeps the same bots on the same sides, as long as you ask for the same kind of match
     const key = `${s.mode}/${s.bots}/${name}`;
     const squad = this.squad && this.squad.key === key ? this.squad : null;
-    const g = new LocalGame({ arena, mode: s.mode, duration: s.duration, powerups: s.powerups, name, bots: s.bots, input: this.input, onEvent: (t, a, b) => this.onEvent(t, a, b), squad });
+    const g = new LocalGame({ arena, mode: s.mode, duration: s.duration, powerups: s.powerups, name, bots: s.bots, input: this.input, onEvent: (t, a, b) => this.onEvent(t, a, b), squad, twist: s.twist, cup: s.cup });
     this.squad = { key, ...g.squad };
     this.begin(g, arena, themeId, { ...g.info(), arena: arena.id, theme: themeId, random: { arena: s.arena === 'random', theme: s.theme === 'random' } });
   },
@@ -233,6 +245,8 @@ export const play = {
     clearTimeout(h.itemTimer);
     clearTimeout(h.briefTimer);
     clearTimeout(h.tasksTimer);
+    clearTimeout(h.tagsTimer);
+    E.tags.classList.remove('intro');
     Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], item: '', teams: '', crowd: 0, sides: '', role: '', side: -2, briefOn: false });
     E.status.hidden = true;
     E.pills.textContent = '';
@@ -270,13 +284,25 @@ export const play = {
       });
     }
     const mode = MODES.find((m) => m.id === info.mode)?.name || '';
-    let label = this.kind === 'practice' ? `Practice · ${mode}` : mode;
-    if (info.cup) {
-      label = info.cup.double ? 'Final round - double points' : `Round ${info.cup.round} of ${info.cup.rounds}`;
-      if (team) label += ' · Team Bomb';
-      if (info.twist && info.twist !== 'none' && g.twist?.name) label += ` · ${g.twist.name}`;
+    E.roundLabel.textContent = this.kind === 'practice' && !info.cup ? `Practice · ${mode}` : mode;
+    // Whatever is special about this round stays on the board for all of it, as
+    // tags under the round's name: the tournament round, the twist, and - loud -
+    // the last round's double points. (Each has a short form for a phone.)
+    const tags = [];
+    const twist = info.twist && info.twist !== 'none' ? g.twist : null;
+    if (info.cup) tags.push(['round', '', `Round ${info.cup.round}/${info.cup.rounds}`, `${info.cup.round}/${info.cup.rounds}`, `Round ${info.cup.round} of ${info.cup.rounds} in this tournament`]);
+    if (twist?.name) tags.push(['twist', TWIST_ICONS[twist.id] || 'twist', twist.name, twist.name.split(' ')[0], `Twist: ${twist.name} - ${twist.blurb.toLowerCase()}`]);
+    if (info.cup?.double) tags.push(['x2', '', '\u00d72 points', '\u00d72', 'The last round counts double']);
+    E.tags.textContent = '';
+    for (const [kind, ic, long, short, tip] of tags) {
+      const tag = el('span', `tag ${kind}`);
+      if (ic) tag.innerHTML = icon(ic);
+      tag.append(el('b', 'long', long), el('b', 'short', short));
+      tag.title = tip;
+      E.tags.append(tag);
     }
-    E.roundLabel.textContent = label;
+    E.tags.hidden = !tags.length;
+    E.hud.classList.toggle('tagged', tags.length > 0);
     // the first few matches come with a reminder of the controls (among the objectives)
     let played = 0;
     try {
@@ -412,13 +438,17 @@ export const play = {
       const t = view.team;
       const held = [0, 0];
       for (const p of view.players) if (p.bomb && p.team >= 0) held[p.team]++;
-      const sig = `${t.score[0]}-${t.score[1]}-${held[0]}-${held[1]}`;
+      const sig = `${t.score[0]}-${t.score[1]}-${held[0]}-${held[1]}-${innerWidth}x${innerHeight}`;
       if (sig !== h.teams) {
         h.teams = sig;
         // (a bomb and a number: read at a glance, and the same width with one bomb or five)
         const bombs = (n) => `<span class="held${n ? '' : ' none'}" aria-label="${n} bomb${n === 1 ? '' : 's'}"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#pi-bomb"/></svg><i>${n}</i></span>`;
         E.teamA.innerHTML = `<span class="tn">${TEAM_NAMES[0]}</span><span class="pts">${t.score[0]}</span>${bombs(held[0])}`;
         E.teamB.innerHTML = `${bombs(held[1])}<span class="pts">${t.score[1]}</span><span class="tn">${TEAM_NAMES[1]}</span>`;
+        // both plates exactly as wide as the wider of the two: the halves of the board mirror each other and the clock is dead centre
+        for (const e of [E.teamA, E.teamB]) e.style.minWidth = '';
+        const wide = Math.ceil(Math.max(E.teamA.getBoundingClientRect().width, E.teamB.getBoundingClientRect().width));
+        if (wide > 0) for (const e of [E.teamA, E.teamB]) e.style.minWidth = `${wide}px`;
       }
       const side = view.players.find((p) => p.local)?.team ?? -1;
       if (side !== h.side) {
@@ -522,13 +552,11 @@ export const play = {
   },
 
   // --- the objectives: what this round asks of you, there for the whole match -------------
-  // One line a goal; then whatever is special about this round - the twist, the
-  // tournament round, the leader starting as it - and, in someone's first
-  // matches, the controls. Open from the countdown until a few seconds after GO,
-  // then it folds to its title, out of the way.
+  // One line a goal and, in someone's first matches, the controls - nothing else.
+  // Open from the countdown until a few seconds after GO, then it folds to its
+  // title, out of the way.
   buildTasks(info, g, teach) {
     const E = this.el;
-    const me = this.mySlot();
     const team = info.mode === 'team';
     const list = E.taskList;
     list.textContent = '';
@@ -542,12 +570,7 @@ export const play = {
       line('bomb', '<b>Pass your bomb</b> to an enemy before the buzzer');
     } else if (info.mode === 'time') line('clock', '<b>Least time as the oni</b> wins');
     else line('it', "<b>Don't be the oni</b> at the buzzer");
-    const twist = info.twist && info.twist !== 'none' ? g.twist : null;
-    if (twist?.name) line('twist', `<b>${twist.name}</b>: ${twist.blurb.toLowerCase()}`, 't-twist');
-    if (info.cup) {
-      line('crown', info.cup.double ? '<b>Final round</b>: counts double' : `<b>Round ${info.cup.round}</b> of ${info.cup.rounds}`);
-      if (!team && info.cup.leader >= 0) line('crown', info.cup.leader === me ? '<b>You lead</b>, so you start as the oni' : `<b>${this.nameOf(info.cup.leader)}</b> leads, so starts as the oni`);
-    }
+    // (the twist and a tournament's double points are tags on the board, lit up as the round begins; who starts as the oni is on the card before GO)
     if (teach) {
       const keys = el('li', 't-keys');
       keys.innerHTML = this.isTouch
@@ -559,16 +582,42 @@ export const play = {
     this.showTasks(true, false);
   },
 
-  // open: show the lines; else only the title. It folds by itself a while after
-  // (once the round is on: during the countdown it stays open).
+  // open: show the lines; else only the title. timed: it closes by itself after
+  // a while, and a thin bar draining across the card says how long that is.
+  // (During the countdown it simply stays open: timed = false.)
   showTasks(open, timed = true) {
     const h = this.hud;
     const E = this.el;
     h.tasksOpen = open;
     E.tasks.classList.toggle('open', open);
+    E.tasks.classList.remove('timed', 'wait');
     E.taskHead.setAttribute('aria-expanded', String(open));
     clearTimeout(h.tasksTimer);
-    if (open && timed) h.tasksTimer = setTimeout(() => this.showTasks(false), this.isTouch ? TASKS_OPEN_TOUCH_MS : TASKS_OPEN_MS);
+    h.tasksLeft = open && timed ? (this.isTouch ? TASKS_OPEN_TOUCH_MS : TASKS_OPEN_MS) : 0;
+    h.tasksEnd = 0;
+    this.runTasks();
+  },
+
+  // Start the card's clock, or carry on with it - unless the pointer is over the
+  // card or its title has the keyboard's focus: then it waits (and so does the bar).
+  runTasks() {
+    const h = this.hud;
+    const E = this.el;
+    const now = performance.now();
+    if (h.tasksEnd) h.tasksLeft = Math.max(0, h.tasksEnd - now); // (it was running: this much is left)
+    h.tasksEnd = 0;
+    clearTimeout(h.tasksTimer);
+    if (!h.tasksOpen || !(h.tasksLeft > 0)) return;
+    if (!E.tasks.classList.contains('timed')) {
+      E.tasks.style.setProperty('--ms', `${Math.round(h.tasksLeft)}ms`);
+      void E.tasks.offsetWidth; // (so the bar starts from full)
+      E.tasks.classList.add('timed');
+    }
+    const waiting = !!(h.tasksOver || h.tasksFocus);
+    E.tasks.classList.toggle('wait', waiting);
+    if (waiting) return;
+    h.tasksEnd = now + h.tasksLeft;
+    h.tasksTimer = setTimeout(() => this.showTasks(false), h.tasksLeft);
   },
 
   showBrief(n, view) {
@@ -588,6 +637,7 @@ export const play = {
     }
     if (!h.briefOn) {
       h.briefOn = true;
+      this.el.tags.classList.add('intro'); // the round's tags draw the eye for the 3-2-1 (and a beat after GO: see onEvent)
       // Upper middle - unless that would hide your own player, either now (the
       // whole arena is in view) or once the view has closed in on you: then lower
       // middle, if that is any better. Worked out once, when the card appears.
@@ -998,6 +1048,8 @@ export const play = {
       this.hud.count = 0;
       this.showBrief(0); // the card makes way
       if (this.hud.tasksOpen) this.showTasks(true); // (and the objectives fold a little later)
+      clearTimeout(this.hud.tagsTimer);
+      this.hud.tagsTimer = setTimeout(() => this.el.tags.classList.remove('intro'), TAGS_LIT_MS); // the tags settle to their plain size
       this.pop('GO!');
       setTimeout(() => this.el.count.textContent === 'GO!' && (this.el.count.textContent = ''), 900);
       if (team) {

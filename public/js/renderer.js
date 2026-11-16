@@ -1578,38 +1578,50 @@ export class Renderer {
     if (this.follow && !this.opts.zoom && cam.z > 0.97 && view.phase !== 'over' && !(view.me && view.me.ecl > 0)) this.drawPointers(g, view, pvs, t, mine);
   }
 
-  // A small label of our own for a pointer (white on dark, whatever the style's names look like).
+  // The HUD's "IT" tab, for the pointer to whoever is it: a small white slanted
+  // plate with the letters in the HUD's red and the HUD's own type.
   badge(text) {
     const key = `badge|${text}`;
     let hit = this.labels.get(key);
     if (hit) return hit;
-    const px = Math.max(8, Math.round(11 * this.s * this.q));
+    const px = Math.max(8, Math.round(10.5 * this.s * this.q));
+    const hud = this.stage && this.stage.parentNode && this.stage.parentNode.querySelector('#hud');
+    const family = (hud && getComputedStyle(hud).fontFamily) || "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
     const c = document.createElement('canvas');
     const g = c.getContext('2d');
-    const f = `800 ${px}px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`;
+    const f = `800 ${px}px ${family}`;
     g.font = f;
-    c.width = Math.ceil(g.measureText(text).width) + 6;
-    c.height = px + 6;
+    const slant = Math.round(px * 0.32);
+    c.width = Math.ceil(g.measureText(text).width + px * 0.9) + slant;
+    c.height = Math.round(px * 1.36);
+    g.fillStyle = '#ffffff';
+    g.beginPath();
+    g.moveTo(slant, 0);
+    g.lineTo(c.width, 0);
+    g.lineTo(c.width - slant, c.height);
+    g.lineTo(0, c.height);
+    g.closePath();
+    g.fill();
     g.font = f;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.lineJoin = 'round';
-    g.lineWidth = Math.max(2, px * 0.28);
-    g.strokeStyle = '#16110d';
-    g.strokeText(text, c.width / 2, c.height / 2 + px * 0.06);
-    g.fillStyle = '#ffffff';
-    g.fillText(text, c.width / 2, c.height / 2 + px * 0.06);
+    g.fillStyle = '#a32a22';
+    g.fillText(text, c.width / 2, c.height / 2 + px * 0.07);
     hit = { c, w: c.width, h: c.height };
     this.labels.set(key, hit);
     return hit;
   }
 
   // For every other player who is out of sight: a pointer at the edge of the
-  // screen, on the side they are on, aimed at them. A drop in their colour (in a
-  // team battle their side's colour, with a white edge for your side and a dark
-  // one for theirs). Whoever is it is bigger, red-rimmed and says IT; whoever
-  // carries a bomb is bigger and shows it - and pulses red if they are after you.
-  // Pointers stay off the parts of the screen the HUD stands on (this.avoid).
+  // screen, on the side they are on, aimed at them. It is cut like the rest of
+  // the HUD - straight edges, sharp corners: a diamond drawn out to a point
+  // towards the player, in their colour (in a team battle their side's colour),
+  // inside an ink outline of the HUD's weight and a white hairline round that,
+  // so it stands out on pale scenery and on dark. Whoever is it is bigger,
+  // outlined in the HUD's red, and wears the HUD's IT tab; whoever carries a
+  // bomb is bigger and shows it - and a red diamond pulses round them if they
+  // are after you. Pointers stay off the parts of the screen the HUD stands on
+  // (this.avoid).
   drawPointers(g, view, pvs, t, mine) {
     const cam = this.cam;
     const kf = this.kz || this.kf;
@@ -1626,8 +1638,8 @@ export class Renderer {
       const iy = (pv.feet - half - cam.y) * kf;
       if (ix > 0 && ix < W && iy > 0 && iy < H) continue; // in view
       const hot = pv.isIt && (view.phase === 'playing' || !!view.pre);
-      const r = (hot ? 16 : 12.5) * px * big * clamp(1.08 - Math.hypot(ix - W / 2, iy - H / 2) / (kf * 3600), 0.8, 1); // (a little smaller far away)
-      const m = r * 1.72 + 7 * px; // (its point may face the edge)
+      const r = (hot ? 17 : 12) * px * big * clamp(1.08 - Math.hypot(ix - W / 2, iy - H / 2) / (kf * 3600), 0.8, 1); // (a little smaller far away)
+      const m = r * 1.9 + 7 * px; // (its point may face the edge)
       let ax = clamp(ix, m, W - m);
       let ay = clamp(iy, m, H - m);
       // Out from under the HUD: straight in from the edge it sits on, so it stays on the line to
@@ -1677,13 +1689,25 @@ export class Renderer {
         const a = list[j];
         const need = (a.r + b.r) * 1.04;
         if (Math.abs(b.x - a.x) >= need || Math.abs(b.y - a.y) >= need) continue;
-        const m = b.r * 1.72 + 7 * px;
+        const m = b.r * 1.9 + 7 * px;
         if (b.x <= m + 1 || b.x >= W - m - 1) b.y = clamp(a.y + (b.iy >= a.iy ? need : -need), m, H - m);
         else b.x = clamp(a.x + (b.ix >= a.ix ? need : -need), m, W - m);
       }
     }
     const myTeam = view.team && mine ? mine.team : -1;
-    g.lineJoin = 'round';
+    const ink = 2.4 * px; // the outline: as heavy as the edges of the HUD's plates
+    const hair = 1.3 * px; // and a white hairline outside it
+    g.lineJoin = 'miter';
+    g.miterLimit = 8;
+    // the shape, pointing along +x: a diamond with its front corner drawn out to a point
+    const kite = (r, k = 1) => {
+      g.beginPath();
+      g.moveTo(r * 1.9 * k, 0);
+      g.lineTo(r * 0.1 * k, -r * k);
+      g.lineTo(-r * k, 0);
+      g.lineTo(r * 0.1 * k, r * k);
+      g.closePath();
+    };
     for (let i = 0; i < n; i++) {
       const e = list[i];
       const pv = e.pv;
@@ -1697,39 +1721,34 @@ export class Renderer {
       if (chasing) {
         const k = (t * 1.8 + pv.id * 0.3) % 1;
         g.strokeStyle = `rgba(255,77,61,${(0.9 * (1 - k)).toFixed(3)})`;
-        g.lineWidth = 3 * px;
-        g.beginPath();
-        g.arc(0, 0, r * (1.25 + k * 0.7), 0, 6.283);
+        g.lineWidth = 2.5 * px;
+        kite(r, 1.35 + k * 0.75);
         g.stroke();
       }
-      // a drop: round, with a point towards them
-      g.beginPath();
-      g.moveTo(r * 1.72, 0);
-      g.lineTo(r * 0.6, -r * 0.8);
-      g.arc(0, 0, r, -0.927, 0.927, true);
-      g.closePath();
-      g.strokeStyle = e.hot && !sided ? '#ff4d3d' : sided && !foe && myTeam >= 0 ? '#ffffff' : '#16110d';
-      g.lineWidth = (e.hot ? 5.5 : 4.5) * px;
+      kite(r);
+      g.strokeStyle = 'rgba(255,255,255,0.94)';
+      g.lineWidth = (ink + hair) * 2;
+      g.stroke();
+      g.strokeStyle = e.hot && !sided ? '#c8372d' : '#16110d';
+      g.lineWidth = ink * 2;
       g.stroke();
       g.fillStyle = sided ? TEAM_COLORS[pv.team] : pv.color;
       g.fill();
-      g.setTransform(1, 0, 0, 1, e.x, e.y);
+      g.setTransform(1, 0, 0, 1, Math.round(e.x), Math.round(e.y));
       if (e.hot && sided) {
-        // a bomb
+        // a bomb: the HUD's, as near as a few pixels allow - a black ball, its neck, a spark
+        const bx = -r * 0.12;
+        const by = r * 0.1;
         g.fillStyle = '#16110d';
-        g.strokeStyle = '#ffffff';
-        g.lineWidth = 1.6 * px;
         g.beginPath();
-        g.arc(-r * 0.06, r * 0.1, r * 0.5, 0, 6.283);
+        g.arc(bx, by, r * 0.46, 0, 6.283);
         g.fill();
-        g.stroke();
+        g.fillRect(bx + r * 0.2, by - r * 0.62, r * 0.26, r * 0.3);
         g.fillStyle = Math.floor(t * 8) % 2 ? '#ffd23f' : '#ff7a2b';
-        g.beginPath();
-        g.arc(r * 0.42, -r * 0.46, r * 0.2, 0, 6.283);
-        g.fill();
+        g.fillRect(bx + r * 0.44, by - r * 0.86, r * 0.3, r * 0.3);
       } else if (e.hot) {
         const l = this.badge('IT');
-        g.drawImage(l.c, -(l.w >> 1), -(l.h >> 1));
+        g.drawImage(l.c, -Math.round(l.w / 2 + r * 0.12), -(l.h >> 1));
       }
     }
     g.setTransform(1, 0, 0, 1, 0, 0);
