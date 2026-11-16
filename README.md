@@ -1,16 +1,16 @@
 # Onigokko
 
-*Onigokko* (鬼ごっこ) is Japanese for tag; whoever is it is the *oni*. This is real-time multiplayer tag for 2&ndash;10 players, in the browser. Everyone plays on their own device. **Host** a room, walk into one that is **open** to everyone, or type the 4-digit code of a friend's (an invite link works too).
+*Onigokko* (鬼ごっこ) is Japanese for tag; whoever is it is the *oni*. This is real-time multiplayer tag for 2&ndash;10 players, in the browser. Everyone plays on their own device. **Host** a room, walk into one that is **open** to everyone, or type the 4-digit code of a friend's (an invite link works too). Bots take the seats nobody has, so a room is a game from the moment it opens &ndash; alone, or with friends walking in.
 
-- **Three ways to play.** *Hot Potato* (whoever is the oni when the clock hits zero loses), *Least Time* (every second as the oni counts against you), and *Team Bomb* (two teams, flags to hold, and bombs that go off at the buzzer). Any of them as a quick match or a tournament of 3, 5 or 7 rounds.
-- **Lucky boxes.** Touch one and you get a random item to keep: set it off when it hurts most. Ten of them, and several turn a round over: a Quake that throws everyone else into the air wherever they are, a Warp that drops the oni next to the nearest runner (or carries a runner far away), an Eclipse that leaves everyone else in the dark, a Blast, a Swap, a Storm, Frost, Ward, Swift and Spring. A new box every 3 seconds, and they work right up to the buzzer.
-- **Close-up camera** that follows you, with big characters, a minimap (top left) of the whole arena, and **pointers at the edge of the screen** for every player out of sight: their colour, aimed at where they are, the oni's bigger and marked IT (in a team game, the side's colour and who carries a bomb). Each round opens on the whole arena, then zooms in on you.
-- **A display that stays out of the way**: the clock in the middle of the top edge, in a team game each side's score and names on its own side of the clock, and what you are holding along the bottom. Before GO a card in the middle says what the game is about in one line (and, in your first matches, the keys); it leaves at GO.
-- **Movement with weight**: you build up speed, skid when you turn round, and jump in a floaty arc. Five actions &ndash; left, right, jump, down, use item.
-- **Six big arenas with room to run.** Each is built around long stretches of plain open ground (at least four of 14 tiles or more, one of them 24 or more), with the slopes, trampolines, launchers, updrafts and portals at the ends and edges instead of in the way. A portal flies you over the map in an arc, and some let you drop out half way.
-- **A draw before every round**: three picture cards spin for the arena (shown in that round's style), the art style, and who starts as the oni (their character, in their colour).
+- **Three ways to play.** *Hot Potato* (whoever is the oni when the clock hits zero loses), *Least Time* (every second as the oni counts against you), and *Team Bomb* (two teams, flags to hold, and bombs that go off at the buzzer). Any of them as *Quick Play* (one round) or a tournament of 3, 5 or 7 rounds.
+- **Lucky boxes.** Touch one and you get a random item to keep: set it off when it hurts most. Eleven of them, and several turn a round over: a Quake that throws everyone else into the air wherever they are, a Warp that drops the oni next to the nearest runner (or carries a runner far away), an Eclipse that leaves everyone else in the dark, a Dash that shoots you six tiles ahead in a fifth of a second, a Blast, a Swap, a Storm, Frost, Ward, Swift and Spring. A new box every 3 seconds, and they work right up to the buzzer.
+- **Close-up camera** that follows you, with big characters, a minimap (top centre) of the whole arena, and **pointers at the edge of the screen** for every player out of sight: their colour, aimed at where they are, the oni's bigger and marked IT (in a team game, the side's colour and who carries a bomb). Each round opens on the whole arena, then zooms in on you.
+- **A display you can read at a glance**: the clock, large, in the middle of the bottom edge, with (in a team game) each side's score, its bombs and its flag on either side of it, and what you are holding just above. The map is at the top in the middle; in a team game Sun's players run down the left edge and Moon's down the right. During the 3-2-1 it already shows who starts as the oni, or who starts with a bomb &ndash; over the characters, in the lists, and in one line on the card that says what the game is about (it leaves at GO).
+- **Movement with weight**: you build up speed, skid when you turn round, and jump in a floaty arc. Every press of jump counts, however fast you hammer the key (one jump from the ground, one more in the air). Five actions &ndash; left, right, jump, down, use item.
+- **Nine stages with room to run, in two sizes**: six for 2&ndash;6 players (Bounce Hills, Windy Canyon, Sky Pagoda, Switchback, Twin Keeps, Bramble Maze) and three with 1.75 times the room for 5&ndash;10 (Great Valley, Storm Gorge, Sky Halls). Each is built around long stretches of plain open ground (at least four of 14 tiles or more, one of them 24 or more), with the slopes, trampolines, launchers, updrafts and portals at the ends and edges instead of in the way. A portal flies you over the map in an arc, and some let you drop out half way.
+- **A draw before every round**: three picture cards spin for the arena (shown in that round's style), the art style, and who starts as the oni (their character, in their colour) &ndash; in a team game, everyone who starts with a bomb, side by side.
 - **Seven art styles**: Ink & Sakura (the house style), Orbit, Xeno, Neon District, Nightmare, Sketchbook and Arcade.
-- **Practice against bots** (one to nine of them), including team battles.
+- **Bots in the empty seats.** A room has a size (2 to 10 players, six to begin with); bots fill whatever the people in it do not, give their seat to anyone who walks in, and take it back when someone leaves. The host can change the size or send the bots away. In a team game they stand wherever a side is short.
 - Menus drawn like a game: brush lettering on hanging scrolls. The title scroll stays on the left and whatever you open hangs beside it; small popups (open rooms, your profile, the "about" panels, questions) are laid over that like sheets of paper. A how-to-play page where every picture is the real game playing itself. Everything works with the keyboard alone, and every control shows its key; phones get on-screen controls and a built-in number pad for the room code.
 - No accounts, no database, no API keys. One small Node server.
 
@@ -60,24 +60,26 @@ Everything can be done without a mouse, and every screen shows its keys (on phon
 |---|---|
 | Any menu | &uarr; / &darr; move, &larr; / &rarr; change the choice you are on, Enter choose, Esc back |
 | Anywhere | M sound on / off, F full screen |
-| Title screen | 1 play, 2 practice, 3 your profile (your name), H how to play |
+| Title screen | 1 play, 2 your name, H how to play |
 | Play | C host a room, P look through the open rooms (a popup: filter by game, or only rooms waiting to start), or type the four digits of a room's code (the fourth joins) |
-| In a room | G one match or a tournament, R which game, N how many rounds (tournament), S next style, A next stage (Shift goes back), T which round of a tournament the style and stage are for, L round time, P lucky boxes, B bots (practice), X change sides, Z shuffle the sides (host), Enter start; also C copy the invite link and V public or private |
+| In a room | G Quick Play or a tournament, R which game, N how many rounds (tournament), S next style, A next stage (Shift goes back), T which round of a tournament the style and stage are for, L round time, P lucky boxes, &minus; and + how many play, B bots on or off, X change sides, Z shuffle the sides (host), Enter start; also C copy the invite link and V public or private |
 | In a match | Esc pause menu; there: Esc resume, H how to play, M sound, F full screen, Q leave |
 | Results | Enter play again, Esc back |
 
 Anything that would take you out of a game (Esc or the cross in a room, Q in the pause menu, Esc on a guest's results, ending a tournament early) asks first: a small popup asks, with *Stay* (Esc) and *Leave* (Enter).
 
 - The oni tags by touching another player. Grazing counts, and the server also accepts a touch against where the target was on the tagger's own screen, so lag does not rob you of a tag.
-- The tagged player is frozen for 0.3 s so the tagger can get away, and the tagger cannot be tagged back for 0.7 s (they flash while protected). The oni runs 10% faster than everyone else.
+- The tagged player is frozen for 0.3 s so the tagger can get away, and the tagger cannot be tagged back for 0.7 s (they flash while protected). The oni runs 10% faster than everyone else. A tag or a bomb pass somewhere else on the map sounds quieter the further away it is.
 - Players pass through each other.
 - **Slopes** behave like tilted thin ledges: walk up and down them, jump up through them from below, hold down to drop through &ndash; or to walk under one from its low end.
 - **Trampolines** launch you straight up; **launchers** (the pads with arrows) fling you up and across. **Updrafts** are columns of rising air: step in, let go and ride. **Thorns** sting: a short stun, and you are thrown back off them. There are few of them: a match gets a quarter of what an arena is drawn with, which in most arenas is none at all.
 - **Portals** come in coloured pairs: step into one and you fly to its partner as a spark, in an unhurried arc over the map (the view flies with you), safe from tags until you arrive. A portal with a small arrow badge lets you press jump to drop out wherever you are.
 - If you join while a round is running you watch it and play the next one.
 - The player who opened the room is the host (picks everything and starts it). If they leave, the next player becomes host.
-- **The room.** Along the top: who may come in (a lock and *Private*, or a globe and *Public*), and on the right the room's code, a share button (copies the invite link, or opens the phone's share sheet) and the way out. Under that, two tabs: **One match** or **Tournament**. They are set up separately and each remembers its own game, style and stage. On the left, in this order: the game, the art style (one row of pictures, Random first), the stage (a grid of pictures, Random first), round time and lucky boxes. On the right: a picture of whatever you are pointing at or have chosen, the players, and Start. The small (i) beside a heading opens a panel that shows and explains every game, style, stage or item. Guests see what was chosen, without the controls.
-- A room starts **private**: only people with the code or the invite link get in. Made **public**, it shows up under Play in *Open rooms* for anyone to walk into until it is full.
+- **The room.** Along the top: who may come in (a lock and *Private*, or a globe and *Public*), and on the right the room's code, a share button (copies the invite link, or opens the phone's share sheet) and the way out. Under that, two tabs: **Quick Play** or **Tournament**. They are set up separately and each remembers its own game, style and stage. On the left, in this order: the game, the art style (one row of pictures, Random first), the stage (a grid of pictures, Random first), round time and lucky boxes. On the right: a picture of whatever you are pointing at or have chosen, the players (how many play, with &minus; and +, and whether bots take the empty seats), and Start. Nothing on it changes size as you choose: the list is always as tall as ten seats, and Start stays where it is. The small (i) beside a heading opens a panel that shows and explains every game, style, stage or item. Guests see what was chosen, without the controls.
+- A room starts **private**: only people with the code or the invite link get in. Made **public**, it shows up under Play in *Open rooms* for anyone to walk into until every seat has a person in it.
+- **Stages come in two sizes.** The six smaller ones are for 2&ndash;6 players, the three big ones for 5&ndash;10. A stage that does not suit the number of players is shut (its card says for how many it is), Random only draws from the ones that fit, and one that was chosen goes back to Random when the room outgrows it.
+- **When it is over** the scroll says it in two words &ndash; *You win!* or *You lose* &ndash; with who won, and by what, in the line underneath.
 
 ### Lucky boxes
 
@@ -95,6 +97,7 @@ Boxes appear around the arena every few seconds. Touch one with empty hands and 
 | Quake | everyone else, wherever they are, is thrown into the air and stunned for 1.3 s |
 | Warp | the oni (or a bomb carrier) lands beside the nearest runner; a runner lands as far from danger as the arena allows |
 | Eclipse | night for everyone else: for 4 s they see only a small circle around themselves, and their minimap and pointers go dark |
+| Dash | shoot straight ahead: six tiles in a fifth of a second, on the ground or through the air (a wall stops it) |
 
 You hold one item at a time and choose when to use it. Boxes keep coming, and items keep working, right up to the buzzer.
 
@@ -118,7 +121,7 @@ You hold one item at a time and choose when to use it. Boxes keep coming, and it
 ## How it works
 
 ```
-server.js            Express + Socket.io. Rooms, tournaments, and the real simulation of every match.
+server.js            Express + Socket.io. Rooms (people and the bots in the empty seats), tournaments, and the real simulation of every match.
 shared/              Code that runs on BOTH the server and the browser:
   config.js            every tunable number (speeds, jump, timers, items, team battle, tournament rules)
   physics.js           one player, one tick: movement, ledges, slopes, trampolines, launchers, updrafts, thorns, portals
@@ -133,7 +136,7 @@ public/
   js/spinner.js        the draw before each round
   js/demo.js           the live demos on the how-to-play page
   js/net.js            online play: prediction, reconciliation, interpolation
-  js/local.js          offline play against bots
+  js/local.js          a match against bots in the browser alone (not in any menu: the automated checks use it, as __tag.practice())
   js/renderer.js       draws a match (see below)
   js/themes/*.js       one file per art style; README.md there describes how to write one
   js/art.js            menu pictures: the landscape behind the menus, arena and style cards

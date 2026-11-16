@@ -138,15 +138,20 @@ export class Sfx {
         this.noise(0.1, 0.25 * vol, 6000);
         this.tone(1900, 420, 0.2, 0.12 * vol, 'triangle', 0.12);
         break;
+      case 'dash': // a whip of air
+        this.noise(0.16, 0.45 * vol, 7000);
+        this.tone(320, 1500, 0.1, 0.1 * vol, 'sawtooth');
+        this.tone(1500, 500, 0.12, 0.07 * vol, 'sine', 0.08);
+        break;
       case 'eclipse': // the light goes out
         this.tone(520, 130, 0.7, 0.16 * vol, 'sine');
         this.tone(392, 98, 0.8, 0.12 * vol, 'triangle', 0.05);
         this.noise(0.5, 0.18 * vol, 500);
         break;
-      case 'tag':
-        this.noise(0.18, 0.5, 2400);
-        this.tone(900, 140, 0.28, 0.25);
-        this.tone(1350, 210, 0.22, 0.12, 'square', 0.03);
+      case 'tag': // (vol: how near it happened - see play.js)
+        this.noise(0.18, 0.5 * vol, 2400);
+        this.tone(900, 140, 0.28, 0.25 * vol);
+        this.tone(1350, 210, 0.22, 0.12 * vol, 'square', 0.03);
         break;
       case 'tagged': // it's you now
         this.noise(0.25, 0.6, 1800);

@@ -3,17 +3,20 @@
 // pictures, words and sound.
 //
 // The heads-up display, and where each part sits:
-//   top left      the minimap; under it, in a free-for-all, the list of players
-//   top centre    the clock; in a team battle each side's score beside it and
-//                 that side's players beyond the score (Sun left, Moon right),
-//                 the flags and the name of the round underneath
+//   top centre    the minimap
+//   top left      in a free-for-all, the list of players; in a team battle Sun's
+//                 players (Moon's are top right, under the menu button)
 //   top right     the menu button
-//   bottom        the "kit": what you are (it / carrying a bomb), the item in
-//                 your hands, boosts that are running
-//   above the kit the item draw: a small reel that rolls while a lucky box's
+//   bottom centre the "dock", from the top down: the kit (what you are - it /
+//                 carrying a bomb -, the item in your hands, boosts that are
+//                 running), then the board - the clock, big, and in a team
+//                 battle each side's score and bombs beside it and that side's
+//                 flag beyond - and under it the name of the round
+//   above the dock the item draw: a small reel that rolls while a lucky box's
 //                 item is being armed, stops on it and drops into the item tile
 //   upper middle  for the 3-2-1 only: the objective card (what this mode asks
-//                 of you, the twist, who leads, the controls in a first match)
+//                 of you, who starts as it or with a bomb, the twist, who
+//                 leads, the controls in a first match)
 //
 // The menus (main.js) only call a handful of things here:
 //   play.init({ socket, isTouch, onStart(info), onEnd(results), onPause() })
@@ -23,7 +26,7 @@
 //   play.nameOf(slot), play.colorOf(slot), play.portraitOf(slot), play.mySlot(), play.el.spin
 
 import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, ITEM_ARM_TICKS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, PW, PH, THEMES } from '/shared/config.js';
-import { ARENA_IDS, arenaById } from '/shared/arenas.js';
+import { arenasFor, arenaById } from '/shared/arenas.js';
 import { Renderer } from './renderer.js';
 import { Input } from './input.js';
 import { Sfx } from './audio.js';
@@ -44,6 +47,11 @@ const calm = matchMedia('(prefers-reduced-motion: reduce)');
 
 const ITEM_LAND_MS = 520; // the item draw, once it has stopped: its name for a moment, then into the tile (play.css: item-land)
 const FIRST_MATCHES = 3; // how many matches start with a reminder of the controls
+// How far a tag between two OTHER players carries, in world units (the view is about 1170 x 660 of them):
+const TAG_NEAR = 300; // right beside you: 80% of the sound, most of the shake
+const TAG_SCREEN = 1000; // within about a screen: 45% falling to 18%
+const TAG_HUSH = 1700; // from there it fades to nothing
+const TAG_BANNER = 700; // team battle: someone else's bomb pass gets a banner only this close
 
 // item icons (and a few others), kept here so the match needs nothing from the page
 const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
@@ -61,6 +69,7 @@ const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden=
 <symbol id="pi-storm" viewBox="0 0 24 24"><path d="M6 13a5 5 0 1 1 3.5-8.5A6 6 0 0 1 20 8a4 4 0 0 1-2 7.500" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M12 12l-3 5h4l-2 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="pi-quake" viewBox="0 0 24 24"><path d="M2 13.500l4-6 3.200 4.500L12 4l3.200 9.500 2.800-5 4 5" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 19.500h7l1.500-2 2 3.500 1.500-1.500h6" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="pi-warp" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round"/><path d="M12 7.800a4.200 4.200 0 1 1-4.200 4.200" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round"/><path d="M16.800 2.600l4.400.500-.900 4.300" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="pi-dash" viewBox="0 0 24 24"><path d="M2.500 8.200h7.300M1.800 12h5.600M3.400 15.800h6.300" fill="none" stroke="currentColor" stroke-width="2.300" stroke-linecap="round"/><path d="M11.400 5.200c3.900 1.900 7.400 4.200 10.600 6.800-3.200 2.600-6.700 4.900-10.600 6.800 1.300-4.500 1.300-9.100 0-13.600z" fill="currentColor"/></symbol>
 <symbol id="pi-eclipse" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2.500a9.500 9.500 0 1 1 0 19 9.500 9.500 0 0 1 0-19zM14.600 5.400a7 7 0 1 0 0 13.200 8.300 8.300 0 0 1 0-13.200z" fill="currentColor"/></symbol>
 <symbol id="pi-box" viewBox="0 0 24 24"><path d="M8 9a4 4 0 1 1 6 3.5c-1.300.800-2 1.500-2 3M12 19.500v.500" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
 <symbol id="pi-it" viewBox="0 0 24 24"><path d="M6 2.5c.3 2.6 1.300 4.300 3.200 5.400M18 2.500c-.300 2.600-1.300 4.300-3.200 5.400" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M5.5 9.5h13l-1 8.200c-.400 2.600-2.600 4.300-5.500 4.300s-5.100-1.700-5.500-4.300z" fill="currentColor"/></symbol>
@@ -91,19 +100,24 @@ export const play = {
       <div id="hud">
         <canvas id="minimap" width="308" height="174" aria-hidden="true"></canvas>
         <ul id="pills" aria-label="Players"></ul>
-        <div id="top">
-          <div class="h-wing a"><ul id="roster-a" class="h-roster" aria-label="${TEAM_NAMES[0]}"></ul><b id="team-a" class="h-score" hidden></b></div>
-          <div id="timer" aria-label="Seconds left">60</div>
-          <div class="h-wing b"><b id="team-b" class="h-score" hidden></b><ul id="roster-b" class="h-roster" aria-label="${TEAM_NAMES[1]}"></ul></div>
-          <div id="flags" hidden></div>
-          <div id="round-label"></div>
-        </div>
+        <ul id="roster-a" class="h-roster a" aria-label="${TEAM_NAMES[0]}" style="--side:${TEAM_COLORS[0]}"></ul>
+        <ul id="roster-b" class="h-roster b" aria-label="${TEAM_NAMES[1]}" style="--side:${TEAM_COLORS[1]}"></ul>
         <button id="btn-pause" class="hud-btn" aria-label="Menu (Esc)">${icon('menu')}</button>
         <kbd class="hud-key">Esc</kbd>
-        <div id="kit">
-          <div id="status" hidden><span class="sign"></span><b></b></div>
-          <div id="itemslot" hidden><span class="tile"><span class="pic"></span></span><kbd>E</kbd><span class="cap"></span></div>
-          <div id="buffs"></div>
+        <div id="dock">
+          <div id="kit">
+            <div id="status" hidden><span class="sign"></span><b></b></div>
+            <div id="itemslot" hidden><span class="tile"><span class="pic"></span></span><kbd>E</kbd><span class="cap"></span></div>
+            <div id="buffs"></div>
+          </div>
+          <div id="board">
+            <div id="flags-a" class="h-flags" hidden></div>
+            <b id="team-a" class="h-score" hidden></b>
+            <div id="timer" aria-label="Seconds left">60</div>
+            <b id="team-b" class="h-score" hidden></b>
+            <div id="flags-b" class="h-flags" hidden></div>
+          </div>
+          <div id="round-label"></div>
         </div>
         <div id="itemdraw" hidden aria-hidden="true"><div class="box"><div class="win"><div class="strip"></div></div></div><div class="tag"><b></b><kbd>E</kbd></div></div>
         <div id="banner" role="status"></div>
@@ -119,7 +133,7 @@ export const play = {
           <button class="t-jump" data-bit="4" aria-label="Jump">${icon('up')}</button>
         </div>
       </div>`;
-    for (const id of ['stage', 'hud', 'pills', 'top', 'timer', 'team-a', 'team-b', 'roster-a', 'roster-b', 'flags', 'round-label', 'btn-pause', 'minimap', 'kit', 'status', 'itemslot', 'buffs', 'itemdraw', 'banner', 'brief', 'count', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
+    for (const id of ['stage', 'hud', 'pills', 'dock', 'board', 'timer', 'team-a', 'team-b', 'roster-a', 'roster-b', 'flags-a', 'flags-b', 'round-label', 'btn-pause', 'minimap', 'kit', 'status', 'itemslot', 'buffs', 'itemdraw', 'banner', 'brief', 'count', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
     const E = this.el;
     E.use = E.touch.querySelector('.t-use');
     E.itemPic = E.itemslot.querySelector('.pic');
@@ -168,7 +182,7 @@ export const play = {
 
   // --- starting and stopping ----------------------------------------------------------
   async practice(s, name) {
-    const arena = arenaById(s.arena === 'random' ? pickRandom(ARENA_IDS) : s.arena);
+    const arena = arenaById(s.arena === 'random' ? pickRandom(arenasFor((s.bots || 3) + 1)) : s.arena);
     const themeId = s.theme === 'random' ? pickRandom(THEMES).id : s.theme;
     await loadTheme(themeId);
     this.kind = 'practice';
@@ -196,13 +210,26 @@ export const play = {
     this.info = info;
     this.sfx.setTheme(themeId);
     this.opts.onStart?.(info); // the menus show the match screen now
-    this.renderer.setScene(arena, themeId, info.cols || null);
-    this.root.style.background = this.renderer.theme.letterbox;
     const h = this.hud;
     const E = this.el;
+    const team = info.mode === 'team';
+    E.hud.className = team ? 'team' : 'ffa';
+    E.touch.hidden = !this.isTouch;
+    document.body.classList.toggle('touch-on', this.isTouch);
+    // The dock stands at the bottom of the screen, in the middle - right where you
+    // would be standing on an arena's lowest floor. So the view may scroll that
+    // far past the floor: your feet stay above the dock (and the thumb buttons).
+    const named = E.roundLabel.textContent;
+    if (!named) E.roundLabel.textContent = '\u00b7'; // (the round's name, under the board, is written further down: stand in for it)
+    const dockTop = E.hud.getBoundingClientRect().bottom - E.board.getBoundingClientRect().top;
+    if (!named) E.roundLabel.textContent = '';
+    // (the kit, which comes and goes on top of the board, is one row on a computer and up to two on a phone)
+    this.renderer.opts.padBottom = Math.max(this.isTouch ? 104 : 24, dockTop > 0 ? Math.round(dockTop + (this.isTouch ? 70 : 48)) : 0);
+    this.renderer.setScene(arena, themeId, info.cols || null);
+    this.root.style.background = this.renderer.theme.letterbox;
     clearTimeout(h.itemTimer);
     clearTimeout(h.briefTimer);
-    Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], item: '', teams: '', crowd: 0, sides: '', role: '', hot: false, side: -2, briefOn: false });
+    Object.assign(h, { sec: -1, count: 0, buffs: '', pills: [], item: '', teams: '', crowd: 0, role: '', side: -2, briefOn: false });
     E.status.hidden = true;
     E.pills.textContent = '';
     E.rosterA.textContent = '';
@@ -215,15 +242,15 @@ export const play = {
     E.itemslot.className = '';
     this.reelOff();
     this.setUse('');
-    const team = info.mode === 'team';
-    E.hud.className = team ? 'team' : 'ffa';
     E.pills.className = '';
     for (const [id, t] of [['teamA', 0], ['teamB', 1]]) {
       E[id].hidden = !team;
       E[id].style.background = TEAM_COLORS[t];
     }
-    E.flags.hidden = !team;
-    E.flags.textContent = '';
+    for (const box of [E.flagsA, E.flagsB]) {
+      box.hidden = !team;
+      box.textContent = '';
+    }
     h.flagEls = [];
     if (team) {
       // one marker per flag, in the order they stand on the map: a letter, and a bar that fills with a team's colour
@@ -234,7 +261,7 @@ export const play = {
         const fill = el('i');
         bar.append(fill);
         chip.append(el('b', '', 'ABCD'[i]), bar);
-        E.flags.append(chip);
+        (i < arena.bases.length / 2 ? E.flagsA : E.flagsB).append(chip); // (each beside the score of the side whose end of the map it stands at)
         h.flagEls.push({ chip, fill, sig: '' });
       });
     }
@@ -253,8 +280,6 @@ export const play = {
       localStorage.setItem('tag.played', String(played + 1));
     } catch {}
     this.buildBrief(info, g, played < FIRST_MATCHES);
-    E.touch.hidden = !this.isTouch;
-    document.body.classList.toggle('touch-on', this.isTouch);
     this.bakeMinimap(arena);
     this.start();
   },
@@ -363,26 +388,14 @@ export const play = {
       if (pill && pill.gone !== !seen[slot]) pill.li.classList.toggle('gone', (pill.gone = !seen[slot]));
     });
     const n = view.players.length;
-    if (view.team) {
-      // up to five a side, in at most two rows: three or fewer stand in one row
-      const sig = sizes.join();
-      if (sig !== h.sides) {
-        h.sides = sig;
-        [E.rosterA, E.rosterB].forEach((list, t) => {
-          const cols = sizes[t] <= 3 ? Math.max(1, sizes[t]) : Math.ceil(sizes[t] / 2);
-          list.style.setProperty('--cols', String(cols));
-          list.className = `h-roster c${cols}`;
-        });
-        E.hud.classList.toggle('deep', Math.max(sizes[0], sizes[1]) > 3); // a side stands in two rows
-      }
-    } else if (n !== h.crowd) {
+    if (!view.team && n !== h.crowd) {
       // six or more: two columns
       h.crowd = n;
       E.pills.classList.toggle('many', n > 5);
       E.pills.style.setProperty('--rows', String(Math.ceil(n / 2)));
     }
 
-    // team battle: the score either side of the clock (with a bomb for every one that side is holding), the flags under it
+    // team battle: each side's score beside the clock, with how many bombs that side is holding; its flag beyond
     if (view.team) {
       const t = view.team;
       const held = [0, 0];
@@ -390,17 +403,18 @@ export const play = {
       const sig = `${t.score[0]}-${t.score[1]}-${held[0]}-${held[1]}`;
       if (sig !== h.teams) {
         h.teams = sig;
-        const bombs = (n) => '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#pi-bomb"/></svg>'.repeat(n);
-        E.teamA.innerHTML = `<span class="tn">${TEAM_NAMES[0]}</span> ${t.score[0]}<span class="held">${bombs(held[0])}</span>`;
-        E.teamB.innerHTML = `<span class="held">${bombs(held[1])}</span>${t.score[1]} <span class="tn">${TEAM_NAMES[1]}</span>`;
+        // (a bomb and a number: read at a glance, and the same width with one bomb or five)
+        const bombs = (n) => `<span class="held${n ? '' : ' none'}" aria-label="${n} bomb${n === 1 ? '' : 's'}"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#pi-bomb"/></svg><i>${n}</i></span>`;
+        E.teamA.innerHTML = `<span class="tn">${TEAM_NAMES[0]}</span><span class="pts">${t.score[0]}</span>${bombs(held[0])}`;
+        E.teamB.innerHTML = `${bombs(held[1])}<span class="pts">${t.score[1]}</span><span class="tn">${TEAM_NAMES[1]}</span>`;
       }
       const side = view.players.find((p) => p.local)?.team ?? -1;
       if (side !== h.side) {
         h.side = side;
         E.teamA.classList.toggle('mine', side === 0);
         E.teamB.classList.toggle('mine', side === 1);
-        E.rosterA.parentNode.classList.toggle('mine', side === 0);
-        E.rosterB.parentNode.classList.toggle('mine', side === 1);
+        E.rosterA.classList.toggle('mine', side === 0);
+        E.rosterB.classList.toggle('mine', side === 1);
       }
       t.flags.forEach((f, i) => {
         const e = h.flagEls[i];
@@ -418,17 +432,20 @@ export const play = {
     }
 
     // what you are right now: it, or carrying a bomb - or only watching (a small sign that stays up as long as it is true)
-    const self = view.phase === 'playing' ? view.players.find((p) => p.local) : null;
+    // (before GO too: the view says who starts as it, or with a bomb, as soon as the draw is over)
+    const before = view.phase === 'countdown';
+    const self = view.phase === 'playing' || before ? view.players.find((p) => p.local) : null;
     const role = view.spectating ? 'watch' : !self ? '' : self.bomb ? 'bomb' : view.it === self.slot ? 'it' : '';
-    const hot = role === 'bomb' && view.timeLeft <= 10;
-    if (role !== h.role || hot !== h.hot) {
-      h.role = role;
-      h.hot = hot;
+    const hot = role === 'bomb' && !before && view.timeLeft <= 10;
+    const rsig = `${role}/${hot}/${before}`;
+    if (rsig !== h.role) {
+      h.role = rsig;
       E.status.hidden = !role;
       E.status.className = role + (hot ? ' hot' : '');
       if (role) {
         E.status.firstChild.innerHTML = icon(role === 'bomb' ? 'bomb' : role === 'watch' ? 'eye' : 'it');
-        E.status.lastChild.textContent = role === 'watch' ? 'Watching - you play next round' : role === 'bomb' ? (hot ? 'BOMB - get rid of it!' : 'BOMB - tag an enemy') : "YOU'RE IT - tag someone";
+        E.status.lastChild.textContent =
+          role === 'watch' ? 'Watching - you play next round' : role === 'bomb' ? (before ? 'You start with a BOMB' : hot ? 'BOMB - get rid of it!' : 'BOMB - tag an enemy') : before ? 'You start as IT' : "YOU'RE IT - tag someone";
       }
     }
 
@@ -493,6 +510,19 @@ export const play = {
       p.append(words);
       b.append(p);
     };
+    // who starts as what: nobody has to wait for GO to find out
+    if (team) {
+      const bombs = (info.bombs || []).filter((slot) => slot !== me);
+      const mine = (info.bombs || []).includes(me);
+      const mates = bombs.filter((slot) => g.teamOf?.(slot) === side).length;
+      const who = bombs.length === 1 ? this.nameOf(bombs[0]) : bombs.length === 2 ? `${this.nameOf(bombs[0])} and ${this.nameOf(bombs[1])}` : '';
+      if (mine) extra('bomb mine', 'bomb', 'You start with a bomb', bombs.length ? ` - so ${bombs.length === 1 ? 'does' : 'do'} ${who || `${bombs.length} others`}` : '');
+      else if (who) extra('bomb', 'bomb', who, bombs.length > 1 ? ' start with the bombs' : ' starts with the bomb');
+      else if (bombs.length) extra('bomb', 'bomb', `${bombs.length} bombs`, side >= 0 ? `: ${mates} on your side, ${bombs.length - mates} on theirs` : ' to start with');
+    } else if (info.it >= 0 && !(info.cup && info.cup.leader >= 0)) {
+      if (info.it === me) extra('it mine', 'it', 'You start as the oni', ': catch someone');
+      else extra('it', 'it', this.nameOf(info.it), ' starts as the oni');
+    }
     const twist = info.twist && info.twist !== 'none' ? g.twist : null;
     if (twist?.name) extra('twist', 'twist', `Twist: ${twist.name}`, `: ${twist.blurb.toLowerCase()}`);
     if (!team && info.cup && info.cup.leader >= 0) {
@@ -687,10 +717,15 @@ export const play = {
       const host = E.hud.getBoundingClientRect();
       const u = E.use.getBoundingClientRect();
       const size = 92;
-      st.left = `${Math.min(host.width - size - 14, Math.max(14, u.left - host.left + u.width / 2 - size / 2))}px`; // (room for the pop it lands with)
-      st.top = `${u.top - host.top - size - 30}px`;
+      st.left = `${Math.min(host.width - size - 18, Math.max(18, u.left - host.left + u.width / 2 - size / 2))}px`; // (room for the pop it lands with)
+      // (above the item button - and above the dock, where that reaches higher: a phone held upright)
+      const d = E.dock.getBoundingClientRect();
+      const over = u.left < d.right && u.right > d.left ? Math.min(u.top, d.top) : u.top;
+      st.top = `${over - host.top - size - 34}px`;
     } else {
-      // low in the middle, just above the kit - unless that is where you are standing: then a step to the side
+      // low in the middle, just above the dock - unless that is where you are standing: then a step to the side
+      const host = E.hud.getBoundingClientRect();
+      st.bottom = `${Math.round(host.bottom - E.dock.getBoundingClientRect().top + 30)}px`;
       const cam = this.renderer.viewRect();
       const me = cam && view.players.find((p) => p.local);
       if (me) {
@@ -698,7 +733,7 @@ export const play = {
         const H = this.renderer.cssH;
         const sx = ((me.x + PW / 2 - cam.x) / cam.w) * W;
         const sy = ((me.y + PH / 2 - cam.y) / cam.h) * H;
-        if (sy > H - 300 && Math.abs(sx - W / 2) < 150) st.setProperty('--dx', `${sx < W / 2 ? 190 : -190}px`);
+        if (sy > H - 420 && Math.abs(sx - W / 2) < 150) st.setProperty('--dx', `${sx < W / 2 ? 190 : -190}px`);
       }
     }
     R.className = still ? 'roll still' : 'roll';
@@ -787,13 +822,13 @@ export const play = {
     };
     const wide = (r) => r && { x0: r.x0 - 36, y0: r.y0 - 56, x1: r.x1 + 36, y1: r.y1 + 36 };
     const map = rect(E.minimap);
-    const list = rect(E.pills);
+    const lists = [E.pills, E.rosterA, E.rosterB].map(rect);
     m.rect = wide(map);
-    m.list = wide(list);
+    m.lists = lists.map(wide);
     m.w = a.width;
     m.h = a.height;
-    const keep = [map, list, rect(E.btnPause), rect(E.hud.querySelector('.hud-key')), rect(E.status), rect(E.itemslot), rect(E.buffs)];
-    for (const e of E.top.children) keep.push(rect(e));
+    const keep = [map, ...lists, rect(E.btnPause), rect(E.hud.querySelector('.hud-key')), rect(E.status), rect(E.itemslot), rect(E.buffs), rect(E.roundLabel)];
+    for (const e of E.board.children) keep.push(rect(e));
     if (!E.touch.hidden) for (const e of E.touch.querySelectorAll('.pad, .acts button')) keep.push(rect(e));
     this.renderer.avoid = keep.filter(Boolean);
     if (map && Math.abs(E.minimap.clientWidth - m.cssW) > 6) this.bakeMinimap(m.arena); // the window changed size: paint the map again at its new one
@@ -845,20 +880,20 @@ export const play = {
         }
       }
     }
-    // never hide your own player: the map - and the list of players under it -
-    // turns faint while you are underneath it
+    // never hide your own player: the map - and each list of players - turns
+    // faint while you are underneath it
     const me = cam && view.players.find((p) => p.local);
     let under = false;
-    let underList = false;
-    if (me) {
-      const sx = ((me.x + PW / 2 - cam.x) / cam.w) * m.w;
-      const sy = ((me.y + PH / 2 - cam.y) / cam.h) * m.h;
-      const inside = (r) => !!r && sx > r.x0 && sx < r.x1 && sy > r.y0 && sy < r.y1;
-      under = inside(m.rect);
-      underList = inside(m.list);
-    }
+    const sx = me ? ((me.x + PW / 2 - cam.x) / cam.w) * m.w : 0;
+    const sy = me ? ((me.y + PH / 2 - cam.y) / cam.h) * m.h : 0;
+    const inside = (r) => !!me && !!r && sx > r.x0 && sx < r.x1 && sy > r.y0 && sy < r.y1;
+    under = inside(m.rect);
     if (under !== m.under) c.classList.toggle('aside', (m.under = under));
-    if (underList !== m.underList) this.el.pills.classList.toggle('aside', (m.underList = underList));
+    m.underList ||= [];
+    [this.el.pills, this.el.rosterA, this.el.rosterB].forEach((list, i) => {
+      const u = inside(m.lists && m.lists[i]);
+      if (u !== m.underList[i]) list.classList.toggle('aside', (m.underList[i] = u));
+    });
     for (const p of view.players) {
       if (p.dead > 0 || (night && !p.local)) continue;
       const x = (p.x + PW / 2) * k;
@@ -882,6 +917,22 @@ export const play = {
     }
   },
 
+  // How far (world units) something that happened to these players is from the
+  // one you are watching: your own, or the middle of the view if you have none.
+  farFrom(...slots) {
+    const R = this.renderer;
+    const mine = R.last[this.mySlot()];
+    const cam = R.viewRect();
+    const x = mine ? mine.cx : cam ? cam.x + cam.w / 2 : 0;
+    const y = mine ? mine.y : cam ? cam.y + cam.h / 2 : 0;
+    let d = Infinity;
+    for (const slot of slots) {
+      const o = R.last[slot];
+      if (o) d = Math.min(d, Math.hypot(o.cx - x, o.y - y));
+    }
+    return d === Infinity ? 0 : d;
+  },
+
   // --- game events -> pictures, words, sound ---------------------------------------------
   onEvent(type, a, b) {
     const me = this.mySlot();
@@ -889,10 +940,22 @@ export const play = {
     const sfx = this.sfx;
     const team = this.info?.mode === 'team';
     if (type === 'tag') {
-      R.tagFx(a, b);
-      sfx.play(b === me ? 'tagged' : 'tag');
-      if (team) this.banner(b === me ? 'A bomb is on YOU - pass it on!' : a === me ? `You stuck it on ${this.nameOf(b)}!` : `${this.nameOf(b)} has a bomb now`, b === me);
-      else if (b === me) this.banner("You're it!", true);
+      // A tag you are part of is loud and shakes the screen. Anyone else's reaches
+      // you by how far away it is: right beside you nearly as loud, within about a
+      // screen clearly quieter, further off barely there, beyond TAG_HUSH nothing.
+      // (Everyone for themselves: there is only one "it", so news of a tag always
+      // carries a little; in a team battle bombs change hands all the time.)
+      const d = this.farFrom(b, a);
+      const near = d <= TAG_NEAR ? 0.8 : d <= TAG_SCREEN ? 0.45 - (0.27 * (d - TAG_NEAR)) / (TAG_SCREEN - TAG_NEAR) : d <= TAG_HUSH ? (0.18 * (TAG_HUSH - d)) / (TAG_HUSH - TAG_SCREEN) : 0;
+      const vol = team ? near : Math.max(near, 0.3);
+      R.tagFx(a, b, near);
+      if (b === me) sfx.play('tagged');
+      else if (a === me) sfx.play('tag', 0.9);
+      else if (vol > 0.02) sfx.play('tag', vol);
+      if (team) {
+        // (someone else's bomb changing hands a long way off is not worth a banner: the list of players shows it)
+        if (a === me || b === me || d <= TAG_BANNER) this.banner(b === me ? 'A bomb is on YOU - pass it on!' : a === me ? `You stuck it on ${this.nameOf(b)}!` : `${this.nameOf(b)} has a bomb now`, b === me);
+      } else if (b === me) this.banner("You're it!", true);
       else if (a === me) this.banner(`You tagged ${this.nameOf(b)}!`);
       else this.banner(`${this.nameOf(b)} is it`);
     } else if (type === 'block') {
@@ -921,7 +984,7 @@ export const play = {
       // a = { slot, kind, x, y, to }
       const kind = ITEM_KINDS[a.kind];
       R.itemFx(a, kind);
-      sfx.play({ freeze: 'freeze', blast: 'blast', storm: 'storm', swap: 'swap', quake: 'quake', warp: 'warp', eclipse: 'eclipse' }[kind] || 'pick', a.slot === me || kind === 'quake' || kind === 'eclipse' ? 1 : 0.6);
+      sfx.play({ freeze: 'freeze', blast: 'blast', storm: 'storm', swap: 'swap', quake: 'quake', warp: 'warp', eclipse: 'eclipse', dash: 'dash' }[kind] || 'pick', a.slot === me || kind === 'quake' || kind === 'eclipse' ? 1 : 0.6);
       const who = a.slot === me ? 'You' : this.nameOf(a.slot);
       if (kind === 'blast') this.banner(`${who} set off a Blast!`, a.slot !== me);
       else if (kind === 'storm') this.banner(`${who} called a Storm!`, a.slot !== me);

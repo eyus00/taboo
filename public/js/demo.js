@@ -253,6 +253,27 @@ const ITEM_ACTS = {
     d.ai[1] = null;
     yield* hold(0, 30);
   },
+  *dash(d) {
+    let me = d.cast([{ name: 'You', x: 150 }, { name: 'Oni', x: 50 }], { it: 1 });
+    d.give('dash');
+    d.ai[1] = chase(0, false);
+    d.say('The oni is right behind you...');
+    yield* runTo(me, 215);
+    d.say('Dash! Six tiles in the blink of an eye');
+    yield R | U;
+    yield* hold(R, 13);
+    d.ai[1] = null;
+    yield* hold(0, 55);
+    // and the other way round
+    me = d.cast([{ name: 'You', x: 80 }, { name: 'Kiko', x: 330, face: -1 }], { it: 0 });
+    d.give('dash');
+    d.say('And if you are the oni: that gap is nothing');
+    yield* hold(0, 50);
+    yield R | U;
+    yield* until(R, () => d.sim.it === 1, 40);
+    yield* runTo(me, 150); // (away, before it comes back)
+    yield* hold(0, 45);
+  },
 };
 const ITEM_ORDER = ['box', ...ITEM_KINDS];
 
@@ -675,6 +696,7 @@ class Run {
         shd: s.shd,
         slw: s.slw,
         ecl: s.ecl,
+        dsh: s.dsh,
         dead: s.dead,
         itTicks: p.itTicks,
         item: p.item,

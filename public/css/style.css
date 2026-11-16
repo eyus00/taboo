@@ -197,12 +197,12 @@ kbd {
 }
 /* close: a cross in a circle, in the top right corner, with its key beside it */
 .m-x { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 2px; margin-left: auto; border: 0; background: none; color: var(--ink); transition: scale 150ms ease-out; }
-.m-x .ring { width: 38px; height: 38px; display: grid; place-items: center; font-size: 15px; background: var(--paper-lit); border: 2px solid var(--ink); border-radius: 50%; transition: background-color 150ms ease-out, color 150ms ease-out; }
+.m-x .ring { width: 38px; height: 38px; display: grid; place-items: center; font-size: 15px; color: var(--paper-lit); background: var(--ink); border: 2px solid var(--ink); border-radius: 50%; box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 3px rgba(243, 234, 214, 0.4); transition: background-color 150ms ease-out, border-color 150ms ease-out, rotate 150ms ease-out; }
 .m-x kbd { background: var(--paper-lit); }
 .m-x:focus-visible { outline: none; }
 .m-x:focus-visible .ring { outline: 3px solid var(--red); outline-offset: 2px; }
 .m-x:active { scale: 0.96; }
-@media (hover: hover) { .m-x:hover .ring { color: var(--paper); background: var(--ink); } }
+@media (hover: hover) { .m-x:hover .ring { background: var(--red-deep); border-color: var(--red-deep); rotate: 90deg; } }
 /* (words for a screen reader only) */
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .link { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 5px 0 3px; color: var(--soft); font: 600 14px/1.2 var(--serif); border-bottom: 1.5px solid currentColor; }
@@ -258,6 +258,11 @@ input[type='text']:focus { border-bottom-color: var(--red); outline: none; }
 @media (hover: hover) { .tool:hover .ring.you { background: none; } }
 .tool:focus-visible .ring.you { background: none; outline: 3px solid var(--red); outline-offset: 2px; }
 .tool b { max-width: 100%; font: 800 11.5px/1.25 var(--serif); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* (your own name, with a pencil: this is where it is changed. Each of the four is as wide as its words, so a twelve-letter name is whole) */
+.foot .tool { flex: 1 1 auto; }
+.tool.me b { display: flex; align-items: center; gap: 4px; overflow: visible; }
+.tool.me .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tool.me .pen { flex: none; font-size: 11px; }
 .tool kbd { position: absolute; top: -2px; left: calc(50% + 13px); min-width: 20px; height: 20px; padding: 0 3px; font-size: 10.5px; color: var(--ink); background: var(--paper-lit); opacity: 1; transform: rotate(6deg); }
 .tool:focus-visible, .tool[aria-current] { color: var(--red-deep); outline: none; }
 @media (hover: hover) { .tool:hover { color: var(--red-deep); outline: none; } }
@@ -372,7 +377,10 @@ body.in-game .conn { display: none; }
 .side li span:first-child { text-align: left; }
 .side li .who { font: 400 21px/1.15 var(--brush); overflow: hidden; text-overflow: ellipsis; padding-top: 2px; }
 .side .chip { display: inline-block; width: 9px; height: 20px; margin-right: 9px; vertical-align: -4px; }
+.side li .who.long { font-size: 17.5px; }
 .side li.me { background: rgba(200, 55, 45, 0.09); }
+/* (a bot, on any board: a small label after its name) */
+.tag.bot { display: inline-block; margin-left: 7px; padding: 2px 4px 1px; font: 800 9px/1 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; vertical-align: 0.35em; color: var(--soft); border: 1.5px solid rgba(28, 27, 31, 0.3); }
 .side.won { box-shadow: inset 0 0 0 2px var(--ink), 0 0 0 3px var(--red); }
 
 /* how to play: every lesson is a little live picture of the real game */
@@ -470,8 +478,26 @@ body:not(.no-kbd) .touch-only { display: none; }
 .verdict .seal.big { margin-left: 0; font-size: 42px; transform: rotate(-6deg); }
 .verdict .res-title { font-size: clamp(26px, 4.4vw, 40px); }
 .verdict .lead { font-size: 15px; }
-#s-results.won .verdict .seal { animation: stamp 0.42s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+/* the verdict lands: the seal is stamped on, the headline comes up behind it (red for a win, ink for a loss) */
+.verdict { position: relative; }
+#s-results[data-mood] .verdict .seal { animation: stamp 0.42s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
 @keyframes stamp { from { opacity: 0; transform: scale(2.3) rotate(10deg); } }
+#s-results[data-mood='win'] .res-title, #s-results[data-mood='lose'] .res-title, #s-results[data-mood='level'] .res-title { font-size: clamp(34px, 5.6vw, 54px); line-height: 1; }
+#s-results[data-mood='win'] .res-title { color: var(--red-deep); animation: verdict-up 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) 0.08s both; }
+#s-results[data-mood='lose'] .res-title { color: var(--ink); animation: verdict-down 0.36s ease-out 0.08s both; }
+#s-results[data-mood=''] .verdict .seal { animation: none; }
+@keyframes verdict-up { from { opacity: 0; transform: translateY(12px) scale(0.7) rotate(-3deg); } }
+@keyframes verdict-down { from { opacity: 0; transform: translateY(-16px); } }
+/* a burst of petals from behind the headline, for a win */
+.res-fx { position: absolute; left: clamp(70px, 24%, 190px); top: 50%; width: 0; height: 0; pointer-events: none; z-index: 2; }
+.res-fx i { position: absolute; left: 0; top: 0; width: var(--size, 10px); height: calc(var(--size, 10px) * 0.72); background: #e98aa4; border-radius: 80% 10% 80% 10%; opacity: 0; animation: petal-burst 1.5s cubic-bezier(0.15, 0.7, 0.3, 1) var(--wait, 0ms) both; }
+.res-fx i.gold { background: #d9a53a; border-radius: 2px; }
+@keyframes petal-burst {
+  0% { opacity: 0; transform: translate(0, 0) rotate(0deg) scale(0.4); }
+  12% { opacity: 1; }
+  60% { opacity: 1; transform: translate(var(--dx), var(--dy)) rotate(var(--turn)) scale(1); }
+  100% { opacity: 0; transform: translate(calc(var(--dx) * 1.12), calc(var(--dy) + 70px)) rotate(calc(var(--turn) * 1.4)) scale(0.9); }
+}
 /* a player's face: their character in the style of the match (their colour until it is painted) */
 .face { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; margin-right: 9px; vertical-align: -8px; overflow: hidden; background: var(--c, #888); clip-path: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%); }
 .face img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -532,6 +558,11 @@ body:not(.no-kbd) .touch-only { display: none; }
 @media (max-width: 1279.98px) {
   /* one thing at a time */
   body.has-panel .screen.home { display: none; }
+}
+/* the narrowest phones: the four tools under the menu in two rows, so every label is whole */
+@media (max-width: 380px) {
+  .foot { flex-wrap: wrap; row-gap: 10px; }
+  .foot .tool { flex: 1 1 40%; }
 }
 /* a large screen: the menus are drawn larger instead of sitting small in the
    middle of it (this is layout, not a stretched picture: lettering stays sharp) */
@@ -629,6 +660,7 @@ body:not(.no-kbd) .touch-only { display: none; }
   .conn-note { transition: opacity 0.25s; transform: none; }
   /* a notice fades in where it is; a seal is simply there */
   #toasts div { animation-name: toast-calm; }
-  .verdict .seal { animation: none; }
+  .verdict .seal, .verdict .res-title { animation: none !important; }
+  .res-fx { display: none; }
 }
 @keyframes toast-calm { 0% { opacity: 0; } 8%, 85% { opacity: 1; } 100% { opacity: 0; } }

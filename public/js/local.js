@@ -147,6 +147,10 @@ export class LocalGame {
 
     // draw between the last two steps, so motion is smooth at any refresh rate
     const a = this.phase === 'over' ? 1 : this.acc / TICK_MS;
+    // Before GO, once the draw is over and the count is on: who is going to start as it,
+    // or with a bomb, is shown already (the sim only makes it so at GO).
+    const pre = this.phase === 'countdown' && this.countdownMs <= COUNTDOWN_MS;
+    const plan = pre && this.teams ? sim.bombPlan || [] : [];
     const players = [];
     for (const p of sim.players) {
       if (!p) continue;
@@ -158,7 +162,7 @@ export class LocalGame {
         name: this.names[p.slot],
         col: this.cols ? this.cols[p.slot] : p.slot,
         team: p.team,
-        bomb: p.bomb,
+        bomb: p.bomb || plan.includes(p.slot),
         x: smooth ? pr.x + (s.x - pr.x) * a : s.x,
         y: smooth ? pr.y + (s.y - pr.y) * a : s.y,
         vx: s.vx,
@@ -175,6 +179,7 @@ export class LocalGame {
         shd: s.shd,
         slw: s.slw,
         ecl: s.ecl,
+        dsh: s.dsh,
         dead: s.dead,
         itTicks: p.itTicks,
         item: p.item,
@@ -201,7 +206,8 @@ export class LocalGame {
       goAge: this.goTime != null ? (now - this.goTime) / 1000 : null,
       timeLeft,
       duration: this.duration,
-      it: this.phase === 'countdown' ? -1 : sim.it,
+      it: this.phase === 'countdown' ? (pre && !this.teams ? this.startIt : -1) : sim.it,
+      pre,
       players,
       boxes: sim.boxes,
       team: sim.teams ? { score: sim.score, over: sim.over, flags: sim.flags.map((f) => ({ x: f.x, y: f.y, owner: f.owner, fill: f.m / FLAG_CAP_TICKS })) } : null,

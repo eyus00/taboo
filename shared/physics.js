@@ -49,6 +49,7 @@ import {
   RESPAWN_TICKS,
   SPEED_BUFF_MUL,
   JUMP_BUFF_MUL,
+  DASH_SPEED,
   IN_LEFT,
   IN_RIGHT,
   IN_JUMP,
@@ -91,6 +92,7 @@ export function makeState(x, y) {
     shd: 0, // ticks of Ward left
     slw: 0, // ticks of slow motion left (someone used Storm)
     ecl: 0, // ticks of night left (someone used Eclipse): changes nothing here, only what this player is shown
+    dsh: 0, // ticks of a Dash left: straight ahead at full tilt, no steering
     hz: 0, // ticks until thorns can hurt us again
     w: PW,
     h: PH,
@@ -125,9 +127,10 @@ export function packState(s) {
     s.slw,
     s.hz,
     s.ecl,
+    s.dsh,
   ];
 }
-export const STATE_LEN = 25;
+export const STATE_LEN = 26;
 
 export function unpackState(a) {
   const s = makeState(a[0], a[1]);
@@ -158,6 +161,7 @@ export function unpackState(a) {
   s.slw = a[22];
   s.hz = a[23];
   s.ecl = a[24] || 0;
+  s.dsh = a[25] || 0;
   return s;
 }
 
@@ -173,6 +177,7 @@ export const PF_SHIELD = 128;
 export const PF_DEAD = 256;
 export const PF_SLOW = 512;
 export const PF_DARK = 1024;
+export const PF_DASH = 2048;
 
 export function publicFlags(s) {
   return (
@@ -186,7 +191,8 @@ export function publicFlags(s) {
     (s.shd > 0 ? PF_SHIELD : 0) |
     (s.dead > 0 ? PF_DEAD : 0) |
     (s.slw > 0 ? PF_SLOW : 0) |
-    (s.ecl > 0 ? PF_DARK : 0)
+    (s.ecl > 0 ? PF_DARK : 0) |
+    (s.dsh > 0 ? PF_DASH : 0)
   );
 }
 
@@ -369,6 +375,8 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
   if (p.shd > 0) p.shd--;
   if (p.slw > 0) p.slw--;
   if (p.ecl > 0) p.ecl--;
+  let dashing = p.dsh > 0;
+  if (dashing) p.dsh--;
   if (p.hz > 0) p.hz--;
   if (p.drop > 0) p.drop--;
 
@@ -409,6 +417,11 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
     if (p.stun > 0) p.stun--;
     if (p.frz > 0) p.frz--;
     b = 0;
+    if (dashing) {
+      // tagged, blasted or frozen in mid-dash: that is the end of it
+      dashing = false;
+      p.dsh = 0;
+    }
   }
   const pressed = b & ~p.pb; // buttons that went down this very tick
   p.pb = bits;
@@ -416,7 +429,7 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
   let dir = 0;
   if (b & IN_LEFT) dir -= 1;
   if (b & IN_RIGHT) dir += 1;
-  if (dir !== 0) p.face = dir;
+  if (dir !== 0 && !dashing) p.face = dir;
 
   const slow = p.slw > 0 ? STORM_SPEED : 1;
   const speed = MOVE_SPEED * twist.speed * (isIt ? IT_SPEED_MUL : 1) * (p.spd > 0 ? SPEED_BUFF_MUL : 1) * slow;
@@ -433,50 +446,67 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
     }
   }
 
-  // --- running: speed builds up, and turning round costs a short skid ---------
-  const target = dir * speed;
-  if (p.ground) {
-    if (dir === 0) p.vx = approach(p.vx, 0, GROUND_STOP * DT);
-    else if (p.vx * dir < 0) p.vx = approach(p.vx, 0, GROUND_TURN * DT);
-    else p.vx = approach(p.vx, target, (Math.abs(p.vx) > speed ? GROUND_STOP : GROUND_ACCEL) * DT);
-  } else if (dir === 0) {
-    p.vx *= lifted ? LIFT_GRIP : AIR_KEEP; // an updraft holds on to you when you let go
-    if (Math.abs(p.vx) < 4) p.vx = 0;
-  } else if (p.vx * dir > speed) {
-    p.vx *= AIR_KEEP; // flung faster than you can run (a launcher): holding on keeps the momentum
+  if (dashing) {
+    // Dash: a straight line the way we face, whatever is held - on the ground or
+    // through the air (sinking a pixel a tick, so that ground under us still
+    // counts as ground). A wall ends it like any run into a wall; so does a
+    // tag. A jump pressed meanwhile is remembered for when it is over.
+    p.vx = p.face * DASH_SPEED * slow;
+    p.vy = 60;
+    if (pressed & IN_JUMP) p.jbuf = JUMP_BUFFER_TICKS;
   } else {
-    p.vx = approach(p.vx, target, (p.vx * dir < 0 ? AIR_TURN : AIR_ACCEL) * DT);
-  }
-
-  // --- jumping -----------------------------------------------------------------
-  if (pressed & IN_JUMP) p.jbuf = JUMP_BUFFER_TICKS;
-  else if (p.jbuf > 0) p.jbuf--;
-  if (p.jbuf > 0) {
-    if (p.ground || p.coyote > 0) {
-      p.vy = -JUMP_V * jumpMul;
-      p.ground = false;
-      p.coyote = 0;
-      p.jbuf = 0;
-      p.nc = false;
-    } else if (pressed & IN_JUMP && p.air > 0 && p.vy > -AIR_JUMP_V * jumpMul) {
-      // double jump (ignored while already flying up faster, e.g. off a trampoline;
-      // and one used during a trampoline launch can never make the launch shorter)
-      p.vy = -AIR_JUMP_V * jumpMul;
-      p.air--;
-      p.jbuf = 0;
+    // --- running: speed builds up, and turning round costs a short skid ---------
+    const target = dir * speed;
+    if (p.ground) {
+      if (dir === 0) p.vx = approach(p.vx, 0, GROUND_STOP * DT);
+      else if (p.vx * dir < 0) p.vx = approach(p.vx, 0, GROUND_TURN * DT);
+      else p.vx = approach(p.vx, target, (Math.abs(p.vx) > speed ? GROUND_STOP : GROUND_ACCEL) * DT);
+    } else if (dir === 0) {
+      p.vx *= lifted ? LIFT_GRIP : AIR_KEEP; // an updraft holds on to you when you let go
+      if (Math.abs(p.vx) < 4) p.vx = 0;
+    } else if (p.vx * dir > speed) {
+      p.vx *= AIR_KEEP; // flung faster than you can run (a launcher): holding on keeps the momentum
+    } else {
+      p.vx = approach(p.vx, target, (p.vx * dir < 0 ? AIR_TURN : AIR_ACCEL) * DT);
     }
-  }
-  // let go early for a short hop
-  if (!(b & IN_JUMP) && !p.nc && p.vy < -JUMP_CUT_V) p.vy = -JUMP_CUT_V;
 
-  // --- gravity, air resistance, updrafts -----------------------------------------
-  if (lifted) {
-    p.vy += (-LIFT_V - p.vy) * LIFT_RATE; // settle to a steady climb
-    p.air = AIR_JUMPS;
-    p.nc = true;
-  } else {
-    const fast = (b & IN_DOWN) !== 0 && !p.ground;
-    p.vy += (GRAVITY * twist.grav + (fast ? FAST_FALL_G : 0) - AIR_DRAG * p.vy) * DT;
+    // --- jumping -----------------------------------------------------------------
+    // Every fresh press counts, however fast they come. On the ground (or just off
+    // it) it is a jump; in the air it is the jump in mid-air, if that is still to be
+    // had. A press that can do neither yet is remembered for a few ticks: one made
+    // just before landing jumps on landing, and one made while we are still flying
+    // up faster than the jump in mid-air would send us (the first instant of a full
+    // jump) goes off as soon as it adds something. Off a trampoline that moment is
+    // a long way away: there the press simply lapses, and the jump in mid-air is
+    // kept for later - pressing never makes a launch shorter.
+    const soaring = p.vy <= -AIR_JUMP_V * jumpMul;
+    if (pressed & IN_JUMP) p.jbuf = JUMP_BUFFER_TICKS;
+    else if (p.jbuf > 0) p.jbuf--;
+    if (p.jbuf > 0) {
+      if (p.ground || p.coyote > 0) {
+        p.vy = -JUMP_V * jumpMul;
+        p.ground = false;
+        p.coyote = 0;
+        p.jbuf = 0;
+        p.nc = false;
+      } else if (p.air > 0 && !soaring) {
+        p.vy = -AIR_JUMP_V * jumpMul;
+        p.air--;
+        p.jbuf = 0;
+      }
+    }
+    // let go early for a short hop
+    if (!(b & IN_JUMP) && !p.nc && p.vy < -JUMP_CUT_V) p.vy = -JUMP_CUT_V;
+
+    // --- gravity, air resistance, updrafts -----------------------------------------
+    if (lifted) {
+      p.vy += (-LIFT_V - p.vy) * LIFT_RATE; // settle to a steady climb
+      p.air = AIR_JUMPS;
+      p.nc = true;
+    } else {
+      const fast = (b & IN_DOWN) !== 0 && !p.ground;
+      p.vy += (GRAVITY * twist.grav + (fast ? FAST_FALL_G : 0) - AIR_DRAG * p.vy) * DT;
+    }
   }
 
   // hold down on a thin ledge or slope to drop through it
@@ -494,6 +524,11 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
   p.gk = 0;
   moveY(p, p.vy * DT, arena);
   onRamps(p, arena, prevCx, prevFeet, wasGround, vy0, (b & IN_DOWN) !== 0);
+  if (dashing && p.dsh === 0) {
+    // the dash is over: carry on at a run (or coast to a stop), not at dash speed
+    if (Math.abs(p.vx) > speed) p.vx = p.face * speed;
+    if (!p.ground) p.vy = 0;
+  }
 
   // trampolines: touch one while not rising and up you go
   if (p.vy >= 0) {

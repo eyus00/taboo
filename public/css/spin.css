@@ -80,6 +80,13 @@
 .draw .reel.cast .pose .dot { position: absolute; left: 50%; top: 50%; width: calc(var(--cell) * 0.2); height: calc(var(--cell) * 0.2); margin: calc(var(--cell) * -0.1) 0 0 calc(var(--cell) * -0.1); transform: rotate(45deg); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); }
 /* team battle: the name sits on its side's colour */
 .draw .reel.sided .cell b { color: #fff; background: var(--side); }
+/* several bombs: everyone who starts with one, side by side in the one cell (three across; four are two and two) */
+.draw .reel.cast .cell.gang { flex-direction: row; flex-wrap: wrap; gap: 2px; }
+.draw .cell.gang .one { position: relative; flex: 1 1 30%; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.draw .cell.gang.n2 .one, .draw .cell.gang.n4 .one { flex-basis: 45%; }
+.draw .reel.cast .cell.gang .pose { flex: 1 1 0; height: auto; min-height: 0; }
+.draw .reel.cast .cell.gang b { flex: none; display: block; height: 1.55em; padding: 0 2px; font-size: clamp(8.5px, 1.5vmin, 11.5px); line-height: 1.55; text-align: center; text-overflow: ellipsis; }
+.draw .reel.cast .cell.gang b.long { font-size: clamp(7.5px, 1.25vmin, 10px); letter-spacing: -0.02em; }
 
 /* the seal that lands on a reel once it has stopped */
 .draw .stamp {

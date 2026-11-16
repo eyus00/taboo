@@ -22,13 +22,13 @@ export const SNAP_EVERY = 2; // server broadcasts every 2nd tick (30 Hz)
 // --- Movement feel -----------------------------------------------------------
 // Running has a little weight: you pick up speed over about a tenth of a
 // second, and reversing direction costs a brief skid before you go the other way.
-export const MOVE_SPEED = 310; // px/s top speed
+export const MOVE_SPEED = 330; // px/s top speed
 export const IT_SPEED_MUL = 1.1; // the chaser is faster, so chases end
-export const GROUND_ACCEL = 2700; // px/s^2 while speeding up
-export const GROUND_TURN = 4300; // braking when you push against your own motion
-export const GROUND_STOP = 3000; // braking when you let go
-export const AIR_ACCEL = 1700;
-export const AIR_TURN = 2300;
+export const GROUND_ACCEL = 2900; // px/s^2 while speeding up
+export const GROUND_TURN = 4600; // braking when you push against your own motion
+export const GROUND_STOP = 3200; // braking when you let go
+export const AIR_ACCEL = 1800;
+export const AIR_TURN = 2450;
 export const AIR_KEEP = 0.985; // per tick: momentum mostly carries when you let go mid-air
 
 // Jumps are floaty: gentle gravity plus air resistance, so you rise in a smooth
@@ -78,7 +78,7 @@ export const INTRO_MS = 4200; // before the countdown: the draw for arena, style
 // Boxes appear around the arena. Touch one (with empty hands) and you get a
 // random item to keep; press USE to set it off whenever you like - right up to
 // the buzzer.
-export const ITEM_KINDS = ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'quake', 'warp', 'eclipse'];
+export const ITEM_KINDS = ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'quake', 'warp', 'eclipse', 'dash'];
 export const ITEM_INFO = {
   speed: { name: 'Swift', blurb: 'Run much faster for 6 s' },
   jump: { name: 'Spring', blurb: 'Jump much higher for 7 s' },
@@ -90,6 +90,7 @@ export const ITEM_INFO = {
   quake: { name: 'Quake', blurb: 'Throws everyone else into the air, wherever they are, and stuns them' },
   warp: { name: 'Warp', blurb: 'The oni lands beside the nearest runner; a runner lands far from the oni' },
   eclipse: { name: 'Eclipse', blurb: 'Everyone else is left in the dark for 4 s' },
+  dash: { name: 'Dash', blurb: 'Shoot straight ahead in a flash' },
 };
 export const PICKUP_TYPES = ITEM_KINDS; // older name, still used by the art styles
 export const PICKUP_INFO = ITEM_INFO;
@@ -116,6 +117,8 @@ export const WARP_GAP = 26; // the oni lands with this much air between it and t
 export const WARP_DROP = 30; // "beside" means level with them, give or take this much
 export const ECLIPSE_TICKS = 240; // 4 s of night for everyone else
 export const ECLIPSE_SIGHT = 150; // what they still see: a circle of this radius (world units) around themselves
+export const DASH_TICKS = 12; // a fifth of a second...
+export const DASH_SPEED = 1200; // ...at this speed, dead straight the way you face: 240 px, six tiles (a run covers 66 px in that time)
 
 // --- Team battle: bombs and flags -------------------------------------------------
 // Two teams.

@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { io } from 'socket.io-client';
 import { IN_LEFT, IN_RIGHT, IN_JUMP, TICK_RATE, BOMB_POINTS } from '../shared/config.js';
 import { STATE_LEN, stepPlayer, unpackState, packState } from '../shared/physics.js';
-import { arenaById } from '../shared/arenas.js';
+import * as Arenas from '../shared/arenas.js';
+const { arenaById } = Arenas;
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 3900 + Math.floor(Math.random() * 90);
@@ -108,10 +109,79 @@ try {
     assert.equal(res.room.hostId, a.socket.id);
     assert.equal(res.room.players[0].name, 'Anascript');
     const { plan, ...rest } = res.room.settings;
-    assert.deepEqual(rest, { game: 'quick', rounds: 5, mode: 'potato', arena: 'random', theme: 'random', duration: 60, powerups: true, open: false });
+    assert.deepEqual(rest, { game: 'quick', rounds: 5, mode: 'potato', size: 6, bots: true, arena: 'random', theme: 'random', duration: 60, powerups: true, open: false });
     assert.equal(plan.length, 7, 'a stage for every round a tournament can have');
     assert.ok(plan.every((st) => st.arena === 'random' && st.theme === 'random'));
     a.room = res.room;
+  });
+
+  await test('bots take the seats nobody has: the room has a size, a person takes a bot\'s seat, the host can send the bots away', async () => {
+    // six seats: the host and five bots, each with a name and a place of its own
+    const bots = () => a.room.players.filter((p) => p.bot);
+    const people = () => a.room.players.filter((p) => !p.bot);
+    assert.equal(a.room.players.length, 6);
+    assert.equal(bots().length, 5);
+    assert.equal(a.room.players[0].id, a.socket.id, 'people come first in the list');
+    assert.equal(new Set(a.room.players.map((p) => p.name.toLowerCase())).size, 6, 'six different names');
+    assert.equal(new Set(a.room.players.map((p) => p.slot)).size, 6, 'six different places');
+    assert.ok(bots().every((p) => p.slot > a.me().slot), 'people hold the lowest places');
+    // the size is the host's to set, between 2 and 10; nonsense is ignored
+    a.socket.emit('settings', { size: 3 });
+    await until(() => a.room.settings.size === 3 && a.room.players.length === 3, 'three seats');
+    for (const size of [1, 0, -4, 2.5, '4', null]) a.socket.emit('settings', { size });
+    a.socket.emit('settings', { size: 99 });
+    await until(() => a.room.settings.size === 10, 'the size is kept within 2 to 10');
+    assert.equal(a.room.players.length, 10);
+    a.socket.emit('settings', { size: 1 });
+    await until(() => a.room.settings.size === 2 && a.room.players.length === 2, 'two at the least');
+    a.socket.emit('settings', { size: 3 });
+    await until(() => a.room.players.length === 3, 'three seats again');
+    const names = bots().map((p) => p.name);
+    // a person takes a bot's seat (the newest bot goes); a full room takes nobody else
+    const d = client(names[0]); // ...and has the name one of the bots was using
+    const e = client('Eli');
+    const f = client('Fay');
+    d.socket.on('room', (r) => (d.room = r));
+    const dIn = await d.call('join', { code, name: names[0] });
+    assert.ok(dIn.ok);
+    await until(() => people().length === 2 && bots().length === 1, 'two people and a bot');
+    assert.equal(new Set(a.room.players.map((p) => p.name.toLowerCase())).size, 3, 'the bot that had that name took another');
+    assert.equal(a.room.players.find((p) => p.id === d.socket.id).name, names[0], 'the person keeps theirs');
+    d.socket.emit('settings', { size: 8, bots: false });
+    await sleep(120);
+    assert.deepEqual([a.room.settings.size, a.room.settings.bots], [3, true], 'a guest changes neither');
+    assert.ok((await e.call('join', { code, name: 'Eli' })).ok);
+    await until(() => people().length === 3 && bots().length === 0, 'three people, no bot');
+    assert.match((await f.call('join', { code, name: 'Fay' })).error, /full \(3 players\)/);
+    // the host cannot take away a seat somebody is sitting in
+    a.socket.emit('settings', { size: 2 });
+    await sleep(120);
+    assert.equal(a.room.settings.size, 3, 'never fewer seats than people');
+    // someone leaves: a bot is back in the seat
+    e.socket.emit('leave');
+    await until(() => people().length === 2 && bots().length === 1, 'a bot is back');
+    // no bots, thank you
+    a.socket.emit('settings', { bots: false });
+    await until(() => a.room.settings.bots === false && a.room.players.length === 2, 'the bots are gone');
+    a.socket.emit('settings', { size: 5 });
+    await until(() => a.room.settings.size === 5, 'five seats');
+    assert.equal(a.room.players.length, 2, 'and the empty ones stay empty');
+    // a team game: the bots stand wherever the sides are short
+    a.socket.emit('settings', { bots: true, mode: 'team' });
+    await until(() => a.room.players.length === 5, 'five again');
+    const sides = () => [0, 1].map((t) => a.room.players.filter((p) => p.side === t).length).sort();
+    assert.deepEqual(sides(), [2, 3]);
+    const mine = a.me().side;
+    a.socket.emit('side', 1 - mine);
+    await until(() => a.me().side === 1 - mine, 'the host crossed over');
+    assert.deepEqual(sides(), [2, 3], 'the bots made room');
+    a.socket.emit('side', mine, bots()[0].id);
+    await sleep(120);
+    assert.deepEqual(sides(), [2, 3], 'a bot is not moved by hand');
+    for (const x of [d, e, f]) x.socket.close();
+    await until(() => people().length === 1, 'alone again');
+    a.socket.emit('settings', { mode: 'potato', size: 6, bots: false });
+    await until(() => a.room.players.length === 1 && a.room.settings.mode === 'potato', 'as it was, without the bots');
   });
 
   await test('joining: a bad code or a missing name is rejected; a taken name gets a number', async () => {
@@ -132,10 +202,10 @@ try {
     b.socket.emit('settings', { arena: 'hills' });
     a.socket.emit('settings', { arena: 'dojo', theme: 'space', mode: 'time', duration: 90, powerups: false, rounds: 3 });
     await until(() => b.room.settings.arena === 'dojo' && b.room.settings.mode === 'time', 'settings');
-    a.socket.emit('settings', { arena: 'nope', theme: 'nope', mode: 'nope', duration: 5, powerups: 'yes', game: 'nope', rounds: 4 });
+    a.socket.emit('settings', { arena: 'nope', theme: 'nope', mode: 'nope', duration: 5, powerups: 'yes', game: 'nope', rounds: 4, bots: 'yes', size: 'six' });
     await sleep(150);
     const { plan, ...rest } = b.room.settings;
-    assert.deepEqual(rest, { game: 'quick', rounds: 3, mode: 'time', arena: 'dojo', theme: 'space', duration: 90, powerups: false, open: false });
+    assert.deepEqual(rest, { game: 'quick', rounds: 3, mode: 'time', size: 6, bots: false, arena: 'dojo', theme: 'space', duration: 90, powerups: false, open: false });
     assert.ok(plan.every((st) => st.arena === 'dojo' && st.theme === 'space'), 'an arena or a style set like this goes for every round');
     // one round of a tournament can have its own; junk is ignored
     a.socket.emit('settings', { stage: { i: 2, arena: 'hills', theme: 'neon' } });
@@ -366,16 +436,22 @@ try {
     await sleep(150);
     assert.deepEqual(count().sort(), [1, 2], 'shuffled: still as even as three can be');
     const sides0 = [a, b, c].map(sideOf);
+    // four seats: a bot takes the fourth, on the side that is short
+    a.socket.emit('settings', { size: 4, bots: true });
+    await until(() => a.room.players.length === 4, 'a bot in the fourth seat');
+    const lobbyBot = a.room.players.find((p) => p.bot);
+    assert.equal(lobbyBot.side, count()[0] < count()[1] ? 0 : 1, 'it stands where the sides are short');
 
     for (const p of [a, b, c]) p.ends.length = 0;
     a.socket.emit('start');
     await until(() => a.round && a.round.mode === 'team' && a.go === null && a.round.teams, 'team round info');
-    // the round has the sides exactly as the room had them, plus one bot on the short side
+    // the round has the sides exactly as the room had them, the bot included
     const roster = a.round.players;
     assert.equal(roster.length, 4, 'three players and a bot');
     const bots = roster.filter((p) => p.bot);
     assert.equal(bots.length, 1);
     const bot = bots[0];
+    assert.deepEqual([bot.slot, bot.name], [lobbyBot.slot, lobbyBot.name], 'the bot from the room');
     assert.ok(bot.name && !['Anascript', 'Ben', 'Cy'].includes(bot.name), `the bot has a name of its own (${bot.name})`);
     [a, b, c].forEach((x, i) => assert.equal(a.round.teams[x.me().slot], sides0[i], 'everyone is on the side they had in the lobby'));
     const slots = roster.map((p) => p.slot);
@@ -423,8 +499,7 @@ try {
     const win = e.team.score[0] === e.team.score[1] ? -1 : e.team.score[0] > e.team.score[1] ? 0 : 1;
     assert.equal(e.team.win, win);
     assert.deepEqual(e.winners.slice().sort(), e.rows.filter((r) => win < 0 || r.team === win).map((r) => r.slot).sort());
-    // a bot wins no matches: only real players collect wins
-    assert.ok(a.room.players.every((p) => p.slot !== bot.slot));
+    assert.deepEqual(a.room.players.filter((p) => p.bot).map((p) => p.slot), [bot.slot], 'and still in its seat afterwards');
   });
 
   await test('the sides stay as they are: from one match to the next, and from round to round of a tournament', async () => {
@@ -463,7 +538,7 @@ try {
     assert.equal(a.round.arena, 'canyon', 'round 2: its own arena');
     assert.deepEqual(a.round.random, { arena: false, theme: true }, 'and a style left to the draw');
     assert.deepEqual(a.round.cols, cols1, 'and the same colours');
-    assert.equal(a.round.players.filter((p) => p.bot).length, 1, 'the bot fills in every round');
+    assert.equal(a.round.players.filter((p) => p.bot).length, 1, 'the bot plays every round');
     // the host ends the tournament between rounds
     await until(() => a.ends.length === 4, 'round 2 over', (SHORT + 12) * 1000);
     a.socket.emit('lobby');
@@ -474,10 +549,11 @@ try {
   await test('a player leaving a 2-player match ends it; whoever stayed wins', async () => {
     c.stop();
     c.socket.close();
-    await until(() => a.room.players.length === 2, 'c gone');
+    await until(() => a.room.players.filter((p) => !p.bot).length === 2, 'c gone');
+    assert.equal(a.room.players.length, 4, 'a second bot in the seat c left');
     a.socket.emit('lobby');
-    a.socket.emit('settings', { game: 'quick' });
-    await until(() => a.room.phase === 'lobby' && a.room.settings.game === 'quick', 'quick match again');
+    a.socket.emit('settings', { game: 'quick', bots: false });
+    await until(() => a.room.phase === 'lobby' && a.room.settings.game === 'quick' && a.room.players.length === 2, 'quick match again, the two of them');
     a.socket.emit('start');
     await until(() => a.round && a.round.players.length === 2 && a.go === null, 'round');
     await until(() => a.go !== null, 'go', 6000);
@@ -488,8 +564,54 @@ try {
     assert.equal(a.end.loser, -1);
   });
 
+  await test('alone with the bots: a match starts and is played to the end; the stage suits the number of players', async () => {
+    a.socket.emit('lobby');
+    a.socket.emit('settings', { mode: 'potato', size: 3, bots: true, duration: SHORT });
+    await until(() => a.room.phase === 'lobby' && a.room.players.length === 3 && a.room.settings.mode === 'potato', 'one person, two bots');
+    // a stage is built for a crowd of a certain size: a small one is shut to a big room, and the other way round
+    const small = Arenas.ARENAS.find((x) => x.players[1] < 8).id;
+    const big = Arenas.ARENAS.find((x) => x.players[0] > 3 && x.players[1] >= 8).id;
+    a.socket.emit('settings', { arena: small });
+    await until(() => a.room.settings.arena === small, 'a small stage for three');
+    a.socket.emit('settings', { arena: big });
+    await sleep(150);
+    assert.equal(a.room.settings.arena, 'random', 'a big stage is not for three: left to the draw');
+    a.socket.emit('settings', { arena: small });
+    await until(() => a.room.settings.arena === small, 'the small stage again');
+    for (const n of [3, 8]) {
+      if (n === 8) {
+        a.socket.emit('settings', { size: 8 });
+        await until(() => a.room.players.length === 8, 'eight seats');
+        assert.ok(a.room.settings.plan.every((st) => st.arena === 'random'), 'eight players: the small stage went back to the draw');
+        a.socket.emit('settings', { arena: small });
+        await sleep(150);
+        assert.equal(a.room.settings.arena, 'random', 'and cannot be chosen');
+      }
+      a.round = null;
+      a.socket.emit('start');
+      await until(() => a.round && a.go === null, 'round');
+      assert.equal(a.round.players.length, n);
+      assert.equal(a.round.players.filter((p) => p.bot).length, n - 1);
+      assert.ok(a.round.players.some((p) => p.slot === a.round.it), 'one of them starts as it');
+      if (n === 3) assert.deepEqual([a.round.arena, a.round.random.arena], [small, false], 'three play where the host said');
+      else assert.ok(Arenas.arenaFits(a.round.arena, 8) && a.round.random.arena, `eight play on a stage for eight (${a.round.arena})`);
+      await until(() => a.end && a.end.reason === 'time', 'played to the end', (SHORT + 12) * 1000);
+      assert.equal(a.end.rows.length, n);
+      assert.equal(a.end.rows.filter((r) => r.bot).length, n - 1, 'the bots are on the board, marked as bots');
+      a.socket.emit('lobby');
+      await until(() => a.room.phase === 'lobby', 'lobby');
+    }
+    a.socket.emit('settings', { bots: false });
+    await until(() => a.room.players.length === 1, 'the bots are gone');
+    a.socket.emit('start');
+    await sleep(150);
+    assert.equal(a.room.phase, 'lobby', 'nobody to play against: no match');
+  });
+
   await test('room is full at 10 players; host leaving hands the room over', async () => {
     const extra = ['Di', 'Eve', 'Flo', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kai', 'Lu', 'Max'].map((n) => client(n));
+    a.socket.emit('settings', { size: 10 });
+    await until(() => a.room.settings.size === 10, 'ten seats');
     const slots = [a.me().slot];
     for (const x of extra.slice(0, 9)) {
       const res = await x.call('join', { code, name: x.name });
@@ -497,7 +619,7 @@ try {
       slots.push(res.room.players.find((p) => p.id === x.socket.id).slot);
     }
     assert.deepEqual(slots.slice().sort((x, y) => x - y), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 'ten players, ten different colours');
-    assert.match((await extra[9].call('join', { code, name: 'Max' })).error, /full \(10 players max\)/);
+    assert.match((await extra[9].call('join', { code, name: 'Max' })).error, /full \(10 players\)/);
     extra[0].room = { players: [] };
     extra[0].socket.on('room', (r) => (extra[0].room = r));
     a.stop();
@@ -519,11 +641,12 @@ try {
     const seeker = client('Suki');
     const list = async (x) => (await new Promise((res) => x.socket.emit('list', res))).rooms;
     const made = await host.call('create', { name: 'Hoshi' });
+    host.room = made.room;
     assert.equal(made.room.settings.open, false, 'a new room is private');
     assert.deepEqual(await list(seeker), [], 'so nobody can find it');
     // only the host can open it
     assert.ok((await guest.call('join', { code: made.room.code, name: 'Gen' })).ok);
-    await until(() => host.room && host.room.players.length === 2, 'guest in');
+    await until(() => host.room.players.filter((p) => !p.bot).length === 2, 'guest in');
     guest.socket.emit('settings', { open: true });
     await sleep(120);
     assert.deepEqual(await list(seeker), []);
@@ -533,18 +656,20 @@ try {
     assert.equal(found.length, 1);
     assert.deepEqual(
       { ...found[0] },
-      { code: made.room.code, host: 'Hoshi', players: 2, max: 10, game: 'cup', mode: 'team', arena: 'random', theme: host.room.settings.theme, playing: false },
+      { code: made.room.code, host: 'Hoshi', players: 2, bots: 4, max: 6, game: 'cup', mode: 'team', arena: 'random', theme: host.room.settings.theme, playing: false },
     );
     // found it: join with what the list gave us
     const joined = await seeker.call('join', { code: found[0].code, name: 'Suki' });
     assert.ok(joined.ok);
-    assert.equal(joined.room.players.length, 3);
+    assert.equal(joined.room.players.filter((p) => !p.bot).length, 3);
     // a full room is no longer offered, and neither is one made private again
+    host.socket.emit('settings', { size: 10 });
+    await until(() => host.room.settings.size === 10, 'ten seats');
     const more = ['Ichi', 'Ni', 'San', 'Shi', 'Go', 'Roku', 'Nana'].map((n) => client(n));
     for (const x of more) assert.ok((await x.call('join', { code: made.room.code, name: x.name })).ok);
     assert.deepEqual(await list(seeker), [], 'ten of ten: nothing to join');
     more[2].socket.emit('leave');
-    await until(() => host.room.players.length === 9, 'one left');
+    await until(() => host.room.players.filter((p) => !p.bot).length === 9, 'one left');
     assert.equal((await list(seeker)).length, 1);
     host.socket.emit('settings', { open: false });
     await until(() => host.room.settings.open === false, 'room closed');

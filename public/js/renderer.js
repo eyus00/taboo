@@ -18,7 +18,9 @@ import { clamp, mulberry32, hashStr, hash1, rgba, rr, KIND_COLORS, PORTAL_COLORS
 
 const VIEW_H = 660; // world units of height on screen during play: close enough to feel fast
 const VIEW_W_MIN = 760; // ...but never narrower than this (phones held upright)
-const MAX_BG_PIXELS = 6.5e6; // cap on the background canvas (keeps 4K / retina screens fast)
+const MAX_BG_PIXELS = 6.5e6; // cap on the background canvas (keeps 4K / retina screens fast)...
+const BIG_BG = 1.5; // ...up to this much more for a stage bigger than the usual 64 x 36 tiles (not on phones), so it is not drawn coarser
+const USUAL_AREA = 2560 * 1440;
 const MAX_BG_SIDE = 4096;
 const CAP = 16; // slopes are drawn this much longer at each end (a player's centre rides them)
 const LABEL_PX = 13;
@@ -124,10 +126,12 @@ export class Renderer {
     const kCss = this.opts.zoom || (follow ? Math.min(clamp(cssH / VIEW_H, 0.5, 2.4), cssW / VIEW_W_MIN) : fit);
     const pad = follow ? this.opts.padBottom || 0 : 0;
     this.padB = pad / kCss; // the same, in world units
-    this.zFit = Math.min(1, fit / kCss); // how far the view pulls back to show everything
+    // how far the view pulls back to show everything - above that strip at the bottom, where the HUD's dock stands
+    this.zFit = Math.min(1, (follow ? Math.min(cssW / A.w, Math.max(1, cssH - pad) / A.h) : fit) / kCss);
     const bwCss = follow ? A.w * kCss : cssW;
     const bhCss = follow ? A.h * kCss + pad : cssH;
-    const s = Math.min(dpr, Math.sqrt(MAX_BG_PIXELS / (bwCss * bhCss)), MAX_BG_SIDE / bwCss, MAX_BG_SIDE / bhCss);
+    const budget = MAX_BG_PIXELS * (follow && !this.opts.touch ? clamp((A.w * A.h) / USUAL_AREA, 1, BIG_BG) : 1);
+    const s = Math.min(dpr, Math.sqrt(budget / (bwCss * bhCss)), MAX_BG_SIDE / bwCss, MAX_BG_SIDE / bhCss);
     const key = [cssW, cssH, s.toFixed(3), follow, this.q, this.theme.id, A.id].join();
     if (!force && key === this.key) return;
     this.key = key;
@@ -490,25 +494,30 @@ export class Renderer {
   }
 
   shake(amount) {
-    this.shakeAmt = Math.max(this.shakeAmt, amount);
+    this.shakeAmt = Math.max(this.shakeAmt, amount * (this.fxK ?? 1)); // (fxK: fainter for a tag a long way off - see tagFx)
   }
 
   flash(color, alpha) {
     const el = this.flashEl;
     if (!el) return;
     el.style.background = color;
-    el.style.setProperty('--a', String(Math.min(0.5, alpha * 1.6)));
+    el.style.setProperty('--a', String(Math.min(0.5, alpha * 1.6) * (this.fxK ?? 1)));
     el.classList.remove('go');
     void el.offsetWidth; // restart the fade
     el.classList.add('go');
   }
 
-  tagFx(fromSlot, toSlot) {
+  // near: how much of it reaches the player watching (1: right here; 0: far away, nothing at all)
+  tagFx(fromSlot, toSlot, near = 1) {
     const to = this.last[toSlot];
     const from = this.last[fromSlot];
     if (!to || !this.theme) return;
-    this.shake(to.local || (from && from.local) ? 13 : 6);
+    const mine = to.local || (from && from.local);
+    this.shake(mine ? 13 : 7 * near);
+    if (!mine && near < 0.12) return; // out of sight and out of earshot
+    this.fxK = mine ? 1 : near; // (a style's flash for a tag over there is that much fainter)
     this.theme.fx?.tag?.(this, to, from || to);
+    this.fxK = 1;
   }
 
   blockFx(fromSlot, toSlot) {
@@ -642,6 +651,12 @@ export class Renderer {
         this.emit({ x: e.x + Math.cos(a) * 44, y: e.y + Math.sin(a) * 44, vx: -Math.cos(a) * 170, vy: -Math.sin(a) * 170, life: 0.24, size: 2.6, color: i % 2 ? col : '#ffffff' });
         this.emit({ x: tx + Math.cos(a) * 10, y: ty + Math.sin(a) * 10, vx: Math.cos(a) * 240, vy: Math.sin(a) * 240 - 40, drag: 4, life: 0.4, size: 2.8, color: i % 2 ? '#ffffff' : col });
       }
+    } else if (kind === 'dash') {
+      // off like a shot: a ring where they stood, and the air thrown back
+      const dir = e.dir || 1;
+      if (pv && pv.local) this.shake(5);
+      this.emit({ x: e.x, y: e.y, life: 0.28, size: 10, grow: 190, shape: 'ring', width: 4, color: col });
+      for (let i = 0; i < 9; i++) this.emit({ x: e.x - dir * 6, y: e.y - 26 + i * 6.5, vx: -dir * (260 + Math.random() * 260), drag: 5, life: 0.3, size: 1.6, shape: 'line', width: 2.5, color: i % 2 ? col : '#ffffff', lx: -dir * (20 + Math.random() * 26) });
     } else if (kind === 'eclipse') {
       // the light goes: a dark wave from whoever called it, and a shadow settles on everyone it blinds
       this.flash('#05060f', 0.3);
@@ -784,7 +799,7 @@ export class Renderer {
   // their side's colour (yours has a second, white one). Whoever is it - or
   // carries a bomb - sends out red ripples.
   drawRings(g, view, pvs, t) {
-    const live = view.phase === 'playing';
+    const live = view.phase === 'playing' || !!view.pre; // (view.pre: before GO, with who starts as what already showing)
     const S = this.bodyK;
     for (const pv of pvs) {
       if (pv.orb) continue;
@@ -934,8 +949,10 @@ export class Renderer {
         }
       }
     }
+    // (pulled right back, the arena stands in the middle of what is left above the dock)
+    const whole = Math.min(0, -(vh - A.h - (this.opts.padBottom || 0) / (this.kCss * z)) / 2);
     const tx = vw >= A.w ? (A.w - vw) / 2 : clamp(cx - vw / 2, 0, A.w - vw);
-    const ty = vh >= A.h + this.padB ? (A.h - vh) / 2 : clamp(cy - vh / 2, 0, A.h + this.padB - vh);
+    const ty = vh >= A.h + this.padB ? whole : clamp(cy - vh / 2, 0, A.h + this.padB - vh);
     if (!cam.set) {
       cam.fx = tx;
       cam.fy = ty;
@@ -947,7 +964,7 @@ export class Renderer {
       cam.fy += (ty - cam.fy) * k;
       // never show past the arena's edge while the zoom is still catching up
       cam.fx = vw >= A.w ? (A.w - vw) / 2 : clamp(cam.fx, 0, A.w - vw);
-      cam.fy = vh >= A.h + this.padB ? (A.h - vh) / 2 : clamp(cam.fy, 0, A.h + this.padB - vh);
+      cam.fy = vh >= A.h + this.padB ? whole : clamp(cam.fy, 0, A.h + this.padB - vh);
     }
     // whole scenery pixels (once the zoom has settled): the scenery is then copied exactly, pixel for pixel
     const kr = this.flat ? this.kf : this.kDev;
@@ -1122,6 +1139,7 @@ export class Renderer {
         shield: !!p.shd,
         slow: !!p.slw,
         dark: !!p.ecl, // night has fallen on them (Eclipse)
+        dashing: !!p.dsh,
         team: p.team ?? -1,
         local: !!p.local,
         itTicks: p.itTicks,
@@ -1194,10 +1212,16 @@ export class Renderer {
         a.nextBlink = t + 1.5 + Math.random() * 4;
       }
       a.blink = Math.max(0, a.blink - dt * 7);
+      if (pv.dashing) a.squash = 0.2; // smeared out along the dash
       pv.run = a.run;
       pv.squash = a.squash;
       pv.blink = a.blink;
       if (!pv.orb) {
+        // a dash tears the air behind it
+        if (pv.dashing && t - a.streak > 0.012) {
+          a.streak = t;
+          for (let i = 0; i < 2; i++) this.emit({ x: pv.cx - pv.face * 12, y: pv.feet - 4 - Math.random() * 44, vx: -pv.face * 160, life: 0.2, size: 1.6, shape: 'line', width: 3, color: i ? '#ffffff' : KIND_COLORS.dash, back: true, lx: -pv.face * (36 + Math.random() * 30) });
+        }
         // speed lines behind anyone running on Swift, sparkles under Spring
         if (pv.speedy && speed > 200 && t - a.streak > 0.05) {
           a.streak = t;
@@ -1484,7 +1508,7 @@ export class Renderer {
         }
         g.stroke();
       }
-      if (pv.isIt && view.phase !== 'countdown') {
+      if (pv.isIt && (view.phase !== 'countdown' || view.pre)) {
         const bob = Math.round(Math.sin(t * 5) * 2 * px);
         if (view.team) {
           // the bomb: it burns for the whole round, and its spark flickers faster as the clock runs down
@@ -1604,7 +1628,7 @@ export class Renderer {
       const ix = (pv.cx - cam.x) * kf;
       const iy = (pv.feet - half - cam.y) * kf;
       if (ix > 0 && ix < W && iy > 0 && iy < H) continue; // in view
-      const hot = pv.isIt && view.phase === 'playing';
+      const hot = pv.isIt && (view.phase === 'playing' || !!view.pre);
       const r = (hot ? 16 : 12.5) * px * big * clamp(1.08 - Math.hypot(ix - W / 2, iy - H / 2) / (kf * 3600), 0.8, 1); // (a little smaller far away)
       const m = r * 1.72 + 7 * px; // (its point may face the edge)
       let ax = clamp(ix, m, W - m);

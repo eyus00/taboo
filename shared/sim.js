@@ -31,6 +31,9 @@ import {
   WARP_GAP,
   WARP_DROP,
   ECLIPSE_TICKS,
+  DASH_TICKS,
+  IN_LEFT,
+  IN_RIGHT,
   BOMB_STUN_TICKS,
   BOMB_POINTS,
   FLAG_HALF,
@@ -174,7 +177,7 @@ export class Sim {
     const pl = this.players[slot];
     if (!pl) return;
     const use = bits & IN_USE;
-    if (use && !pl.ub) this.useItem(pl);
+    if (use && !pl.ub) this.useItem(pl, bits);
     pl.ub = use;
     stepPlayer(pl.s, bits, this.arena, slot === this.it || pl.bomb, this.twist);
   }
@@ -299,7 +302,8 @@ export class Sim {
     return this.players.filter((t) => t && t !== o && t.s.dead === 0 && this.enemies(o, t));
   }
 
-  useItem(o) {
+  // bits: what the player is holding this tick (a Dash goes the way they are steering)
+  useItem(o, bits = 0) {
     const s = o.s;
     if (!o.item || o.arm > 0 || this.over || s.dead > 0 || s.stun > 0 || s.frz > 0 || s.orb > 0) return false; // (any time up to the buzzer)
     const kind = ITEM_KINDS[o.item - 1];
@@ -379,6 +383,13 @@ export class Sim {
       }
     } else if (kind === 'eclipse') {
       for (const t of this.targets(o)) t.s.ecl = ECLIPSE_TICKS;
+    } else if (kind === 'dash') {
+      // straight ahead: the way they are steering right now, else the way they face
+      const dir = (bits & IN_RIGHT ? 1 : 0) - (bits & IN_LEFT ? 1 : 0);
+      if (dir) s.face = dir;
+      s.dsh = DASH_TICKS;
+      s.drop = 0;
+      ev.dir = s.face;
     }
     this.events.push(ev);
     return true;

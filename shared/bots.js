@@ -166,7 +166,13 @@ export function botThink(sim, slot, mem) {
     mem.think = 0;
   }
   // holding an item: set it off when it would do some good
-  if (me.item && me.arm === 0 && !blind && !(mem.pressed & IN_USE) && wantsToUse(sim, me, mem)) bits |= IN_USE;
+  if (me.item && me.arm === 0 && !blind && !(mem.pressed & IN_USE)) {
+    if (ITEM_KINDS[me.item - 1] === 'dash') {
+      // a dash goes the way we steer as we set it off
+      const d = dashDir(sim, me, mem);
+      if (d) bits = (bits & ~(IN_LEFT | IN_RIGHT)) | dirBits(d) | IN_USE;
+    } else if (wantsToUse(sim, me, mem)) bits |= IN_USE;
+  }
   // a jump only counts when the button goes down, so never hold it across a landing
   if (s.ground && mem.pressed & IN_JUMP) bits &= ~IN_JUMP;
   mem.pressed = bits;
@@ -177,6 +183,30 @@ export function botThink(sim, slot, mem) {
 function stillOn(nav, sf, cx, feet, gk) {
   if (sf.ramp) return gk !== 1 && cx > sf.lo - 20 && cx < sf.hi + 20 && Math.abs(nav.heightAt(sf, cx) - feet) <= 16;
   return Math.abs(sf.y - feet) <= 1 && cx > sf.x0 - 20 && cx < sf.x1 + 20 && !(gk === 1 && sf.oneway) && !(gk === 2 && !sf.oneway);
+}
+
+// Dash: which way (-1, 1), or 0 for "not now". Whoever is it dashes at someone a
+// short sprint ahead on the same level; anyone else dashes away once the chaser
+// is close - in both cases only with nothing solid in the way.
+function dashDir(sim, me, mem) {
+  if (mem.rnd() > 0.25) return 0; // a human-ish delay
+  const s = me.s;
+  const cx = s.x + PW / 2;
+  const cy = s.y + PH / 2;
+  if (sim.isIt(me)) {
+    for (const o of sim.targets(me)) {
+      if (o.bomb || o.s.orb > 0 || o.immune > 0 || o.s.shd > 0) continue;
+      const dx = o.s.x - s.x;
+      if (Math.abs(dx) < 70 || Math.abs(dx) > 250 || Math.abs(o.s.y - s.y) > 34) continue;
+      if (!walled(sim.arena, cx, cy, o.s.x + PW / 2, cy)) return Math.sign(dx);
+    }
+    return 0;
+  }
+  const it = chaserOf(sim, me);
+  if (!it || it.s.stun > 0 || it.s.frz > 0 || it.s.orb > 0 || gap(it, me) > 170 || Math.abs(it.s.y - s.y) > 90) return 0;
+  const dir = s.x >= it.s.x ? 1 : -1;
+  const to = cx + dir * 250;
+  return to > PW && to < sim.arena.w - PW && !walled(sim.arena, cx, cy, to, cy) ? dir : 0;
 }
 
 // Is now a good moment for the item in hand?

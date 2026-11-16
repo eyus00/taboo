@@ -35,10 +35,12 @@ import {
   twistById,
   IN_MASK,
 } from './shared/config.js';
-import { ARENA_IDS, arenaById } from './shared/arenas.js';
-import { Sim, standings, cupPoints, makeTeams, botFill } from './shared/sim.js';
+import { ARENA_IDS, arenaById, arenasFor, arenaFits } from './shared/arenas.js';
+import { Sim, standings, cupPoints, makeTeams } from './shared/sim.js';
 import { makeBot, botThink, prepareBots, BOT_NAMES } from './shared/bots.js';
 import { packState, publicFlags } from './shared/physics.js';
+
+const DEFAULT_SIZE = 6; // seats in a new room
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -110,6 +112,62 @@ function uniqueName(room, name) {
   return name;
 }
 
+// Everyone who plays in a room: the people in it, and the bots keeping the other seats warm.
+const members = (room) => [...room.players.values(), ...room.bots.values()];
+// How many will play the next round (the stages are fitted to this).
+const headcount = (room) => Math.max(MIN_PLAYERS, room.players.size + room.bots.size);
+
+// Bots fill the seats nobody has taken: as many as it takes to reach the
+// room's size, none if the host has turned them off. They are members of the
+// room like anyone else (a place, a side, a score) - the first to go when a
+// person arrives, and back again when one leaves. In a team game they stand
+// wherever the sides are short.
+function syncBots(room) {
+  const s = room.settings;
+  if (s.size < room.players.size) s.size = Math.min(MAX_PLAYERS, room.players.size); // (never fewer seats than people)
+  const want = s.bots ? Math.max(0, s.size - room.players.size) : 0;
+  const list = [...room.bots.values()];
+  while (list.length > want) room.bots.delete(list.pop().id); // the newest leave first
+  const names = () => new Set(members(room).map((p) => p.name.toLowerCase()));
+  const freeName = (slot) => BOT_NAMES.find((n) => !names().has(n.toLowerCase())) || `Bot ${slot + 1}`;
+  while (room.bots.size < want) {
+    // the highest free place (people take the lowest), clear of a bot that is still playing out the round
+    const used = new Set(members(room).map((p) => p.slot));
+    const busy = room.game ? room.game.bots : new Map();
+    let slot = MAX_PLAYERS - 1;
+    while (slot > 0 && (used.has(slot) || busy.has(slot))) slot--;
+    if (used.has(slot) || busy.has(slot)) for (slot = MAX_PLAYERS - 1; slot > 0 && used.has(slot); ) slot--;
+    const id = `bot-${++room.botSeq}`;
+    room.bots.set(id, { id, name: freeName(slot), slot, side: 0, playing: false, wins: 0, pts: 0, itMs: 0, rtt: 0, bot: true });
+  }
+  // (someone called Zap walks in: the bot called Zap takes another name)
+  const people = new Set([...room.players.values()].map((p) => p.name.toLowerCase()));
+  for (const b of room.bots.values()) {
+    if (!people.has(b.name.toLowerCase())) continue;
+    b.name = '';
+    b.name = freeName(b.slot);
+  }
+  balanceBots(room);
+  fitPlan(room);
+}
+
+// Team games: the bots stand wherever the sides are short, as evenly as it goes.
+function balanceBots(room) {
+  const sizes = sideSizes(room, false);
+  for (const b of room.bots.values()) {
+    b.side = sizes[0] <= sizes[1] ? 0 : 1;
+    sizes[b.side]++;
+  }
+}
+
+// A stage chosen for a different number of players goes back to Random.
+function fitPlan(room) {
+  const s = room.settings;
+  const n = headcount(room);
+  for (const st of s.plan) if (st.arena !== 'random' && !arenaFits(st.arena, n)) st.arena = 'random';
+  s.arena = s.plan[0].arena;
+}
+
 function pick(list, avoid) {
   const pool = list.length > 1 ? list.filter((x) => x !== avoid) : list;
   return pool[Math.floor(Math.random() * pool.length)];
@@ -132,7 +190,8 @@ function roomState(room) {
     settings: room.settings,
     cup: room.cup ? { round: room.cup.round, rounds: room.cup.rounds } : null,
     // side: which team (0 Sun, 1 Moon) the player is on whenever the game is a team battle
-    players: [...room.players.values()].map((p) => ({ id: p.id, name: p.name, slot: p.slot, side: p.side, playing: p.playing, wins: p.wins, pts: p.pts })),
+    // bot: one of the bots filling the seats nobody has taken (they come after the people)
+    players: members(room).map((p) => ({ id: p.id, name: p.name, slot: p.slot, side: p.side, playing: p.playing, wins: p.wins, pts: p.pts, bot: !!p.bot })),
   };
 }
 
@@ -145,13 +204,14 @@ function emitRoom(room) {
 function publicRooms() {
   const list = [];
   for (const room of rooms.values()) {
-    if (!room.settings.open || room.players.size >= MAX_PLAYERS) continue;
     const s = room.settings;
+    if (!s.open || room.players.size >= s.size) continue;
     list.push({
       code: room.code,
       host: room.players.get(room.hostId)?.name || '',
       players: room.players.size,
-      max: MAX_PLAYERS,
+      bots: room.bots.size,
+      max: s.size,
       game: s.game,
       mode: s.mode,
       arena: s.arena,
@@ -194,30 +254,35 @@ const okArena = (v) => v === 'random' || ARENA_IDS.includes(v);
 const okTheme = (v) => v === 'random' || THEME_IDS.includes(v);
 const newPlan = (arena, theme) => Array.from({ length: MAX_ROUNDS }, () => ({ arena, theme }));
 
-// How many players are on each side of a room.
-function sideSizes(room) {
+// How many are on each side of a room (bots too, unless asked for the people alone).
+function sideSizes(room, bots = true) {
   const sizes = [0, 0];
-  for (const p of room.players.values()) sizes[p.side]++;
+  for (const p of bots ? members(room) : room.players.values()) sizes[p.side]++;
   return sizes;
 }
 
 function addPlayer(room, socket, name) {
-  // The lowest free place. Bots filling in for the round in progress hold the
-  // highest ones; a newcomer only takes one of those if nothing else is left
-  // (they watch this round anyway, and the bot is gone by the next).
-  const used = new Set([...room.players.values()].map((p) => p.slot));
+  // A bot gives up its seat for them, if that is what it takes.
+  const list = [...room.bots.values()];
+  while (list.length && room.players.size + list.length >= room.settings.size) room.bots.delete(list.pop().id);
+  // The lowest free place. Bots hold the highest ones; one that is still
+  // playing out the round in progress only has its place taken if nothing
+  // else is left (the newcomer watches this round anyway, and that bot is
+  // gone by the next).
+  const used = new Set(members(room).map((p) => p.slot));
   const bots = room.game ? room.game.bots : new Map();
   let slot = 0;
   while (used.has(slot) || bots.has(slot)) slot++;
   if (slot >= MAX_PLAYERS) for (slot = 0; used.has(slot); ) slot++;
   // Sides belong to the room: a newcomer joins the smaller one (a coin toss if
   // they are level) and stays there until they - or the host - change it.
-  const sizes = sideSizes(room);
+  const sizes = sideSizes(room, false);
   const side = sizes[0] === sizes[1] ? (Math.random() < 0.5 ? 0 : 1) : sizes[0] < sizes[1] ? 0 : 1;
   const player = { id: socket.id, name: uniqueName(room, name), slot, side, playing: false, wins: 0, pts: 0, itMs: 0, rtt: 0 };
   room.players.set(socket.id, player);
   socket.join(room.code);
   socket.data.code = room.code;
+  syncBots(room);
   return player;
 }
 
@@ -238,20 +303,20 @@ function leaveRoom(socket) {
   }
   if (room.hostId === socket.id) room.hostId = room.players.keys().next().value;
   io.to(room.code).emit('toast', `${player.name} left`);
+  syncBots(room); // (a bot takes the empty seat, from the next round on)
 
   const g = room.game;
   if (g && player.playing) {
     g.sim.remove(player.slot); // hands "it" to someone else if needed
     flushEvents(room);
-    // nobody left to play against: fewer than two real players, or (in a team
-    // battle) a side with nobody on it, not even a bot
+    // nobody left to play against (a bot counts): one player, or - in a team
+    // battle - a side with nobody on it
     const left = g.sim.active();
-    const real = left.filter((p) => !g.bots.has(p.slot));
-    if (real.length < 2 || (g.sim.teams && !(left.some((p) => p.team === 0) && left.some((p) => p.team === 1)))) {
+    if (left.length < 2 || (g.sim.teams && !(left.some((p) => p.team === 0) && left.some((p) => p.team === 1)))) {
       finishRound(room, 'forfeit');
       return;
     }
-  } else if (!g && room.cup && room.players.size < MIN_PLAYERS) {
+  } else if (!g && room.cup && members(room).length < MIN_PLAYERS) {
     endCup(room); // between rounds and nobody left to play against
   }
   emitRoom(room);
@@ -262,7 +327,7 @@ function leaveRoom(socket) {
 // ---------------------------------------------------------------------------
 function startCup(room) {
   room.cup = { round: 0, rounds: room.settings.rounds, arenas: [], lastTwist: '', teamPts: [0, 0] };
-  for (const p of room.players.values()) {
+  for (const p of members(room)) {
     p.pts = 0;
     p.itMs = 0;
   }
@@ -282,16 +347,24 @@ function startRound(room) {
   const cup = room.cup;
   // what this round is played on: the plan's entry for it (a quick match is round 1)
   const stage = s.plan[cup ? Math.min(cup.round, MAX_ROUNDS - 1) : 0];
-  let arenaId = stage.arena;
-  if (arenaId === 'random') {
+  syncBots(room);
+  const everyone = members(room);
+  // the stages that suit this many players (a small one is chaos with ten in it, a big one empty with two):
+  // the draw is among them, and one that was chosen for a different crowd is drawn again
+  const fits = arenasFor(everyone.length).filter((id) => ARENA_IDS.includes(id));
+  const pool = fits.length ? fits : ARENA_IDS;
+  let arenaId = pool.includes(stage.arena) ? stage.arena : 'random';
+  const drawn = arenaId === 'random';
+  if (drawn) {
     if (cup) {
-      // a tournament visits every arena before repeating one
-      if (!cup.arenas.length) cup.arenas = shuffled(ARENA_IDS).filter((id, i, all) => all.length < 2 || i > 0 || id !== room.lastArena);
+      // a tournament visits every stage before repeating one
+      cup.arenas = cup.arenas.filter((id) => pool.includes(id));
+      if (!cup.arenas.length) cup.arenas = shuffled(pool).filter((id, i, all) => all.length < 2 || i > 0 || id !== room.lastArena);
       arenaId = cup.arenas.shift();
-    } else arenaId = pick(ARENA_IDS, room.lastArena);
+    } else arenaId = pick(pool, room.lastArena);
   }
   const themeId = stage.theme === 'random' ? pick(THEME_IDS, room.lastTheme) : stage.theme;
-  const random = { arena: stage.arena === 'random', theme: stage.theme === 'random' }; // what was left to chance this round
+  const random = { arena: drawn, theme: stage.theme === 'random' }; // what was left to chance this round
   room.lastArena = arenaId;
   room.lastTheme = themeId;
 
@@ -309,7 +382,7 @@ function startRound(room) {
     }
     if (cup.round > 1) {
       // the leader starts as it (a tie for the lead is settled by a coin toss)
-      const all = [...room.players.values()];
+      const all = everyone;
       const top = Math.max(...all.map((p) => p.pts));
       if (top > 0) startIt = pick(all.filter((p) => p.pts === top).map((p) => p.slot));
     }
@@ -318,36 +391,19 @@ function startRound(room) {
   sim.twist = twistById(twist);
 
   // Team battle: two sides, exactly as the room has them - nothing is redrawn
-  // from round to round or from match to match. If one side is short, bots
-  // fill it up for this round.
-  const everyone = [...room.players.values()];
+  // from round to round or from match to match (the bots stand wherever the
+  // sides are short).
   const mode = s.mode;
   let teams = null;
   let cols = null;
   const bots = new Map(); // slot -> the bot's memory
   const names = [];
   for (const p of everyone) names[p.slot] = p.name;
-  if (mode === 'team' && MAX_PLAYERS - everyone.length < 1 && sideSizes(room).includes(0)) {
-    // a full room all on one side, and no place left for a bot to stand against them: deal the sides out evenly
+  if (mode === 'team' && sideSizes(room).includes(0)) {
+    // everyone on one side, and no bot to stand against them: deal the sides out evenly
     makeTeams(everyone).forEach((list, t) => list.forEach((p) => (p.side = t)));
   }
-  const fill = mode === 'team' ? botFill(sideSizes(room), MAX_PLAYERS - everyone.length) : [0, 0];
-  const botSide = new Map(); // slot -> side
-  if (fill[0] + fill[1] > 0) {
-    // bots take the highest free places and the first names nobody else has
-    const free = [];
-    for (let slot = MAX_PLAYERS - 1; slot >= 0; slot--) if (names[slot] === undefined) free.push(slot);
-    const taken = new Set(everyone.map((p) => p.name.toLowerCase()));
-    const pool = BOT_NAMES.filter((n) => !taken.has(n.toLowerCase()));
-    for (const t of [0, 1]) {
-      for (let k = 0; k < fill[t]; k++) {
-        const slot = free.shift();
-        names[slot] = pool.shift() || `Bot ${slot + 1}`;
-        botSide.set(slot, t);
-        bots.set(slot, makeBot(Math.floor(Math.random() * 1e6) + slot));
-      }
-    }
-  }
+  for (const p of everyone) if (p.bot) bots.set(p.slot, makeBot(Math.floor(Math.random() * 1e6) + p.slot));
   if (mode === 'team') {
     teams = new Array(MAX_PLAYERS).fill(-1);
     cols = new Array(MAX_PLAYERS).fill(0);
@@ -357,7 +413,6 @@ function startRound(room) {
       cols[slot] = TEAM_SLOTS[t][seen[t]++ % TEAM_SLOTS[t].length]; // one side in warm colours, the other in cool ones
     };
     for (const p of everyone) join(p.slot, p.side);
-    for (const [slot, t] of botSide) join(slot, t);
   }
 
   // start positions: shuffled; in a team battle each side starts on its own half
@@ -374,9 +429,8 @@ function startRound(room) {
   for (const p of everyone) {
     p.playing = true;
     place(p.slot);
-    net[p.slot] = { q: [], recv: 0, lastSeq: 0, budget: 0, idle: 0, win: 0, spare: Infinity, late: 0, trimmed: 0, skipped: 0, id: p.id };
+    if (!p.bot) net[p.slot] = { q: [], recv: 0, lastSeq: 0, budget: 0, idle: 0, win: 0, spare: Infinity, late: 0, trimmed: 0, skipped: 0, id: p.id };
   }
-  for (const slot of bots.keys()) place(slot);
   if (bots.size) prepareBots(arena); // their route map, worked out now rather than on the first tick of the round
   if (teams) {
     sim.setTeams(teams); // (this also draws who starts with a bomb)
@@ -396,7 +450,7 @@ function startRound(room) {
     teams,
     cols,
     random,
-    bots, // slot -> memory of each bot filling in
+    bots, // slot -> memory of each bot playing this round
     names, // slot -> name of everyone who started this round (bots too)
     state: 'countdown',
     goAt: Date.now() + DRAW_MS + COUNTDOWN_MS + 500, // the draw, then 3-2-1
@@ -429,9 +483,9 @@ function finishRound(room, reason) {
     winners = rows.map((r) => r.slot);
     loser = -1;
   }
-  const bySlot = new Map([...room.players.values()].map((p) => [p.slot, p]));
+  const bySlot = new Map(members(room).filter((p) => p.playing).map((p) => [p.slot, p])); // (who played this round)
   const gained = cup && !team && !forfeit ? cupPoints(g.sim, g.cup.double) : {};
-  for (const p of room.players.values()) {
+  for (const p of members(room)) {
     if (!p.playing) continue;
     if (cup) {
       p.pts += gained[p.slot] || 0;
@@ -451,7 +505,7 @@ function finishRound(room, reason) {
     cup: null,
   };
   if (cup) {
-    const final = cup.round >= cup.rounds || forfeit || room.players.size < MIN_PLAYERS;
+    const final = cup.round >= cup.rounds || forfeit || members(room).length < MIN_PLAYERS;
     let table = [];
     if (team) {
       // the last round counts double here too
@@ -467,9 +521,9 @@ function finishRound(room, reason) {
       }
     } else {
       // the table: most points first, less time as it breaks ties
-      table = [...room.players.values()]
+      table = members(room)
         .sort((a, b) => b.pts - a.pts || a.itMs - b.itMs || a.slot - b.slot)
-        .map((p) => ({ slot: p.slot, name: p.name, pts: p.pts, ms: p.itMs, gained: gained[p.slot] || 0 }));
+        .map((p) => ({ slot: p.slot, name: p.name, pts: p.pts, ms: p.itMs, gained: gained[p.slot] || 0, bot: !!p.bot }));
       if (final) {
         const best = table[0];
         out.winners = table.filter((r) => r.pts === best.pts && r.ms === best.ms).map((r) => r.slot);
@@ -484,7 +538,7 @@ function finishRound(room, reason) {
       room.nextTimer = setTimeout(() => {
         room.nextTimer = null;
         if (rooms.get(room.code) !== room || room.game || !room.cup) return;
-        if (room.players.size < MIN_PLAYERS) {
+        if (members(room).length < MIN_PLAYERS) {
           endCup(room);
           emitRoom(room);
         } else startRound(room);
@@ -721,10 +775,13 @@ io.on('connection', (socket) => {
       code,
       hostId: socket.id,
       players: new Map(),
+      bots: new Map(), // the bots in the seats nobody has taken: id -> the same kind of record as a player
+      botSeq: 0,
       phase: 'lobby',
       // open: anyone can find the room under "Public"; otherwise it takes the code
+      // size: how many play (2 to 10); bots: whether bots take the seats nobody else has
       // arena / theme: what round 1 (and a quick match) is played on; plan: the same for every round of a tournament
-      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], arena: 'random', theme: 'random', duration: DEFAULT_DURATION, powerups: true, open: msg?.open === true, plan: newPlan('random', 'random') },
+      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], size: DEFAULT_SIZE, bots: true, arena: 'random', theme: 'random', duration: DEFAULT_DURATION, powerups: true, open: msg?.open === true, plan: newPlan('random', 'random') },
       game: null,
       cup: null,
       nextTimer: null,
@@ -747,7 +804,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(code);
     if (!room) return ack({ error: code.length === CODE_LEN ? `No room ${code}. Check the code and try again.` : 'Room codes are 4 digits.' });
     if (room.players.has(socket.id)) return ack({ ok: true, id: socket.id, room: roomState(room) });
-    if (room.players.size >= MAX_PLAYERS) return ack({ error: `That room is full (${MAX_PLAYERS} players max). Ask the host to make room, or host your own.` });
+    if (room.players.size >= room.settings.size) return ack({ error: `That room is full (${room.settings.size} players). Ask the host to add a seat, or host your own.` });
     leaveRoom(socket);
     const player = addPlayer(room, socket, name);
     ack({ ok: true, id: socket.id, room: roomState(room) });
@@ -797,6 +854,10 @@ io.on('connection', (socket) => {
     if (DURATIONS.includes(msg?.duration) || (TEST_DURATION && msg?.duration === TEST_DURATION)) s.duration = msg.duration;
     if (typeof msg?.powerups === 'boolean') s.powerups = msg.powerups;
     if (typeof msg?.open === 'boolean') s.open = msg.open;
+    // how many play, and whether bots take the seats nobody else has
+    if (Number.isInteger(msg?.size)) s.size = Math.max(MIN_PLAYERS, room.players.size, Math.min(MAX_PLAYERS, msg.size));
+    if (typeof msg?.bots === 'boolean') s.bots = msg.bots;
+    syncBots(room);
     emitRoom(room);
   });
 
@@ -808,9 +869,10 @@ io.on('connection', (socket) => {
     if (!room || room.game || room.cup || (t !== 0 && t !== 1)) return;
     const other = typeof id === 'string' && id !== socket.id;
     if (other && room.hostId !== socket.id) return;
-    const player = room.players.get(other ? id : socket.id);
+    const player = room.players.get(other ? id : socket.id); // (people only: the bots go where they are needed)
     if (!player) return;
     player.side = t;
+    balanceBots(room);
     emitRoom(room);
   });
 
@@ -819,6 +881,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(socket.data.code);
     if (!room || room.hostId !== socket.id || room.game || room.cup) return;
     makeTeams([...room.players.values()]).forEach((list, t) => list.forEach((p) => (p.side = t)));
+    balanceBots(room);
     io.to(room.code).emit('toast', 'The teams were shuffled');
     emitRoom(room);
   });
@@ -826,7 +889,7 @@ io.on('connection', (socket) => {
   socket.on('start', () => {
     const room = rooms.get(socket.data.code);
     if (!room || room.hostId !== socket.id || room.game || room.cup) return;
-    if (room.players.size < MIN_PLAYERS) return socket.emit('toast', 'Need at least 2 players to start.');
+    if (members(room).length < MIN_PLAYERS) return socket.emit('toast', 'Minimum 2 players');
     if (room.settings.game === 'cup') startCup(room);
     startRound(room);
   });

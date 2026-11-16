@@ -34,6 +34,9 @@
         <symbol id="i-glass" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7.500 3c0 5 3 6.500 4.500 9-1.500 2.500-4.500 4-4.500 9M16.500 3c0 5-3 6.500-4.500 9 1.500 2.500 4.500 4 4.500 9" fill="none" stroke="currentColor" stroke-width="2.300" stroke-linecap="round" stroke-linejoin="round" /><path d="M9.300 19.500c.800-2 2-2.600 2.700-4 .700 1.400 1.900 2 2.700 4z" fill="currentColor" /></symbol>
         <symbol id="i-crowd" viewBox="0 0 24 24"><circle cx="6" cy="8" r="3" fill="currentColor" /><circle cx="18" cy="8" r="3" fill="currentColor" /><circle cx="12" cy="6.500" r="3.300" fill="currentColor" /><path d="M1.500 20c.300-4 2-6 4.500-6s3 1 3.500 2M22.500 20c-.300-4-2-6-4.500-6s-3 1-3.500 2M6.500 21c.400-5 2.400-8 5.500-8s5.100 3 5.500 8z" fill="currentColor" /></symbol>
         <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M3 7h3.500c5 0 6 10 11 10H21M3 17h3.500c1.600 0 2.800-1 3.800-2.400M13.700 9.400C14.700 8 15.900 7 17.500 7H21M18 4l3 3-3 3M18 14l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2.300" stroke-linecap="round" stroke-linejoin="round" /></symbol>
+        <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 3.600v3.400M9.200 16.400c1.900.500 3.700.500 5.600 0" fill="none" stroke="currentColor" stroke-width="2.100" stroke-linecap="round" /><circle cx="12" cy="3" r="1.500" fill="currentColor" /><path d="M5.200 7.500c4.500-.600 9.100-.600 13.600 0 .600 3.900.600 7.800 0 11.700-4.500.600-9.100.600-13.600 0-.600-3.900-.600-7.800 0-11.700z" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linejoin="round" /><circle cx="9" cy="12.200" r="1.600" fill="currentColor" /><circle cx="15" cy="12.200" r="1.600" fill="currentColor" /></symbol>
+        <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4.200 19.800l1.100-4.500L15.900 4.700c.900-.900 2.300-.900 3.200 0s.900 2.300 0 3.200L8.500 18.600l-4.300 1.200z" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linejoin="round" /><path d="M13.900 6.800l3.200 3.200" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" /></symbol>
+        <symbol id="i-dash" viewBox="0 0 24 24"><path d="M2.500 8.200h7.300M1.800 12h5.600M3.400 15.800h6.300" fill="none" stroke="currentColor" stroke-width="2.300" stroke-linecap="round" /><path d="M11.400 5.200c3.900 1.900 7.400 4.200 10.600 6.800-3.200 2.600-6.700 4.900-10.600 6.800 1.300-4.500 1.300-9.100 0-13.600z" fill="currentColor" /></symbol>
         <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.200c4.300 2.300 8.300 4.900 12 7.800-3.700 2.900-7.700 5.500-12 7.800-.600-5.200-.600-10.400 0-15.600z" fill="currentColor" /></symbol>
         <symbol id="i-exit" viewBox="0 0 24 24"><path d="M10 4H5v16h5M10 12h10M16 7.500l4.500 4.500-4.500 4.500" fill="none" stroke="currentColor" stroke-width="2.500" stroke-linecap="round" stroke-linejoin="round" /></symbol>
         <symbol id="i-copy" viewBox="0 0 24 24"><path d="M9.500 13.500l5-5M8.200 10.300l-2 2a3.900 3.900 0 0 0 5.500 5.500l2-2M15.800 13.700l2-2a3.900 3.900 0 0 0-5.500-5.500l-2 2" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" /></symbol>
@@ -99,17 +102,16 @@
           <p class="lead"><span class="kana" lang="ja" aria-hidden="true">鬼ごっこ</span>Tag for 2–10 players. Don't be the oni when the clock runs out.</p>
           <nav class="menu" aria-label="Main menu">
             <button class="entry primary" id="btn-play" data-autofocus><svg class="ic" aria-hidden="true"><use href="#i-oni" /></svg><span><b>Play</b></span><kbd>1</kbd></button>
-            <button class="entry" id="btn-practice"><svg class="ic" aria-hidden="true"><use href="#i-target" /></svg><span><b>Practice</b></span><kbd>2</kbd></button>
           </nav>
           <p class="error" id="home-error" role="alert"></p>
           <div class="foot" role="group" aria-label="You, and settings">
             <!-- who you are: your own seal, with your name under it -->
-            <button class="tool" id="btn-profile"><span class="ring you"><i class="seal hanko" id="home-seal" aria-hidden="true"></i></span><b>Profile<span class="vh">: <span id="home-name"></span></span></b><kbd>3</kbd></button>
+            <button class="tool me" id="btn-profile" title="Change your name"><span class="ring you"><i class="seal hanko" id="home-seal" aria-hidden="true"></i></span><b><span class="vh">Your name: </span><span class="nm" id="home-name"></span><svg class="ic pen" aria-hidden="true"><use href="#i-pencil" /></svg></b><kbd>2</kbd></button>
             <button class="tool" id="btn-help" aria-label="How to play (H)"><span class="ring"><svg class="ic"><use href="#i-scroll" /></svg></span><b>How to play</b><kbd>H</kbd></button>
             <button class="tool" id="btn-sound"><span class="ring"><svg class="ic on"><use href="#i-sound" /></svg><svg class="ic off"><use href="#i-mute" /></svg></span><b id="sound-label"></b><kbd>M</kbd></button>
             <button class="tool" id="btn-full" aria-label="Full screen (F)"><span class="ring"><svg class="ic"><use href="#i-full" /></svg></span><b>Full screen</b><kbd>F</kbd></button>
           </div>
-          <p class="legend"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd>move</span><span><kbd>Enter</kbd>choose</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd>jump straight in</span></p>
+          <p class="legend"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd>move</span><span><kbd>Enter</kbd>choose</span><span><kbd>1</kbd><kbd>2</kbd>jump straight in</span></p>
         </div>
       </section>
 
@@ -158,7 +160,7 @@
         </div>
       </section>
 
-      <!-- 4. the room (online, or practice). Across the top: which room, who may
+      <!-- 4. the room. Across the top: which room, who may
            come in, its code and the way to pass it on. Then the format - one
            match or a tournament, two different things to set up - and under
            it, on the left, the choices (game, style, stage, rules) and, on the
@@ -168,7 +170,7 @@
           <header class="bar rm-top">
             <h2 id="lobby-title">Room</h2>
             <!-- who can come in: one button that says which it is -->
-            <button class="rm-door" id="btn-open" hidden>
+            <button class="rm-door" id="btn-open">
               <span class="mark"><svg class="ic shut"><use href="#i-lock" /></svg><svg class="ic open"><use href="#i-globe" /></svg></span>
               <b id="open-label">Private</b><kbd>V</kbd>
             </button>
@@ -180,7 +182,7 @@
             <button class="m-x" id="btn-leave" aria-label="Leave the room (Esc)"><kbd>Esc</kbd><span class="ring"><svg class="ic" aria-hidden="true"><use href="#i-close" /></svg></span></button>
           </header>
 
-          <!-- one match, or a tournament -->
+          <!-- quick play, or a tournament -->
           <div class="rm-format" id="opt-format" role="tablist" aria-label="Format" data-group></div>
 
           <div class="rm-body">
@@ -206,12 +208,18 @@
               <!-- a picture of whatever you are choosing -->
               <figure class="pv" id="preview">
                 <div class="pv-art" id="pv-art" aria-hidden="true"></div>
-                <figcaption><b id="pv-name"></b><span id="pv-line"></span></figcaption>
+                <figcaption><span class="pv-top"><b id="pv-name"></b><small id="pv-for"></small></span><span id="pv-line"></span></figcaption>
               </figure>
               <section class="rm-people" aria-labelledby="players-title">
                 <header>
                   <h3 class="lab" id="players-title">Players</h3>
-                  <div class="rm-opts" id="opt-bots"></div>
+                  <!-- how many play; and whether bots take the seats nobody has -->
+                  <div class="rm-step" id="size-step" role="group">
+                    <button class="rm-pm" id="btn-size-down" aria-label="One player fewer (minus key)">&minus;</button>
+                    <output id="size-num"></output>
+                    <button class="rm-pm" id="btn-size-up" aria-label="One player more (plus key)">+</button>
+                  </div>
+                  <button class="rm-bots" id="btn-bots" aria-pressed="true"><svg class="ic" aria-hidden="true"><use href="#i-bot" /></svg><span class="vh">Bots: </span><b id="bots-label">On</b><kbd>B</kbd></button>
                   <button class="rm-icon" id="btn-shuffle" aria-label="Shuffle the teams (Z)" title="Shuffle the teams" hidden><span class="ring"><svg class="ic"><use href="#i-shuffle" /></svg></span><kbd>Z</kbd></button>
                 </header>
                 <ul class="rm-seats" id="players"></ul>
@@ -352,15 +360,24 @@
                 <li><span><kbd>&larr;</kbd><kbd>&rarr;</kbd></span> Change the choice you are on (game, style, stage)</li>
                 <li><span><kbd>Enter</kbd></span> Choose – in a room it starts the match</li>
                 <li><span><kbd>Esc</kbd></span> Back – during a match it opens the pause menu</li>
-                <li><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span> Title screen: play, practice, your profile</li>
+                <li><span><kbd>1</kbd> <kbd>2</kbd></span> Title screen: play, your name</li>
                 <li><span><kbd>C</kbd> <kbd>P</kbd> <kbd>0</kbd>–<kbd>9</kbd></span> Play: host a room, look through the open rooms, type a room's code</li>
-                <li><span><kbd>G</kbd> <kbd>R</kbd> <kbd>N</kbd></span> In a room: one match or a tournament, which game, how many rounds</li>
+                <li><span><kbd>G</kbd> <kbd>R</kbd> <kbd>N</kbd></span> In a room: Quick Play or a tournament, which game, how many rounds</li>
                 <li><span><kbd>S</kbd> <kbd>A</kbd> <kbd>T</kbd></span> In a room: next style, next stage (with Shift: previous); in a tournament, T picks which round they are for</li>
-                <li><span><kbd>L</kbd> <kbd>P</kbd> <kbd>B</kbd></span> In a room: round time, lucky boxes, bots (practice)</li>
+                <li><span><kbd>L</kbd> <kbd>P</kbd></span> In a room: round time, lucky boxes</li>
+                <li><span><kbd>&minus;</kbd> <kbd>+</kbd> <kbd>B</kbd></span> In a room: how many play, and whether bots take the seats nobody has</li>
                 <li><span><kbd>C</kbd> <kbd>V</kbd></span> In a room: copy the invite link, make the room public or private</li>
                 <li><span><kbd>X</kbd> <kbd>Z</kbd></span> Team battle, in a room: change sides; the host shuffles the teams</li>
                 <li><span><kbd>H</kbd></span> Menus: how to play</li>
                 <li><span><kbd>M</kbd> <kbd>F</kbd></span> Anywhere: sound on or off, full screen</li>
+              </ul>
+            </section>
+            <section>
+              <h3>Rooms</h3>
+              <ul class="plain">
+                <li>A room has 2 to 10 seats. <b>Bots</b> take the ones nobody has, give theirs up to anyone who walks in, and come back when someone leaves.</li>
+                <li>The host sets how many play and can send the bots away.</li>
+                <li>Stages come in two sizes: the small ones are for 2–6 players, the big ones for 5–10. One that does not suit the room is shut.</li>
               </ul>
             </section>
             <section>

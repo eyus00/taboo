@@ -94,7 +94,7 @@ export function fitText(ctx, text, maxWidth) {
 // ---------------------------------------------------------------------------
 // Power-up icons, shared by every art style so they are always recognisable.
 // ---------------------------------------------------------------------------
-export const KIND_COLORS = { speed: '#ffb020', jump: '#3ecf6e', shield: '#4aa3ff', freeze: '#8fe6ff', blast: '#ff6b3d', swap: '#c77dff', storm: '#ffe14d', quake: '#d9a05b', warp: '#3fe0c5', eclipse: '#8a7bf0', box: '#ffc83d' };
+export const KIND_COLORS = { speed: '#ffb020', jump: '#3ecf6e', shield: '#4aa3ff', freeze: '#8fe6ff', blast: '#ff6b3d', swap: '#c77dff', storm: '#ffe14d', quake: '#d9a05b', warp: '#3fe0c5', eclipse: '#8a7bf0', dash: '#ff5c9d', box: '#ffc83d' };
 
 // Draws the icon for a power-up centred on (cx, cy), fitting a circle of radius r.
 export function drawIcon(g, kind, cx, cy, r, color) {
@@ -212,6 +212,20 @@ export function drawIcon(g, kind, cx, cy, r, color) {
     g.moveTo(r * 0.48, -r * 0.94);
     g.lineTo(r * 0.92, -r * 0.89);
     g.lineTo(r * 0.83, -r * 0.46);
+    g.stroke();
+  } else if (kind === 'dash') {
+    // an arrowhead with the air it leaves behind
+    g.lineWidth = r * 0.3;
+    g.beginPath();
+    g.moveTo(r * 0.1, -r * 0.75);
+    g.lineTo(r * 0.9, 0);
+    g.lineTo(r * 0.1, r * 0.75);
+    g.moveTo(-r * 0.95, -r * 0.45);
+    g.lineTo(-r * 0.2, -r * 0.45);
+    g.moveTo(-r * 0.95, 0);
+    g.lineTo(r * 0.25, 0);
+    g.moveTo(-r * 0.95, r * 0.45);
+    g.lineTo(-r * 0.2, r * 0.45);
     g.stroke();
   } else if (kind === 'eclipse') {
     // what is left of the sun: a thin crescent

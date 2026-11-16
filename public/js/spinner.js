@@ -104,7 +104,7 @@ function build(root, info, opts, T, my) {
   const nameOf = (slot) => players.find((p) => p.slot === slot)?.name || `Player ${slot + 1}`;
   const team = info.mode === 'team' && Array.isArray(info.teams);
   const cup = info.cup || null;
-  // team battle: several players start with a bomb; the reel lands on the first of them
+  // team battle: several players start with a bomb; the reel lands on all of them at once (see `gang`)
   const bombs = team ? (info.bombs || []).filter((slot) => players.some((p) => p.slot === slot)) : [];
   const itSlot = team ? (bombs[0] ?? -1) : info.it;
   const hasIt = players.some((p) => p.slot === itSlot);
@@ -187,19 +187,28 @@ function build(root, info, opts, T, my) {
   let who = null;
   const poseCells = new Map(); // slot -> the cells that show that player
   if (hasIt) {
-    const whoCell = (p) => {
-      const d = el('div', 'cell');
+    // one player's picture and name (a `box` to put them in)
+    const figure = (box, p) => {
       const pic = el('span', 'pose');
       const dot = el('i', 'dot'); // stands in until the portrait has been painted
       dot.style.background = opts.colorOf ? opts.colorOf(p.slot) : '#888';
       pic.append(dot);
-      d.append(pic, el('b', p.name.length > 9 ? 'long' : '', p.name));
-      if (team) d.style.setProperty('--side', TEAM_COLORS[info.teams[p.slot]] || 'transparent');
+      box.append(pic, el('b', p.name.length > 9 ? 'long' : '', p.name));
+      if (team) box.style.setProperty('--side', TEAM_COLORS[info.teams[p.slot]] || 'transparent');
       if (!poseCells.has(p.slot)) poseCells.set(p.slot, []);
       poseCells.get(p.slot).push(pic);
+      return box;
+    };
+    const whoCell = (p) => {
+      if (!p.gang) return figure(el('div', 'cell'), p);
+      // everyone who starts with a bomb, side by side in one cell
+      const d = el('div', `cell gang n${p.gang.length}`);
+      for (const q of p.gang) d.append(figure(el('span', 'one'), q));
       return d;
     };
-    const land = players.find((p) => p.slot === itSlot);
+    // (two bombs or more: the reel rolls through the players and stops on the carriers, all of them together)
+    const gang = team && bombs.length > 1 ? { gang: bombs.map((slot) => players.find((p) => p.slot === slot)) } : null;
+    const land = gang || players.find((p) => p.slot === itSlot);
     who = reel(team ? 'pic cast sided' : 'pic cast', team ? (bombs.length > 1 ? 'Bombs' : 'The bomb') : leader ? 'The leader is it' : 'Who is it?', players, land, whoCell, spinW, start + 180, tW);
     stamp(who, team ? 'fuse big' : 'oni big', spinW ? tW + 30 : 0, team ? BOMB : '鬼');
     rack.append(who);

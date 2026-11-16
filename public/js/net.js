@@ -9,8 +9,8 @@
 //   * everyone else is drawn slightly in the past, gliding between the last
 //     few snapshots, so 30 updates a second looks smooth at 60+ fps.
 
-import { TICK_MS, TICK_RATE, MAX_PLAYERS, FLAG_CAP_TICKS, twistById } from '/shared/config.js';
-import { stepPlayer, unpackState, PF_GROUND, PF_FACE, PF_STUN, PF_FROZEN, PF_ORB, PF_SPEED, PF_JUMP, PF_SHIELD, PF_DEAD, PF_SLOW, PF_DARK } from '/shared/physics.js';
+import { TICK_MS, TICK_RATE, MAX_PLAYERS, FLAG_CAP_TICKS, COUNTDOWN_MS, twistById } from '/shared/config.js';
+import { stepPlayer, unpackState, PF_GROUND, PF_FACE, PF_STUN, PF_FROZEN, PF_ORB, PF_SPEED, PF_JUMP, PF_SHIELD, PF_DEAD, PF_SLOW, PF_DARK, PF_DASH } from '/shared/physics.js';
 
 const INTERP_TICKS = 6; // draw other players ~100 ms behind the newest snapshot
 const MAX_EXTRAPOLATE = 4;
@@ -123,6 +123,7 @@ export class NetGame {
         dead: f & PF_DEAD ? 1 : 0,
         slw: f & PF_SLOW ? 1 : 0,
         ecl: f & PF_DARK ? 1 : 0,
+        dsh: f & PF_DASH ? 1 : 0,
         item: (e[9] || 0) & 15,
         arm: (e[9] || 0) & 16 ? 1 : 0,
         immune: e[6],
@@ -227,6 +228,10 @@ export class NetGame {
     const players = [];
     const cur = this.cur;
     let me = null;
+    // Before GO, once the draw is over and the count is on: who is going to start as it,
+    // or with a bomb, is shown already (the round's message says who; it only happens at GO).
+    const pre = this.phase === 'countdown' && this.countdownEnd - now <= COUNTDOWN_MS;
+    const plan = (pre && this.round.bombs) || [];
     if (cur) {
       const rt = now / TICK_MS + this.offset - INTERP_TICKS;
       for (let slot = 0; slot < MAX_PLAYERS; slot++) {
@@ -241,7 +246,7 @@ export class NetGame {
           arm: latest.arm,
           col: this.cols ? this.cols[slot] : slot,
           team: this.teams ? this.teams[slot] : -1,
-          bomb: !!(this.teamState && (this.teamState[2] >> slot) & 1), // team battle: carrying a bomb
+          bomb: !!(this.teamState && (this.teamState[2] >> slot) & 1) || plan.includes(slot), // team battle: carrying a bomb
           local: slot === this.mySlot,
         };
         if (slot === this.mySlot && this.predicting) {
@@ -266,6 +271,7 @@ export class NetGame {
             shd: p.shd,
             slw: p.slw,
             ecl: p.ecl,
+            dsh: p.dsh,
             dead: p.dead,
           });
           me = { spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw, ecl: p.ecl, item: latest.item, arm: latest.arm };
@@ -297,7 +303,8 @@ export class NetGame {
       goAge,
       timeLeft,
       duration: this.round.duration,
-      it: this.phase === 'countdown' ? -1 : this.it,
+      it: this.phase === 'countdown' ? (pre && !this.teams ? (this.round.it ?? -1) : -1) : this.it,
+      pre,
       players,
       boxes: this.boxes,
       // team battle: the score, and each flag: where it is, whose it is (-1: nobody's), how full (-1 all team 0 ... 1 all team 1)
@@ -310,7 +317,7 @@ export class NetGame {
   }
 }
 
-const pose = (p) => ({ vx: p.vx, vy: p.vy, ground: p.ground, face: p.face, stun: p.stun, frz: p.frz, orb: p.orb, spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw, ecl: p.ecl });
+const pose = (p) => ({ vx: p.vx, vy: p.vy, ground: p.ground, face: p.face, stun: p.stun, frz: p.frz, orb: p.orb, spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw, ecl: p.ecl, dsh: p.dsh });
 
 // Position of a remote player at render time `rt` (in server ticks).
 function sample(h, rt, freeze) {

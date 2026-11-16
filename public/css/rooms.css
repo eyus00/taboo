@@ -239,14 +239,15 @@ button.hub-room:active { scale: 0.99; }
 
 /* who can come in: a lock on ink, or the world on red, and the word for it */
 .rm-door {
-  display: inline-flex; align-items: center; gap: var(--s2); min-height: 40px; padding: 3px var(--s3) 3px 6px; color: var(--ink); font: 800 14.5px/1 var(--serif);
+  position: relative; margin-left: auto; display: inline-flex; align-items: center; gap: var(--s2); min-height: 40px; padding: 3px var(--s3) 3px 6px; color: var(--ink); font: 800 14.5px/1 var(--serif);
   background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); transition: scale var(--quick);
 }
 .rm-door .mark { width: 26px; height: 26px; flex: none; display: grid; place-items: center; margin: 0; font-size: 13px; color: var(--paper); background: var(--ink); clip-path: var(--seal-cut); transition: background-color var(--quick); }
 .rm-door .open, .rm-door.on .shut { display: none; }
 .rm-door.on .open { display: block; }
 .rm-door.on .mark { background: var(--red); }
-.rm-door b { min-width: 3.5em; text-align: left; }
+.rm-door b { min-width: 3.4em; text-align: left; }
+.rm-door kbd { position: absolute; right: -8px; top: -8px; background: var(--paper-lit); opacity: 1; }
 .rm-door:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
 .rm-door:not(:disabled):active { scale: var(--press); }
 /* (a guest cannot change it: for them it only says which it is) */
@@ -255,11 +256,10 @@ button.hub-room:active { scale: 0.99; }
 .rm-door:disabled kbd { display: none; }
 /* the room's code, on a wooden tag (it starts the group on the right) */
 .rm-code {
-  margin-left: auto; display: grid; place-items: center; padding: 5px var(--s2) 4px var(--s3); font: 800 clamp(21px, 2.6vw, 25px)/1 var(--serif); letter-spacing: 0.18em; font-variant-numeric: tabular-nums; color: #2c1b10; user-select: all;
+  display: grid; place-items: center; padding: 5px var(--s2) 4px var(--s3); font: 800 clamp(21px, 2.6vw, 25px)/1 var(--serif); letter-spacing: 0.18em; font-variant-numeric: tabular-nums; color: #2c1b10; user-select: all;
   background: repeating-linear-gradient(91deg, rgba(92, 60, 32, 0) 0 9px, rgba(92, 60, 32, 0.12) 9px 10px), linear-gradient(#e6c896, #cba569);
   box-shadow: inset 0 0 0 2px #5a3c26, inset 0 0 0 3px rgba(255, 238, 205, 0.4);
 }
-.rm-code[hidden] + .rm-icon[hidden] + .m-x { margin-left: auto; }
 /* a round button with a drawing in it (pass the room on; shuffle the sides) */
 .rm-icon { position: relative; width: 44px; height: 44px; flex: none; display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--ink); transition: scale var(--quick); }
 .rm-icon .ring { position: relative; width: 38px; height: 38px; display: grid; place-items: center; font-size: 16px; background: var(--enso) center / 100% 100% no-repeat; transition: rotate var(--quick), color var(--quick); }
@@ -336,11 +336,22 @@ button.hub-room:active { scale: 0.99; }
 .rm .card:has(input:focus-visible) { outline: 3px solid var(--red); outline-offset: 3px; }
 .rm-row { display: flex; gap: var(--s2); overflow: auto hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: 6px; margin: 0 -6px; padding: 8px 6px 6px; scrollbar-width: thin; scrollbar-color: var(--ink) transparent; }
 .rm-row .card { flex: 0 0 calc((100% - 4 * var(--s2)) / 4.6); scroll-snap-align: start; }
-.rm-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s3) var(--s2); padding: 8px 0 2px; }
+.rm-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s3) var(--s2); padding: 8px 0 2px; }
+/* (five across: a name of two words takes two lines, and every caption is as tall as that) */
+.rm-grid .card .cap { display: grid; place-items: center; height: 2.5em; padding: 2px 1px 1px; line-height: 1.12; white-space: normal; overflow: visible; }
+/* a stage built for a different number of players: shut, and it says for how many it is */
+.rm .card .for { display: none; }
+.rm .card.shut { cursor: default; background: #6b6862; }
+.rm .card.shut input { cursor: default; }
+.rm .card.shut .pic { filter: grayscale(1) contrast(0.7) brightness(1.08); opacity: 0.55; }
+.rm .card.shut .cap { color: #d9d2c2; }
+.rm .card.shut .for { position: absolute; left: 50%; top: 2px; translate: -50% 0; width: calc(100% - 4px); aspect-ratio: 16 / 9; display: grid; place-content: center; justify-items: center; gap: 1px; font: 800 11px/1 var(--serif); color: var(--ink); pointer-events: none; }
+.rm .card.shut .for .ic { font-size: 14px; }
 /* (a guest sees what is chosen, not what could have been) */
 .locked .card { cursor: default; }
 .locked .card:not(.on) { display: none; }
 .locked .card.on::after { display: none; }
+.locked .card .for { display: none; }
 
 /* --- the right side: a picture of whatever you are choosing ------------------ */
 .rm-side { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; container-type: inline-size; }
@@ -363,17 +374,36 @@ button.hub-room:active { scale: 0.99; }
 @keyframes pv-turn { 0%, 55% { rotate: 0deg; } 80%, 100% { rotate: 180deg; } }
 @keyframes pv-shake { 0%, 100% { translate: 0 0; } 25% { translate: -2px 1px; } 50% { translate: 2px -1px; } 75% { translate: -1px -2px; } }
 @keyframes pv-flick { from { scale: 0.92 1; } to { scale: 1.06 1.1; } }
-.pv figcaption { display: flex; flex-direction: column; gap: 1px; min-height: calc(1.15 * 20px + 2 * 1.35 * 12.5px + 1px); }
-.pv figcaption b { font: 400 20px/1.15 var(--brush); }
+.pv figcaption { display: flex; flex-direction: column; gap: 1px; height: calc(1.15 * 20px + 2 * 1.35 * 12.5px + 1px); overflow: hidden; }
+.pv-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.pv figcaption b { font: 400 20px/1.15 var(--brush); white-space: nowrap; }
+.pv figcaption small { flex: none; font: 800 11px/1 var(--serif); letter-spacing: 0.08em; text-transform: uppercase; color: var(--red-deep); white-space: nowrap; }
 .pv figcaption span { font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--soft); }
 
 /* --- the people ---------------------------------------------------------------- */
 .rm-people { display: flex; flex-direction: column; gap: var(--s1); min-width: 0; padding: var(--s2) var(--s3) var(--s3); background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); }
-.rm-people > header { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s1) var(--s3); min-height: 30px; }
+.rm-people > header { display: flex; align-items: center; gap: var(--s2); min-height: 30px; }
 .rm-people > header .lab { margin-right: auto; }
-.rm-people .rm-icon { width: auto; height: 34px; display: inline-flex; align-items: center; gap: 6px; }
+/* how many play: minus, the number, plus */
+.rm-step { display: inline-flex; align-items: center; gap: 2px; }
+.rm-step output { min-width: 1.4em; text-align: center; font: 800 16px/1 var(--serif); font-variant-numeric: tabular-nums; }
+.rm-pm { position: relative; width: 26px; height: 26px; flex: none; display: grid; place-items: center; padding: 0 0 2px; font: 800 17px/1 var(--serif); color: var(--ink); background: var(--paper-lit); border: 2px solid var(--ink); border-radius: 50%; transition: scale var(--quick), background-color var(--quick), color var(--quick); }
+.rm-pm::after { content: ''; position: absolute; inset: -9px -3px; }
+.rm-pm:disabled { color: rgba(28, 27, 31, 0.3); border-color: rgba(28, 27, 31, 0.25); background: none; cursor: default; }
+.rm-pm:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+.rm-pm:not(:disabled):active { scale: var(--press); }
+/* bots in the empty seats: on or off */
+.rm-bots { position: relative; flex: none; display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 2px 11px 2px 6px; font: 800 12.5px/1 var(--serif); color: var(--soft); background: none; border: 2px solid rgba(28, 27, 31, 0.4); transition: scale var(--quick), background-color var(--quick), color var(--quick); }
+.rm-bots::after { content: ''; position: absolute; inset: -8px -2px; }
+.rm-bots .ic { font-size: 15px; }
+.rm-bots b { min-width: 1.7em; text-align: left; }
+.rm-bots[aria-pressed='true'] { color: #fff3e0; background: var(--ink); border-color: var(--ink); }
+.rm-bots kbd, .rm-people .rm-icon kbd { position: absolute; right: -5px; top: -9px; min-width: 16px; height: 16px; padding: 0 2px; font-size: 9.5px; color: var(--ink); background: var(--paper-lit); opacity: 1; }
+.rm-people > header { padding-right: 9px; }
+.rm-bots:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+.rm-bots:active { scale: var(--press); }
+.rm-people .rm-icon { width: 30px; height: 30px; }
 .rm-people .rm-icon .ring { width: 30px; height: 30px; font-size: 13px; }
-.rm-people .rm-icon kbd { position: static; order: -1; }
 .rm-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s3); }
 /* a seat: the player's picture, their name with the width to itself, and under it what they are here */
 .rm-seat { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: var(--seat); padding: 2px 0; border-bottom: 1.5px solid var(--faint); }
@@ -409,6 +439,12 @@ button.hub-room:active { scale: 0.99; }
 .rm-seat .cross:active { scale: var(--press); }
 /* (a narrow column: a twelve-letter name still has to be whole - the lettering a size down, and on a side, where the colour says whose, no picture) */
 @container (max-width: 330px) {
+  .rm-people > header { gap: 5px; padding-right: 7px; }
+  .rm-people .lab { font-size: 11px; letter-spacing: 0.05em; }
+  .rm-pm { width: 23px; height: 23px; }
+  .rm-step { gap: 1px; }
+  .rm-step output { min-width: 1.25em; }
+  .rm-bots { gap: 4px; padding: 2px 9px 2px 5px; }
   .rm-seat .nm { font-size: 15px; padding-right: 0; }
   .rm-team .rm-seat .nm { font-size: 14.5px; }
   .rm-team .rm-seat .face { display: none; }
@@ -416,7 +452,7 @@ button.hub-room:active { scale: 0.99; }
 }
 /* go */
 .rm-go { display: flex; flex-direction: column; gap: var(--s2); }
-.rm-go .note { min-height: 0; font-size: 12.5px; font-weight: 800; text-align: center; color: var(--soft); }
+.rm-go .note { min-height: 0; font-size: 12.5px; font-weight: 800; line-height: 1.3; text-align: center; color: var(--soft); }
 .rm-go .note:empty { display: none; }
 /* (for a guest, in place of Start: a ribbon of ink, as the notices at the foot of the screen are) */
 .rm-go #start-note { align-self: center; padding: var(--s2) var(--s5) 7px; font-size: 13.5px; color: var(--paper); background: var(--ink); clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
@@ -425,6 +461,9 @@ button.hub-room:active { scale: 0.99; }
 
 @media (hover: hover) {
   .rm-icon:hover .ring { rotate: -10deg; }
+  .rm-pm:hover:not(:disabled) { color: #fff3e0; background: var(--ink); }
+  .rm-bots:hover { color: var(--ink); border-color: var(--ink); }
+  .rm-bots[aria-pressed='true']:hover { color: #fff3e0; background: var(--red-deep); border-color: var(--red-deep); }
   .rm-door:hover:not(:disabled) .mark { background: var(--red-deep); }
   .rm-tab:hover:not(:disabled):not([aria-selected='true']) { color: var(--ink); border-color: var(--ink); }
   .info:hover { color: var(--ink); }
@@ -453,6 +492,19 @@ button.hub-room:active { scale: 0.99; }
 .info-pic span { display: block; font-size: 12.5px; font-weight: 600; line-height: 1.4; color: var(--soft); }
 
 /* ============================================================ layouts ==== */
+/* Side by side (a laptop and up), nothing in the room changes its size as you
+   choose: the list of players is always as tall as ten seats, in one list or
+   as two sides; the line over Start is there even when it has nothing to say;
+   and Quick Play keeps the place a tournament's round plan would take. */
+@media (min-width: 860.02px) {
+  .rm-people { --rows: calc(5 * var(--seat) + 26px); }
+  #players.rm-seats { height: var(--rows); grid-template-rows: repeat(5, minmax(0, 1fr)); grid-auto-flow: column; }
+  #players .rm-seat { min-height: 0; }
+  .rm-teams { height: var(--rows); }
+  #s-lobby:not(.guest) #lobby-note { display: block; min-height: 1.3em; }
+  .rm-setup > #round-strip[hidden] { display: flex !important; visibility: hidden; order: 9; min-height: 59px; }
+  .guest .rm-setup > #round-strip[hidden] { display: none !important; }
+}
 /* a short screen: the room keeps to what is needed (the row of keys under it goes) */
 @media (max-height: 880px) {
   .rm .legend { display: none; }
@@ -552,6 +604,7 @@ button.hub-room:active { scale: 0.99; }
   .rm-tab .words { margin-right: 0; }
   .rm-tab b { font-size: 18px; }
   .rm-seats, .rm-teams { grid-template-columns: minmax(0, 1fr); }
+  .rm-people > header { flex-wrap: wrap; row-gap: var(--s2); }
   .rm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .info-grid { grid-template-columns: minmax(0, 1fr); }
 }

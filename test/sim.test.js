@@ -4,10 +4,10 @@ import {
   PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, MOVE_SPEED, IMMUNE_TICKS, STUN_TICKS, RESPAWN_TICKS,
   SPEED_BUFF_MUL, TOUCH, AIR_JUMPS, twistById, IN_USE, ITEM_KINDS, BOX_FIRST_TICKS, ITEM_ARM_TICKS, STORM_SPEED, IT_SPEED_MUL,
   BLAST_RADIUS, BOMB_POINTS, FLAG_POINTS, FLAG_CAP_TICKS, FLAG_PAY_TICKS, FLAG_HALF, FLAG_UP, LAUNCH_VX, LAUNCH_VY,
-  MAX_PLAYERS, PLAYER_COLORS, TEAM_SLOTS, ITEM_INFO, BODY_SCALE, BOX_EVERY_TICKS, QUAKE_STUN_TICKS, WARP_GAP, WARP_DROP, ECLIPSE_TICKS,
+  MAX_PLAYERS, PLAYER_COLORS, TEAM_SLOTS, ITEM_INFO, BODY_SCALE, BOX_EVERY_TICKS, QUAKE_STUN_TICKS, WARP_GAP, WARP_DROP, ECLIPSE_TICKS, DASH_TICKS, DASH_SPEED, JUMP_V, AIR_JUMP_V, JUMP_BUFFER_TICKS,
 } from '../shared/config.js';
-import { ARENAS, arenaById, TILE, rampY } from '../shared/arenas.js';
-import { makeState, stepPlayer, packState, unpackState, STATE_LEN, publicFlags, PF_DARK, isFree } from '../shared/physics.js';
+import { ARENAS, ARENA_IDS, arenaById, arenaFits, arenasFor, TILE, rampY } from '../shared/arenas.js';
+import { makeState, stepPlayer, packState, unpackState, STATE_LEN, publicFlags, PF_DARK, PF_DASH, isFree } from '../shared/physics.js';
 import { Sim, standings, cupPoints, makeTeams, warpSpots } from '../shared/sim.js';
 import { buildNav, surfaceAt } from '../shared/nav.js';
 import { makeBot, botThink } from '../shared/bots.js';
@@ -301,6 +301,8 @@ test('physics is deterministic across a network snapshot (prediction replays exa
     const seq = [];
     for (let i = 0; i < 1200; i++) seq.push(combos[(i * 7 + (i >> 3) + (i >> 6)) % combos.length]);
     for (const b of seq.slice(0, 500)) stepPlayer(a, b, box, true);
+    a.dsh = 7; // (in the middle of a Dash: that has to travel too)
+    a.ecl = 90;
     const wire = JSON.parse(JSON.stringify(packState(a)));
     assert.equal(wire.length, STATE_LEN);
     const copy = unpackState(wire);
@@ -390,7 +392,8 @@ test('lag compensation: a touch on where the target was on the tagger\'s screen 
 });
 
 test('lucky boxes: you get an item to keep and set it off yourself - one at a time, any time up to the buzzer', () => {
-  assert.deepEqual(ITEM_KINDS, ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'quake', 'warp', 'eclipse']);
+  assert.deepEqual(ITEM_KINDS, ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'quake', 'warp', 'eclipse', 'dash']);
+  assert.ok(ITEM_INFO.dash.blurb.length <= 45, 'a short line for Dash');
   for (const k of ITEM_KINDS) assert.ok(ITEM_INFO[k].name && ITEM_INFO[k].blurb, `${k} has a name and a blurb`);
   const sim = new Sim(box, () => 0.4);
   const a = sim.add(0);
@@ -523,6 +526,44 @@ test('lucky boxes: you get an item to keep and set it off yourself - one at a ti
   const before = a.s.x;
   for (let i = 0; i < ECLIPSE_TICKS; i++) sim.step([i < 30 ? IN_RIGHT : 0, 0]);
   assert.ok(a.s.ecl === 0 && a.s.x > before + 100, 'it lifts after 4 seconds; meanwhile they can still move');
+  // Dash: straight ahead at full tilt for a fifth of a second - the way you steer as you set it off, else the way you face
+  apart();
+  b.s.face = -1;
+  use(b, 'dash');
+  assert.ok(b.s.dsh > 0 && publicFlags(b.s) & PF_DASH, 'dashing, and everybody is told');
+  for (let i = 1; i < DASH_TICKS; i++) sim.step([0, IN_RIGHT | IN_JUMP]); // (steering and jumping do nothing meanwhile)
+  const reach = (DASH_SPEED * DASH_TICKS) / 60;
+  assert.ok(reach >= 200 && reach <= 280, `a dash covers ${reach} px`);
+  assert.deepEqual([b.s.x, b.s.y, b.s.dsh], [2800 - reach, floorY, 0], 'dead straight, the way they faced');
+  assert.ok(Math.abs(b.s.vx) <= MOVE_SPEED, 'and it ends at a run, not at dash speed');
+  apart();
+  b.s.face = -1;
+  b.item = ITEM_KINDS.indexOf('dash') + 1;
+  sim.step([0, 0]);
+  sim.step([0, IN_USE | IN_RIGHT]);
+  assert.ok(b.s.face === 1 && b.s.x > 2800, 'steering as you set it off chooses the way');
+  for (let i = 0; i < DASH_TICKS + 5; i++) sim.step([0, IN_RIGHT]);
+  assert.equal(b.s.x, 3000 - PW, 'a wall stops a dash like anything else');
+  apart();
+  a.s.x = 2300;
+  b.s.x = 2300 + PW + 190; // well out of reach at a run: half a second away
+  use(a, 'dash'); // (apart() leaves "it" facing right)
+  for (let i = 0; i < DASH_TICKS && sim.it === 0; i++) sim.step([0, 0]);
+  assert.equal(sim.it, 1, '"it" dashes and tags');
+  assert.ok(b.s.stun > 0);
+  apart();
+  b.s.y = floorY - 200; // in mid-air
+  b.s.ground = false;
+  b.s.face = -1;
+  use(b, 'dash');
+  for (let i = 1; i < DASH_TICKS; i++) sim.step([0, 0]);
+  assert.ok(b.s.x === 2800 - reach && b.s.y - (floorY - 200) < 16, 'through the air it holds its height');
+  apart();
+  use(b, 'dash');
+  b.s.stun = 20; // tagged, say, in mid-dash
+  const bx = b.s.x;
+  sim.step([0, 0]);
+  assert.ok(b.s.dsh === 0 && Math.abs(b.s.x - bx) < 20, 'a stun ends it');
   // boxes keep coming and items keep working right up to the buzzer (there is no lock near the end any more) - and nothing after it
   apart();
   assert.equal(sim.locked, undefined);
@@ -541,6 +582,63 @@ test('lucky boxes: you get an item to keep and set it off yourself - one at a ti
   sim.step([0, IN_USE]);
   for (let i = 0; i <= BOX_EVERY_TICKS; i++) sim.step([0, 0]);
   assert.ok(b.item > 0 && b.s.jmp === 0 && sim.boxes.length === 0, 'after the buzzer nothing goes off and nothing appears');
+});
+
+test('jump can be hammered: every fresh press does something while there is a jump to be had - and never more than the double', () => {
+  // how many ticks a press made at tick 0 takes to show: it must be none
+  const kicks = (p, script, n, arena = box) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const before = p.vy;
+      stepPlayer(p, script(i, p), arena);
+      if (p.vy < -250 && p.vy < before - 250) out.push(i); // thrown upwards: a jump went off on this tick
+      if (i > 3 && p.ground) break;
+    }
+    return out;
+  };
+  // press, release, press, release... on alternate ticks, from standing
+  const p = makeState(2300, floorY);
+  settle(p);
+  const hammered = kicks(p, (i) => (i % 2 === 0 ? IN_JUMP : 0), 300);
+  assert.deepEqual(hammered, [0, 2], 'the first press jumps, the very next press is the jump in mid-air, and that is all until landing');
+  assert.ok(p.ground, 'landed');
+  // ...and keeps hammering: back on the ground the next press jumps at once (one made just before landing counts on landing)
+  let wait = 0;
+  for (let i = 0; i < 6 && p.vy >= 0; i++, wait++) stepPlayer(p, i % 2 === 0 ? IN_JUMP : 0, box);
+  assert.ok(p.vy < -250 && wait <= 2, `jumping again ${wait} tick(s) after landing`);
+  // a full jump held down, let go for a single tick and pressed again: no dead window either
+  for (const held of [1, 2, 3, 5, 8, 14, 30]) {
+    const q = makeState(2300, floorY);
+    settle(q);
+    const got = kicks(q, (i) => (i === held ? 0 : i <= held + 1 ? IN_JUMP : 0), 300);
+    assert.deepEqual(got, [0, held + 1], `held for ${held} ticks: the second press went off on tick ${got[1]}`);
+  }
+  // a press straight after walking off a ledge is still a ground jump, and the jump in mid-air is still there after it
+  const w = makeState(2300, floorY);
+  settle(w);
+  w.ground = false; // (as if the ground had just ended)
+  w.coyote = 3;
+  const off = kicks(w, (i) => (i % 2 === 0 ? IN_JUMP : 0), 300);
+  assert.deepEqual(off, [0, 2]);
+  // flying up off a trampoline, faster than a jump would send you: hammering never makes the launch shorter, a tap
+  // at the start of it is not spent on nothing, and the jump in mid-air is still there once it can add height
+  const launch = (script) => {
+    const t = makeState(820, floorY);
+    settle(t);
+    ticksUntil(t, IN_RIGHT, (s) => s.vy < -1000, 60);
+    let top = t.y;
+    for (let i = 0; i < 200 && !t.ground; i++) {
+      stepPlayer(t, script(i, t), box);
+      top = Math.min(top, t.y);
+    }
+    return floorY - top;
+  };
+  const plain = launch(() => 0);
+  assert.equal(launch((i) => (i === 2 ? IN_JUMP : 0)), plain, 'one tap at the start of a launch changes nothing');
+  assert.ok(launch((i) => (i % 2 ? IN_JUMP : 0)) >= plain, 'hammering all the way up never makes it shorter');
+  const later = launch((i, t) => (i === 2 || (i > 4 && t.vy > -200 && t.air > 0) ? IN_JUMP : 0));
+  assert.ok(later > plain + 100, `and the jump in mid-air is still there near the top: ${Math.round(plain)} px without it, ${Math.round(later)} px with`);
+  assert.ok(JUMP_V > AIR_JUMP_V && JUMP_BUFFER_TICKS >= 6);
 });
 
 test('a touch you can see counts: bodies are drawn bigger than their hitboxes, and the tag reaches as far as the drawing', () => {
@@ -643,7 +741,8 @@ test('Eclipse: a bot in the dark forgets who it was after, uses nothing and wand
   assert.ok(sim.players[0].item > 0, 'and no item is set off blind');
   assert.ok(moved > 200, `it feels its way about (${Math.round(moved)} px)`);
   sim.players[1].immune = 0;
-  for (let i = 0; i < 30 && sim.it === 0; i++) tick();
+  // (it may be in the middle of a jump or a portal when the night lifts: it looks around again as soon as that is over)
+  for (let i = 0; i < 180 && sim.it === 0 && (mem[0].blind || mem[0].target !== 1); i++) tick();
   assert.ok(!mem[0].blind && (sim.it !== 0 || mem[0].target === 1), 'the night lifts and the chase is on again');
 });
 
@@ -967,13 +1066,34 @@ test('if "it" leaves, someone else becomes it', () => {
   assert.ok(sim.it === 0 || sim.it === 2);
 });
 
-test('every arena: six of them, 64 x 36 tiles; starts, bases and boxes stand on something; every surface can reach every other', () => {
-  assert.equal(ARENAS.length, 6);
-  for (const id of ['hills', 'canyon', 'pagoda', 'zigzag', 'dojo']) assert.ok(ARENAS.some((a) => a.id === id), `${id} is still there`);
-  assert.equal(new Set(ARENAS.map((a) => a.id)).size, 6);
+// The player counts a stage's bots are tried with: all of them inside what the stage is meant for.
+const botCounts = (arena) => (arena.players[1] > 6 ? [5, 6, 8, 10] : [2, 4, 5, 6]);
+
+test('stages by size: six of 64 x 36 tiles for 2 to 6 players, three of 84 x 48 for 5 to 10; arenaFits and arenasFor say which', () => {
+  assert.equal(ARENAS.length, 9);
+  assert.equal(new Set(ARENA_IDS).size, 9);
+  const small = ['hills', 'canyon', 'pagoda', 'zigzag', 'dojo', 'bramble'];
+  const big = ['valley', 'gorge', 'halls'];
+  assert.deepEqual(ARENA_IDS, [...small, ...big]);
+  for (const a of ARENAS) {
+    const isBig = big.includes(a.id);
+    assert.deepEqual(a.players, isBig ? [5, 10] : [2, 6], `${a.id} is meant for ${a.players.join(' to ')} players`);
+    assert.deepEqual([a.w / TILE, a.h / TILE], isBig ? [84, 48] : [64, 36], `${a.id}: ${a.w / TILE} x ${a.h / TILE} tiles`);
+    assert.ok(a.name && a.blurb && a.blurb.length <= 60, `${a.id}: a name, and a blurb of at most 60 characters (${a.blurb.length})`);
+    assert.deepEqual(arenaById(a.id).players, a.players, 'the stage as a match plays it says the same');
+  }
+  assert.ok((84 * 48) / (64 * 36) >= 1.6 && (84 * 48) / (64 * 36) <= 2, 'a big stage has 1.6 to 2 times the room');
+  for (let n = 2; n <= 10; n++) {
+    const want = n <= 4 ? small : n <= 6 ? [...small, ...big] : big;
+    assert.deepEqual(arenasFor(n), want, `stages for ${n} players`);
+    for (const id of ARENA_IDS) assert.equal(arenaFits(id, n), want.includes(id), `${id} with ${n} players`);
+  }
+  assert.ok(!arenaFits('nowhere', 4) && arenasFor(1).length === 6 && arenasFor(99).length === 3 && arenasFor().length === 6, 'never an empty list, never an unknown stage');
+});
+
+test('every arena: starts, bases and boxes stand on something; every surface can reach every other', () => {
   const times = [];
   for (const arena of ARENAS) {
-    assert.deepEqual([arena.w, arena.h], [64 * 40, 36 * 40], `${arena.id} is 64 x 36 tiles`);
     assert.ok(arena.name && arena.blurb, `${arena.id} has a name and a blurb`);
     const stands = ([x, y], what) => {
       const p = makeState(x, y);
@@ -1006,8 +1126,9 @@ test('every arena: six of them, 64 x 36 tiles; starts, bases and boxes stand on 
     for (const z of arena.spikes) {
       for (const sf of nav.surfaces) assert.ok(sf.ramp || Math.abs(sf.y - (z.y + z.h)) > 2 || sf.x1 <= z.x - 10 || sf.x0 >= z.x + z.w + 10, `${arena.id}: surface ${sf.id} runs into thorns`);
     }
-    // 10 to 14 lucky-box spots, each within reach of someone standing on the ground below it
-    assert.ok(arena.pickups.length >= 10 && arena.pickups.length <= 14, `${arena.id}: ${arena.pickups.length} box spots`);
+    // 10 to 14 lucky-box spots (14 to 20 on a big stage), each within reach of someone standing on the ground below it
+    const [fewest, most] = arena.players[1] > 6 ? [14, 20] : [10, 14];
+    assert.ok(arena.pickups.length >= fewest && arena.pickups.length <= most, `${arena.id}: ${arena.pickups.length} box spots`);
     for (const pt of arena.pickups) {
       const under = nav.below(pt.x, pt.y - 30, null);
       assert.ok(under && nav.heightAt(under, pt.x) - pt.y <= PH + 20, `${arena.id}: nobody can reach the box spot at ${pt.x},${pt.y}`);
@@ -1152,13 +1273,13 @@ function botMatch(arena, n, teams, seconds = 120) {
   return out;
 }
 
-test('bots play every arena with 2, 4, 6 and 10: tags keep happening, nobody stands about, pit falls are rare', () => {
+test('bots play every arena with as many as it is meant for (2 to 6, or 5 to 10): tags keep happening, nobody stands about, pit falls are rare', () => {
   let falls = 0;
   let minutes = 0;
   const log = [];
   for (const { id } of ARENAS) {
     const arena = arenaById(id); // as a match plays it (with few thorns)
-    for (const n of [2, 4, 6, 10]) {
+    for (const n of botCounts(arena)) {
       const r = botMatch(arena, n, false);
       const who = `${arena.id} ${n}p`;
       log.push(`${who} ${r.tags} tags (longest gap ${Math.round(r.worst / 60)}s, ${r.falls} falls)`);
@@ -1187,7 +1308,7 @@ test('bots play team battles: flags are taken and turned, bombs change hands and
     let turned = 0;
     let paid = 0;
     let taken = 0;
-    for (const n of [2, 4, 6, 10]) {
+    for (const n of botCounts(arena)) {
       const r = botMatch(arena, n, true, 90);
       const who = `${arena.id} ${n}p teams`;
       log.push(`${who} ${r.score.join('-')} (${r.tags} passes, ${r.booms} bombs, flags: ${r.takes} taken ${r.turned} lost, ${r.flags} points; idle ${Math.round(r.idle / 60)}s, ${r.falls} falls)`);
