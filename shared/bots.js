@@ -165,6 +165,20 @@ export function botThink(sim, slot, mem) {
     }
   } else mem.escape = 0;
 
+  // Whoever we are after is right overhead (hopping in a corner, say) and we are standing
+  // under them doing nothing: jump at them - and again in the air if that falls short.
+  if (mem.target >= 0 && sim.isIt(me) && !blind) {
+    const o = sim.players[mem.target];
+    if (o && o.s.dead === 0 && o.s.orb === 0 && Math.abs(o.s.x - s.x) < 80 && o.s.y < s.y - 26 && o.s.y > s.y - 340) {
+      const toward = o.s.x > s.x + 6 ? IN_RIGHT : o.s.x < s.x - 6 ? IN_LEFT : 0;
+      if (s.ground && !(bits & (IN_LEFT | IN_RIGHT | IN_JUMP))) bits = toward | IN_JUMP;
+      else if (!s.ground && !mem.plan) {
+        bits = (bits & ~(IN_LEFT | IN_RIGHT)) | toward;
+        if (s.vy < 0 && mem.pressed & IN_JUMP) bits |= IN_JUMP; // (held for full height)
+        else if (s.vy > -60 && s.air > 0 && !(mem.pressed & IN_JUMP)) bits |= IN_JUMP;
+      }
+    }
+  }
   // standing still against something for too long: shake loose
   if (mem.stuck > 50 && bits & (IN_LEFT | IN_RIGHT)) {
     mem.plan = null;

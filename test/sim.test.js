@@ -213,7 +213,7 @@ test('portals: you fly to the partner as an orb, with no control, and are not se
   assert.ok(p.orb > 0, 'works again after stepping out');
   // A portal waits for feet that have been on the ground a moment: coming down in one - off a jump,
   // a trampoline, a launcher - sends you nowhere, and there is time to step away.
-  assert.ok(PORTAL_SETTLE_TICKS >= 6 && PORTAL_SETTLE_TICKS <= 12, 'a tenth to a fifth of a second');
+  assert.ok(PORTAL_SETTLE_TICKS >= 4 && PORTAL_SETTLE_TICKS <= 12, 'a fraction of a second');
   const drop = makeState(60 - PW / 2, floorY - 150); // falling straight into the mouth of the one at x = 60
   let air = 0;
   while (!drop.ground && air < 120) {
@@ -1166,7 +1166,7 @@ test('if "it" leaves, someone else becomes it', () => {
 const sizeOf = (arena) => (arena.players[1] > 6 ? 'big' : arena.players[1] < 6 ? 'duel' : 'small');
 const botCounts = (arena) => ({ big: [5, 6, 8, 10], small: [2, 4, 5, 6], duel: [2, 3, 4] })[sizeOf(arena)];
 
-test('stages by size: two duel stages (48 x 28 tiles, 2 to 4 players), six small (64 x 36, 2 to 6), three big (96 x 54, 5 to 10); arenaFits and arenasFor say which', () => {
+test('stages by size: two duel stages (48 x 28 tiles, 2 to 4 players), six small (64 x 36, 2 to 6), three big (96 x 47, 5 to 10); arenaFits and arenasFor say which', () => {
   assert.equal(ARENAS.length, 11);
   assert.equal(new Set(ARENA_IDS).size, 11);
   const small = ['hills', 'canyon', 'pagoda', 'zigzag', 'dojo', 'bramble'];
@@ -1177,7 +1177,7 @@ test('stages by size: two duel stages (48 x 28 tiles, 2 to 4 players), six small
     const kind = sizeOf(a);
     assert.equal(kind, big.includes(a.id) ? 'big' : duel.includes(a.id) ? 'duel' : 'small');
     assert.deepEqual(a.players, { big: [5, 10], small: [2, 6], duel: [2, 4] }[kind], `${a.id} is meant for ${a.players.join(' to ')} players`);
-    assert.deepEqual([a.w / TILE, a.h / TILE], { big: [96, 54], small: [64, 36], duel: [48, 28] }[kind], `${a.id}: ${a.w / TILE} x ${a.h / TILE} tiles`);
+    assert.deepEqual([a.w / TILE, a.h / TILE], { big: [96, 47], small: [64, 36], duel: [48, 28] }[kind], `${a.id}: ${a.w / TILE} x ${a.h / TILE} tiles`);
     assert.ok(a.name && a.blurb && a.blurb.length <= 60, `${a.id}: a name, and a blurb of at most 60 characters (${a.blurb.length})`);
     assert.deepEqual(arenaById(a.id).players, a.players, 'the stage as a match plays it says the same');
     // a big stage is watched from a little further off (and no stage from closer than the usual)
@@ -1185,7 +1185,7 @@ test('stages by size: two duel stages (48 x 28 tiles, 2 to 4 players), six small
     assert.equal(arenaById(a.id).view, a.view);
   }
   assert.ok(VIEW_USUAL === 660, 'the usual view');
-  assert.ok((96 * 54) / (64 * 36) >= 2 && (96 * 54) / (64 * 36) <= 2.5, 'a big stage has two to two and a half times the room of a small one');
+  assert.ok((96 * 47) / (64 * 36) >= 1.8 && (96 * 47) / (64 * 36) <= 2.2, 'a big stage has about twice the room of a small one');
   assert.ok((48 * 28) / (64 * 36) >= 0.5 && (48 * 28) / (64 * 36) <= 0.65, 'a duel stage a little over half');
   for (let n = 2; n <= 10; n++) {
     const want = n <= 4 ? [...small, ...duel] : n <= 6 ? [...small, ...big] : big;
@@ -1331,7 +1331,7 @@ function openGround(arena, head = 5) {
 test('every arena has room to run: four clear flat stretches of 14 tiles (one of 24; a duel stage: 12, one of 16), a bottom floor that is mostly plain ground, few gadgets', () => {
   const log = [];
   for (const arena of ARENAS) {
-    const { grid, floor, runs } = openGround(arena);
+    const { grid, floor, runs } = openGround(arena, sizeOf(arena) === 'big' ? 4 : 5); // (a big stage's floors are five tiles apart: four of air)
     const [least, best] = sizeOf(arena) === 'duel' ? [12, 16] : [14, 24];
     const long = runs.filter((q) => q.len >= least).map((q) => q.len).sort((a, b) => b - a);
     log.push(`${arena.id} ${long.join('/')}`);

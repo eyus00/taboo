@@ -429,12 +429,12 @@ function startRound(room) {
   if (cup) {
     cup.round++;
     const last = cup.round === cup.rounds;
-    if (cup.round % 2 === 0 && !last) {
+    if (cup.round % 2 === 0 && !last && !cup.tie) {
       twist = pick(TWISTS.slice(1).map((t) => t.id), cup.lastTwist);
       cup.lastTwist = twist;
     }
     // ko: a knockout (the oni at the buzzer is out); left: how many are still in it this round
-    info = { round: cup.round, rounds: cup.rounds, double: last && !cup.ko, leader: -1, ko: cup.ko, left: everyone.length };
+    info = { round: cup.round, rounds: cup.rounds, double: last && !cup.ko && !cup.tie, tie: !!cup.tie, leader: -1, ko: cup.ko, left: everyone.length };
   }
   sim.twist = twistById(twist);
 
@@ -558,14 +558,20 @@ function finishRound(room, reason) {
     cup: null,
   };
   if (cup) {
-    const final = cup.ko ? forfeit || stillIn(room).length < MIN_PLAYERS : cup.round >= cup.rounds || forfeit || members(room).length < MIN_PLAYERS;
+    let final = cup.ko ? forfeit || stillIn(room).length < MIN_PLAYERS : cup.round >= cup.rounds || forfeit || members(room).length < MIN_PLAYERS;
     let table = [];
     if (team) {
-      // the last round counts double here too
+      // Rounds won, not points made: whoever wins a round gets one (two for the last round;
+      // a drawn round gives nobody anything). Level after the last round: one more round, a
+      // tie-break worth one, and another if that is drawn too - there is always a winner.
       const k = g.cup.double ? 2 : 1;
-      cup.teamPts[0] += score[0] * k;
-      cup.teamPts[1] += score[1] * k;
+      if (win >= 0) cup.teamPts[win] += k;
       out.team.total = cup.teamPts.slice();
+      if (final && !forfeit && members(room).length >= MIN_PLAYERS && cup.teamPts[0] === cup.teamPts[1]) {
+        final = false;
+        cup.rounds = cup.round + 1;
+        cup.tie = true;
+      }
       if (final) {
         const [a, b] = cup.teamPts;
         const best = a === b ? -1 : a > b ? 0 : 1;
@@ -583,7 +589,7 @@ function finishRound(room, reason) {
       ];
       if (final) out.winners = table.filter((r) => !r.out).map((r) => r.slot); // the last one standing
     }
-    out.cup = { round: cup.round, rounds: cup.rounds, double: g.cup.double, final, next: final ? 0 : BREAK_MS, table, ko: cup.ko, caught: caught ? caught.slot : -1 };
+    out.cup = { round: cup.round, rounds: cup.rounds, double: g.cup.double, tie: !!cup.tie && !final, final, next: final ? 0 : BREAK_MS, table, ko: cup.ko, caught: caught ? caught.slot : -1 };
     if (final) {
       for (const slot of out.winners) if (bySlot.has(slot)) bySlot.get(slot).wins++;
       room.cup = null;

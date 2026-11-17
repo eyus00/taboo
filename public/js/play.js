@@ -298,11 +298,12 @@ export const play = {
     const tags = [];
     const twist = info.twist && info.twist !== 'none' ? g.twist : null;
     if (team) tags.push(['mode', '', label, label, label]);
-    if (info.cup) tags.push(['round', '', `Round ${info.cup.round}/${info.cup.rounds}`, `${info.cup.round}/${info.cup.rounds}`, `Round ${info.cup.round} of ${info.cup.rounds} in this tournament`]);
+    if (info.cup?.tie) tags.push(['x2', '', 'Tie-break', 'Tie-break', 'Level on rounds won: whoever wins this round wins the tournament']);
+    else if (info.cup) tags.push(['round', '', `Round ${info.cup.round}/${info.cup.rounds}`, `${info.cup.round}/${info.cup.rounds}`, `Round ${info.cup.round} of ${info.cup.rounds} in this tournament`]);
     // a knockout: how many are still in it (whoever is the oni at the buzzer goes out)
     if (ko) tags.push(['left', 'it', info.cup.left === 2 ? 'The final' : `${info.cup.left} left`, info.cup.left === 2 ? 'Final' : `${info.cup.left} left`, info.cup.left === 2 ? 'The final: whoever is the oni at the buzzer loses the tournament' : `${info.cup.left} players are still in: the oni at the buzzer is out`]);
     if (twist?.name) tags.push(['twist', TWIST_ICONS[twist.id] || 'twist', twist.name, twist.name.split(' ')[0], `Twist: ${twist.name} - ${twist.blurb.toLowerCase()}`]);
-    if (info.cup?.double) tags.push(['x2', '', '\u00d72 points', '\u00d72', 'The last round counts double']);
+    if (info.cup?.double) tags.push(['x2', '', '\u00d72 points', '\u00d72', 'The last round is worth two']);
     E.tags.textContent = '';
     for (const [kind, ic, long, short, tip] of tags) {
       const tag = el('span', `tag ${kind}`);

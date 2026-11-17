@@ -607,6 +607,13 @@ try {
     assert.equal(a.round.players.filter((p) => p.bot).length, 1, 'the bot plays every round');
     // the host ends the tournament between rounds
     await until(() => a.ends.length === 4, 'round 2 over', (SHORT + 12) * 1000);
+    // a team tournament counts rounds won, not points made: one for whoever took the round, nothing for a draw
+    const won = [0, 0];
+    for (const e of a.ends.slice(2)) {
+      assert.ok(e.cup && !e.cup.final && !e.cup.double, 'not the last round: worth one');
+      if (e.team.win >= 0) won[e.team.win]++;
+      assert.deepEqual(e.team.total, won, `after round ${e.cup.round}: ${e.team.total} (this round ${e.team.score}, to ${e.team.win})`);
+    }
     a.socket.emit('lobby');
     await until(() => a.room.phase === 'lobby' && !a.room.cup, 'tournament ended');
     assert.deepEqual([a, b, c].map(sideOf), sides0);

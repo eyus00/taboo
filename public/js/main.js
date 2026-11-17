@@ -1575,7 +1575,7 @@ const ABOUT = {
   game: () => ['The games', MODES.map((m) => aboutRow(MODE_ICON[m.id], m.name, ABOUT_MODE[m.id]))],
   cup: () => ['Tournaments', [
     aboutRow('oni', 'Knockout', 'Hot Potato, round after round. Whoever is the oni at the buzzer is out and watches the rest; the others play on, on smaller stages as the field thins, until one is left standing.'),
-    aboutRow('bomb', 'Team Bomb', `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]} over three, five or seven rounds. The sides stay as they are, what they score adds up, and the last round counts double.`),
+    aboutRow('bomb', 'Team Bomb', `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]} over three, five or seven rounds. The sides stay as they are. Whoever wins a round gets a point (a drawn round: nobody does), and the last round is worth two. Level at the end? A tie-break round is played, until one side is ahead.`),
     aboutRow('storm', 'Twists', 'Every second round has one: Moon Gravity, Turbo or Item Frenzy.'),
   ]],
   style: () => ['Styles', [el('p', 'info-lead', 'A style changes how everything looks, never how it plays.'), el('div', 'info-grid')], (grid) => THEMES.forEach((t) => grid.append(aboutPic(t.name, t.blurb, { still: t.id })))],
@@ -1987,13 +1987,15 @@ function showResults(res) {
     const points = `Flags ${fromFlags[0]}–${fromFlags[1]}, bombs ${fromBombs[0]}–${fromBombs[1]}.`;
     const who = lead < 0 ? '' : `${TEAM_NAMES[lead]} win${cup?.final ? ' the tournament' : ''}. `;
     if (cup && !cup.final) {
-      kicker = `Round ${cup.round} of ${cup.rounds} · Team Bomb`;
+      // (a tournament is counted in rounds won: one for a round, two for the last; team.win is who took this one)
+      const took = team.win < 0 ? 'A drawn round: no point for anyone.' : `${TEAM_NAMES[team.win]} take the round${cup.double ? ' and its two points' : ''}, ${team.score[team.win]}–${team.score[1 - team.win]}.`;
+      kicker = cup.tie ? `Level after ${cup.round} rounds · Team Bomb` : `Round ${cup.round} of ${cup.rounds} · Team Bomb`;
       title = lead < 0 ? `Level at ${tally[0]} all` : watching ? `${TEAM_NAMES[lead]} lead ${tally[lead]}–${tally[1 - lead]}` : lead === mine ? `You lead ${tally[lead]}–${tally[1 - lead]}` : `You trail ${tally[1 - lead]}–${tally[lead]}`;
-      sub = points;
+      sub = cup.tie ? `${took} A tie-break round decides it.` : took;
     } else {
       kicker = cup ? 'Tournament over · Team Bomb' : forfeit ? 'Match over' : 'Team Bomb';
       title = watching && lead >= 0 ? `${TEAM_NAMES[lead]} win!` : verdict(lead === mine, lead < 0);
-      sub = forfeit ? 'Everyone else left.' : cup ? `${who}Final score.` : `${who}${points}`;
+      sub = forfeit ? 'Everyone else left.' : cup ? `${who}${tally[0]}–${tally[1]} in rounds.` : `${who}${points}`;
     }
   } else if (cup) {
     // a knockout: who went out this round - and, at the end, who is left standing
@@ -2061,6 +2063,35 @@ function showResults(res) {
       img.src = url;
       f.append(img);
     }
+  }
+  // Everyone who won, side by side under the headline and dancing: the winning team, or
+  // all who got away in a Hot Potato. (Not between rounds, not for a draw; the podium
+  // has its own three.)
+  const troupe = $('res-troupe');
+  const dancers = between || level || ranked ? [] : res.winners.filter((slot) => res.rows.some((r) => r.slot === slot));
+  troupe.hidden = dancers.length < 2;
+  troupe.textContent = '';
+  if (!troupe.hidden) {
+    const side = team && team.win >= 0 ? team.win : -1;
+    troupe.dataset.side = String(side);
+    troupe.append(el('b', 'who', side >= 0 ? `${TEAM_NAMES[side]} win` : 'They got away'));
+    const line = el('div', 'line');
+    dancers.forEach((slot, i) => {
+      const d = el('span', slot === mySlot ? 'dancer me' : 'dancer');
+      d.style.setProperty('--i', String(i));
+      d.style.setProperty('--c', play.colorOf(slot));
+      const url = portraitOf(slot, 112);
+      const pic = el('i', 'pic');
+      if (url) {
+        const img = el('img');
+        img.alt = '';
+        img.src = url;
+        pic.append(img);
+      }
+      d.append(pic, el('small', '', play.nameOf(slot)));
+      line.append(d);
+    });
+    troupe.append(line);
   }
   $('res-praise').textContent = praise(res, mySlot, mood, watching || between);
   paintFeats(res, mySlot);
@@ -2302,7 +2333,8 @@ function paintSides(res, mySlot) {
     const head = el('header');
     const tally = el('span', 'tally', String(cup && total ? total[t] : score[t]));
     head.append(el('b', 'nm', TEAM_NAMES[t]), tally);
-    if (cup && total) head.append(el('small', '', `+${score[t] * (cup.double ? 2 : 1)} this round${cup.double ? ' (double)' : ''}`));
+    // (a tournament counts rounds won: what this side made this round, and what that earned it)
+    if (cup && total) head.append(el('small', '', `${score[t]} this round${score[t] > score[1 - t] ? ` · +${cup.double ? 2 : 1}` : ''}`));
     if (won) head.append(mark('勝', 'wins'));
     else if (final && win < 0) head.append(el('small', '', 'a draw'));
     side.append(head);

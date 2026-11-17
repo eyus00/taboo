@@ -1,7 +1,7 @@
 // Arenas, drawn as text, in three sizes (one tile = 40 px):
 //   duel   48 x 28 tiles, for 2 to 4 players: quick to cross, a few ledges, hardly any toys
 //   small  64 x 36 tiles, for 2 to 6: a good two screens wide and two high
-//   big    96 x 54 tiles, for 5 to 10 (ten players in a small one is chaos): two and a
+//   big    96 x 47 tiles (drawn as 96 x 54: see closer() below), for 5 to 10 (ten players in a small one is chaos): two and a
 //          quarter times the room, and shown from a little further away (`view`)
 // The camera follows the player and a minimap shows the rest. Every stage says how
 // many players it is meant for (`players`); arenaFits() and arenasFor() answer for a
@@ -806,7 +806,19 @@ export function rampY(r, x) {
   return r.y0 + (r.y1 - r.y0) * (f < 0 ? 0 : f > 1 ? 1 : f);
 }
 
-export const ARENAS = MAPS.map(parse);
+// The big stages are drawn with their floors six tiles apart, which asks for a good
+// double jump at every storey. They are played with five: the row of air right under
+// each floor is taken out (walls and updrafts simply get a row shorter), and the
+// slopes are moved up to match.
+const BIG_CUT = [11, 17, 23, 29, 35, 41, 47];
+function closer(def) {
+  if (def.players !== BIG) return def;
+  for (const r of BIG_CUT) if (/[^.u#]/.test(def.map[r])) throw new Error(def.id + ': row ' + r + ' is not plain air');
+  const up = (r) => r - BIG_CUT.filter((c) => c < r).length;
+  return { ...def, map: def.map.filter((_, r) => !BIG_CUT.includes(r)), ramps: (def.ramps || []).map(([c0, r0, c1, r1]) => [c0, up(r0), c1, up(r1)]) };
+}
+
+export const ARENAS = MAPS.map(closer).map(parse);
 export const ARENA_IDS = ARENAS.map((a) => a.id);
 
 // Is this stage meant for n players? (An id nobody knows fits nothing.)
