@@ -1,8 +1,9 @@
 // SHADOW - a moonless-black night in ink and white steel. A moon built out of
 // blocks hangs over stepped hills, pagodas and bamboo; everything you can stand
-// on is a dark block with one crisp white edge, and the players are square
-// little ninjas: black from hood to toe, a white slit to see through, and a
-// headband, a sash and two ribbons in their own colour. Colour is kept for the
+// on is a dark block with one crisp white edge, and the players are blocks too:
+// a ninja's hooded head and nothing under it - black, a white slit to see
+// through, a headband and two ribbons in their own colour. They glide along the
+// ground and turn over and over in the air. Colour is kept for the
 // things the game needs you to read: who is who, who is the oni (red), which
 // portal leads where.
 
@@ -25,6 +26,42 @@ const CELL = 4; // the moon and its clouds are built from blocks this big
 const CLOUDS = [[40, 70, 190], [300, 44, 150], [150, 180, 170], [640, 250, 150], [330, 250, 120], [-30, 270, 130], [690, 90, 130]]; // [x, y, length] of the bars of cloud away from the moon
 
 const snap = (v, s) => Math.round(v / s) * s;
+
+// --- the players are blocks -------------------------------------------------------------
+const BLOCK = 32; // a side of one, in the 32 x 40 box a style draws a player in (it stands on the feet)
+const TURN = Math.PI * 2;
+const SPIN = TURN * 0.95; // how fast a block turns over in the air: an ordinary jump is one whole turn
+// How far each block has turned, remembered per screen (the scene a renderer built is
+// the key: the match, every demo and every menu portrait have their own).
+const turns = new WeakMap();
+const loose = new Map(); // (for a block drawn without a scene)
+function turnOf(sc, pv, t) {
+  let m = loose;
+  if (sc && typeof sc === 'object') {
+    m = turns.get(sc);
+    if (!m) turns.set(sc, (m = new Map()));
+  }
+  const key = pv.id ?? pv.slot;
+  let st = m.get(key);
+  // (a new picture, or one that had stopped for a while: upright)
+  if (!st || t < st.t || t - st.t > 0.3) m.set(key, (st = { a: 0, t, dir: pv.face }));
+  const dt = t - st.t;
+  st.t = t;
+  if (!pv.ground && !pv.frozen) {
+    if (!pv.dashing) {
+      // over and over, the way it is going (or was, if it is going straight up)
+      if (pv.vx > 40) st.dir = 1;
+      else if (pv.vx < -40) st.dir = -1;
+      st.a += st.dir * SPIN * dt;
+    }
+  } else if (st.a) {
+    // on the ground: finish the turn it is nearest to, quickly, and lie flat
+    const to = Math.round(st.a / TURN) * TURN;
+    st.a += (to - st.a) * (1 - Math.exp(-dt * 22));
+    if (Math.abs(to - st.a) < 0.012) st.a = 0;
+  }
+  return st.a;
+}
 
 // ---------------------------------------------------------------------------
 // backdrop (art-board coordinates, painted once)
@@ -721,135 +758,124 @@ export default {
     });
   },
 
+  // A block and nothing else: a ninja's hooded head, as wide as it is tall, with no
+  // body under it. On the ground it glides - no steps, a lean into the run and a
+  // wake of little squares; in the air it turns over and over, and comes down flat.
   player(g, pv, t, sc) {
     const { cx, feet, color } = pv;
     const f = pv.face;
     const oni = pv.isIt;
-    const air = !pv.ground;
     const speed = Math.abs(pv.vx);
-    const moving = pv.ground && speed > 30;
-    const sw = moving ? Math.sin(pv.run) : 0;
-    const bob = moving ? Math.abs(Math.cos(pv.run)) * 1.5 : 0;
-    const top = pv.y - bob;
     const rim = oni ? ONI : WHITE;
+    const top = feet - BLOCK;
+    const my = feet - BLOCK / 2;
+    const ang = turnOf(sc, pv, t);
+    const lean = pv.ground ? clamp(pv.vx / 350, -1, 1) * (pv.dashing ? 0.26 : 0.1) : 0;
 
     if (oni) {
       // red hangs in the air around whoever is it
       const a = g.globalAlpha;
       g.globalAlpha = a * (0.8 + 0.2 * Math.sin(t * 8));
-      g.drawImage(sc.aura, cx - 48, pv.y - 28, 96, 96);
+      g.drawImage(sc.aura, cx - 48, my - 48, 96, 96);
       g.globalAlpha = a;
     }
-    squashAt(g, cx, feet, pv.squash);
-    // a rect given from the middle of the body towards the front (mirrored when facing left)
-    const R = (dx, y, w, h) => g.fillRect(f > 0 ? cx + dx : cx - dx - w, y, w, h);
 
-    // the ribbons of the headband, streaming out behind: two chains of squares
+    // The ribbons of the headband: two chains of squares from the knot (which turns
+    // with the block), streaming out behind - the way we came, whichever way up we are.
+    const kdx = -f * (BLOCK / 2 + 2.5);
+    const kdy = -BLOCK / 2 + 7.5;
+    const kx = cx + Math.cos(ang) * kdx - Math.sin(ang) * kdy;
+    const ky = my + Math.sin(ang) * kdx + Math.cos(ang) * kdy;
+    const back = pv.vx > 30 ? -1 : pv.vx < -30 ? 1 : -f;
     const flow = clamp(speed / 260, 0, 1);
     const lift = clamp(pv.vy / 900, -1, 1) * -9;
-    const kx = -14.5;
-    const ky = top + 5;
     for (let pass = 0; pass < 2; pass++) {
       g.fillStyle = pass ? color : '#000000';
       const grow = pass ? 0 : 1.1;
       for (let j = 0; j < 2; j++) {
-        for (let i = 1; i <= 5; i++) {
-          const s = 5.2 - i * 0.5 - j * 0.6 + grow * 2;
-          const back = i * (2.5 + 1.5 * flow) + j * 1.2;
+        for (let i = 1; i <= 6; i++) {
+          const sz = 5.6 - i * 0.5 - j * 0.6 + grow * 2;
+          const out = i * (2.6 + 1.7 * flow) + j * 1.2;
           const wave = Math.sin(t * 9 + pv.seed + i * 0.9 + j * 1.4) * (0.5 + i * 0.5 * (0.4 + flow));
-          const hang = (1 - flow) * i * (2.1 + j * 0.9);
-          R(kx - back - s / 2, ky + j * 2.4 + wave + hang + lift * (i / 5) - s / 2, s, s);
+          const hang = (1 - flow) * i * (2 + j * 0.9);
+          g.fillRect(kx + back * out - sz / 2, ky + j * 2.4 + wave + hang + lift * (i / 6) - sz / 2, sz, sz);
         }
       }
     }
 
-    // where the limbs are
-    let fa; // back foot  [dx, y, w, h]
-    let fb; // front foot
-    let aa; // back arm
-    let ab; // front arm
-    if (air) {
-      if (pv.vy < 0) {
-        fa = [-10, feet - 10, 7, 6.5];
-        fb = [0, feet - 7.5, 7, 6.5];
-        aa = [-15.5, top + 14, 4.5, 9];
-        ab = [11, top + 14, 4.5, 9];
-      } else {
-        fa = [-11, feet - 8, 7, 6.5];
-        fb = [3.5, feet - 6.5, 7, 6.5];
-        aa = [-17.5, top + 19.5, 8.5, 4.5];
-        ab = [9, top + 19.5, 8.5, 4.5];
-      }
-    } else {
-      fa = [-9 - sw * 5, feet - 7 - Math.max(0, -sw) * 3.5, 7, 7];
-      fb = [2 + sw * 5, feet - 7 - Math.max(0, sw) * 3.5, 7, 7];
-      if (speed > 150) {
-        // running flat out: both arms thrown back
-        aa = [-19, top + 21, 10, 4.5];
-        ab = [-17, top + 25.5, 8, 4];
-      } else {
-        aa = [-13.5, top + 20.5, 4.5, 9];
-        ab = [9, top + 20.5, 4.5, 9];
-      }
+    squashAt(g, cx, feet, pv.squash);
+    if (lean) {
+      // (about the edge it slides on)
+      g.translate(cx, feet);
+      g.rotate(lean);
+      g.translate(-cx, -feet);
     }
-    // the outline first (every part a little bigger, in white - red on the oni), then the black
+    if (ang) {
+      g.translate(cx, my);
+      g.rotate(ang);
+      g.translate(-cx, -my);
+    }
+    // a rect given from the middle of the block towards the front (mirrored when facing left)
+    const R = (dx, y, w, h) => g.fillRect(f > 0 ? cx + dx : cx - dx - w, y, w, h);
+    const h2 = BLOCK / 2;
+
+    // the outline first (a little bigger, in white - red on the oni), then the black
     for (let pass = 0; pass < 2; pass++) {
-      const o = pass ? 0 : 1.4;
+      const o = pass ? 0 : 1.6;
       g.fillStyle = pass ? BODY : rim;
-      R(fa[0] - o, fa[1] - o, fa[2] + o * 2, fa[3] + o * 2);
-      R(fb[0] - o, fb[1] - o, fb[2] + o * 2, fb[3] + o * 2);
-      R(aa[0] - o, aa[1] - o, aa[2] + o * 2, aa[3] + o * 2);
-      R(ab[0] - o, ab[1] - o, ab[2] + o * 2, ab[3] + o * 2);
-      R(-9 - o, top + 18 - o, 18 + o * 2, 15.5 + o * 2); // body
-      R(-12 - o, top + 2 - o, 24 + o * 2, 17 + o * 2); // hood
-      R(-10 - o, top - o, 20 + o * 2, 19 + o * 2);
+      R(-h2 - o, top - o, BLOCK + o * 2, BLOCK + o * 2);
+      R(-h2 - 5 - o, top + 3.4 - o, 5.5 + o * 2, 8 + o * 2); // the knot at the back
       if (oni) {
         // horns
-        R(-9.5 - o, top - 4.5 - o, 4 + o * 2, 6 + o * 2);
-        R(-11 - o, top - 8 - o, 3 + o * 2, 4.5 + o * 2);
-        R(5.5 - o, top - 4.5 - o, 4 + o * 2, 6 + o * 2);
-        R(8 - o, top - 8 - o, 3 + o * 2, 4.5 + o * 2);
+        R(-12 - o, top - 5.5 - o, 5 + o * 2, 7 + o * 2);
+        R(-14 - o, top - 10 - o, 3.6 + o * 2, 5.5 + o * 2);
+        R(7 - o, top - 5.5 - o, 5 + o * 2, 7 + o * 2);
+        R(10.4 - o, top - 10 - o, 3.6 + o * 2, 5.5 + o * 2);
       }
     }
+    // (a block, not a cut-out: light catches the top of it and the face it leads with)
+    g.fillStyle = '#1d1d24';
+    R(-h2, top, BLOCK, 2.2);
+    R(h2 - 2.2, top, 2.2, BLOCK);
     if (oni) {
       g.fillStyle = WHITE;
-      R(-9.5, top - 4.5, 4, 4.5);
-      R(-11, top - 8, 3, 4.5);
-      R(5.5, top - 4.5, 4, 4.5);
-      R(8, top - 8, 3, 4.5);
+      R(-12, top - 5.5, 5, 5);
+      R(-14, top - 10, 3.6, 5.5);
+      R(7, top - 5.5, 5, 5);
+      R(10.4, top - 10, 3.6, 5.5);
     }
 
-    // their colour: the headband with its knot, and the sash
+    // their colour: the headband with its knot, and a band along the foot of the block
     g.fillStyle = color;
-    R(-12, top + 3, 24, 3.8);
-    R(-16, top + 2, 4.5, 6);
-    R(-9, top + 25.5, 18, 3.4);
-    R(-9, top + 28.9, 3.6, 3.6);
+    R(-h2, top + 5, BLOCK, 5);
+    R(-h2 - 5, top + 3.4, 5.5, 8);
+    R(-h2, feet - 6.6, BLOCK, 3.4);
 
     // the slit they see through
+    const ey = top + 14.5;
     if (pv.stunned) {
       g.fillStyle = STEEL;
-      R(-4, top + 9, 15, 5);
+      R(-6, ey, 19, 7);
       g.fillStyle = BODY;
-      R(-1.5, top + 10.2, 4, 1.3);
-      R(4.5, top + 11.6, 4, 1.3);
+      R(-2.5, ey + 1.6, 5, 1.6);
+      R(5.5, ey + 3.6, 5, 1.6);
     } else if (pv.blink > 0.5 && !oni) {
       g.fillStyle = WHITE;
-      R(-4, top + 10.8, 15, 1.6);
+      R(-6, ey + 2.6, 19, 1.8);
     } else {
       g.fillStyle = oni ? ONI : WHITE;
-      R(-4, top + 9, 15, 5);
+      R(-6, ey, 19, 7);
       if (oni) {
         // a scowl: the brow comes down in the middle, and the eyes burn white
         g.fillStyle = BODY;
-        R(0.5, top + 9, 6.5, 2);
+        R(-0.5, ey, 8, 2.6);
         g.fillStyle = '#ffffff';
-        R(-1.5, top + 11.2, 3, 2);
-        R(6, top + 11.2, 3, 2);
+        R(-3, ey + 3.2, 3.6, 2.6);
+        R(6.4, ey + 3.2, 3.6, 2.6);
       } else {
         g.fillStyle = BODY;
-        R(0.2, top + 10, 2.4, 3.2);
-        R(6.6, top + 10, 2.4, 3.2);
+        R(-0.6, ey + 1.4, 3.2, 4.4);
+        R(7.4, ey + 1.4, 3.2, 4.4);
       }
     }
   },
@@ -892,12 +918,18 @@ export default {
         R.emit({ x: pv.cx + d * 8, y: pv.feet - 2, vx: d * (40 + Math.random() * 130 * (0.5 + impact)), vy: -30 - Math.random() * 70, g: 500, life: 0.36, size: 2.5 + Math.random() * 3, shape: 'square', rot: Math.random() * 3, vr: d * 6, color: i % 3 ? '#8b8c97' : '#ffffff' });
       }
     },
-    step(R, pv) {
-      if (Math.random() < 0.6) R.emit({ x: pv.cx - pv.face * 9, y: pv.feet - 2, vx: -pv.face * 36, vy: -34, g: 400, life: 0.26, size: 2 + Math.random() * 1.5, shape: 'square', rot: Math.random() * 3, vr: 4, color: '#6d6e79' });
-    },
-    // embers drift up off the oni
+    // (no footsteps: a block glides - see trail)
+    // A wake of little squares behind a block that is gliding, a few in its own colour;
+    // a thinner one behind a block turning through the air. And embers drift up off the oni.
     trail(R, pv, dt) {
-      if (pv.isIt && Math.random() < dt * 7) R.emit({ x: pv.cx + (Math.random() - 0.5) * 26, y: pv.y + 6 + Math.random() * 30, vx: (Math.random() - 0.5) * 20, vy: -40 - Math.random() * 40, life: 0.6, size: 2 + Math.random() * 2, shape: 'square', rot: Math.random() * 3, vr: 3, color: ONI, back: true });
+      const speed = Math.abs(pv.vx);
+      if (speed > 110) {
+        const dir = pv.vx > 0 ? 1 : -1;
+        if (pv.ground) {
+          if (Math.random() < dt * 30 * Math.min(1, speed / 350)) R.emit({ x: pv.cx - dir * 19, y: pv.feet - 3 - Math.random() * 7, vx: -dir * (20 + Math.random() * 50), vy: -6 - Math.random() * 22, life: 0.32, size: 3 + Math.random() * 3, grow: -8, shape: 'square', color: Math.random() < 0.35 ? pv.color : '#ffffff', alpha: 0.75, back: true });
+        } else if (Math.random() < dt * 12) R.emit({ x: pv.cx - dir * 12 + (Math.random() - 0.5) * 12, y: pv.feet - 20 + (Math.random() - 0.5) * 18, vx: -pv.vx * 0.12, vy: -pv.vy * 0.08, life: 0.3, size: 3.5, grow: -9, shape: 'square', rot: Math.random() * 3, vr: 4, color: Math.random() < 0.5 ? pv.color : '#ffffff', alpha: 0.6, back: true });
+      }
+      if (pv.isIt && Math.random() < dt * 7) R.emit({ x: pv.cx + (Math.random() - 0.5) * 26, y: pv.y + 10 + Math.random() * 28, vx: (Math.random() - 0.5) * 20, vy: -40 - Math.random() * 40, life: 0.6, size: 2 + Math.random() * 2, shape: 'square', rot: Math.random() * 3, vr: 3, color: ONI, back: true });
     },
     // out of a puff of smoke
     respawn(R, pv) {

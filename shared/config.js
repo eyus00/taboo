@@ -200,7 +200,7 @@ export const COLOR_NAMES = ['Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Pink', 
 // Art styles (drawing code lives in public/js/themes). Ink is the house style.
 export const THEMES = [
   { id: 'ink', name: 'Ink & Sakura', blurb: 'Brush strokes on rice paper' },
-  { id: 'shadow', name: 'Shadow', blurb: 'Black ink, white steel' },
+  { id: 'shadow', name: 'Shadow', blurb: 'Block ninjas on a black night' },
   { id: 'neon', name: 'Neon District', blurb: 'Cyberpunk rain and chrome' },
   { id: 'nightmare', name: 'Nightmare', blurb: 'Something is watching' },
   { id: 'sketch', name: 'Sketchbook', blurb: 'Doodles come alive' },

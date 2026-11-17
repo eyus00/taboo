@@ -155,6 +155,10 @@
               <span class="mark"><svg class="ic shut"><use href="#i-lock" /></svg><svg class="ic open"><use href="#i-globe" /></svg></span>
               <b id="open-label">Private</b><kbd>V</kbd>
             </button>
+            <!-- (a narrow screen has no title scroll beside the room: this is its way to another room) -->
+            <button class="rm-icon rm-other" id="btn-other" aria-label="Join another room with its code" title="Join another room">
+              <span class="ring"><svg class="ic" aria-hidden="true"><use href="#i-key" /></svg></span>
+            </button>
             <button class="m-x" id="btn-leave" aria-label="Leave the room (Esc)"><kbd>Esc</kbd><span class="ring"><svg class="ic" aria-hidden="true"><use href="#i-close" /></svg></span></button>
           </header>
 
@@ -208,6 +212,8 @@
                 </header>
                 <ul class="rm-seats" id="players"></ul>
               </section>
+              <!-- (a phone held upright has no room for the key in the top bar: there the way to another room is a line under the players) -->
+              <button class="link rm-other-low" id="btn-other-low"><svg class="ic" aria-hidden="true"><use href="#i-key" /></svg>Join another room with its code</button>
               <footer class="rm-go">
                 <p class="note" id="lobby-note"></p>
                 <p class="note" id="start-note"></p>
@@ -442,6 +448,21 @@
             <p class="note" id="profile-note"></p>
             <button class="btn primary" id="btn-profile-save" type="submit">Save name <kbd>Enter</kbd></button>
           </div>
+        </form>
+      </dialog>
+
+      <!-- another room's code, typed from inside a room (a narrow screen; a wide one has the title scroll for it) -->
+      <dialog id="s-code" class="modal sm" aria-labelledby="code-h">
+        <header class="m-top">
+          <h2 id="code-h">Another room</h2>
+          <button class="m-x" data-close aria-label="Close (Esc)"><kbd>Esc</kbd><span class="ring"><svg class="ic" aria-hidden="true"><use href="#i-close" /></svg></span></button>
+        </header>
+        <form id="code-form" class="m-body codecard">
+          <label class="lab" for="code-input"><svg class="ic" aria-hidden="true"><use href="#i-key" /></svg>Its code</label>
+          <input id="code-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="0000" enterkeyhint="go" aria-describedby="code-error code-note" data-autofocus />
+          <p class="error" id="code-error" role="alert"></p>
+          <p class="note" id="code-note"></p>
+          <button class="btn primary" id="btn-code-go" type="submit">Change rooms <kbd>Enter</kbd></button>
         </form>
       </dialog>
 

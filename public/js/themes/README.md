@@ -74,7 +74,7 @@ every player sees the same scenery; never use `Math.random()` for scenery.
 ### pv (a player, as the style sees it)
 
 ```
-slot, color, name, x, y (top-left of the 32x40 box), cx, feet, vx, vy,
+slot, id (the player's real place; slot is the colour worn), color, name, x, y (top-left of the 32x40 box), cx, feet, vx, vy,
 ground, face (-1 | 1), isIt, immune, stunned, frozen, speedy, springy, shield, local,
 run (advances while running - drive leg cycles with Math.sin(pv.run)),
 squash (-0.2 stretch .. 0.3 squash; use squashAt(g, cx, feet, pv.squash) from util.js),
@@ -89,6 +89,10 @@ outline of a Titan, the name, the IT marker, and the orb while travelling
 through a portal. Someone who has Vanished is not handed to you at all on the
 screens that may not see them; on their own (and their side's) you draw them
 as ever and the renderer fades the result.
+A style may keep a little memory per player between frames (Shadow remembers how
+far each block has turned): key it by the `scene` you are handed - every renderer
+builds its own, so the match, each demo and each menu portrait never share one -
+and then by `pv.id`.
 Whoever `isIt` should still look different in your own drawing (angry eyes, a
 glow sprite, a tint...) - it is the most important thing on screen.
 

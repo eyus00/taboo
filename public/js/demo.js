@@ -1038,6 +1038,57 @@ export const demos = {
   },
 };
 
+// --- one item's act on its own, over and over: the card that opens beside an item in the room ---
+// (its own copy of the little arena: a scene puts its cast's starts into the arena it plays on)
+const actScene = (kind, arena) => ({
+  arena,
+  *play(d) {
+    d.at = ITEM_ORDER.indexOf(kind);
+    yield* ITEM_ACTS[kind](d);
+  },
+});
+let peek = null; // { demo, kind, raf, last }
+function peekLoop(now) {
+  if (!peek || !peek.raf) return;
+  peek.raf = requestAnimationFrame(peekLoop);
+  const dt = now - peek.last;
+  if (dt < 30) return;
+  peek.last = now;
+  peek.demo.frame(Math.min(dt, 100), now, { made: false });
+}
+export const itemPeek = {
+  // box: an element to play in (the same one every time: its picture is kept). False if there is nothing to show.
+  show(box, kind) {
+    if (!ITEM_ACTS[kind] || calm.matches) return false; // (less motion asked for: the words will do)
+    if (!peek || peek.demo.box !== box) {
+      this.hide();
+      const arena = { ...SCENES.items.arena, id: 'demo-peek' };
+      peek = { demo: new Demo(box, actScene(kind, arena)), kind, raf: 0, last: 0 };
+    } else {
+      // from the top, whichever item it was showing
+      const d = peek.demo;
+      d.scene = actScene(kind, d.scene.arena);
+      d.run = new Run(d.scene);
+      d.sig = {};
+      d.restart(0);
+      peek.kind = kind;
+    }
+    if (!peek.raf) {
+      peek.last = performance.now() - 33;
+      peek.raf = requestAnimationFrame(peekLoop);
+    }
+    return true;
+  },
+  hide() {
+    if (!peek) return;
+    if (peek.raf) cancelAnimationFrame(peek.raf);
+    peek.raf = 0;
+  },
+  get kind() {
+    return peek && peek.raf ? peek.kind : '';
+  },
+};
+
 // For the automated checks: play a scene without drawing it and report what happened.
 export function traceScene(id, maxTicks = 6000, every = 0) {
   const run = new Run(SCENES[id]);

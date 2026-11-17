@@ -77,6 +77,11 @@ let lastResults = null;
 let nextTimer = 0;
 let cardTheme = DEFAULT_THEME; // the style the arena cards were last painted in
 let demos = null; // the live demos on the How to play page (loaded when it is first opened)
+// the card that explains an item in the room (see itemTip):
+let tip = null; // its parts, made the first time it is wanted
+let tipFor = null; // the item it is open for
+let tipTimer = 0;
+let peeker = null; // demo.js's player for one item (loaded with the first card)
 
 // ---------------------------------------------------------------------------
 // The painted scene behind the menus
@@ -111,7 +116,7 @@ const initial = (name) => (Array.from(String(name || '').trim())[0] || '?').toUp
 // rooms, your profile, a question. Each is a native <dialog>, so what is
 // behind it cannot be reached (by pointer, by Tab or by a screen reader) and
 // is not rebuilt; Esc, its cross or a click on the dark around it closes it.
-const POPUPS = ['ask', 'info', 'find', 'profile']; // (front to back, should two be open)
+const POPUPS = ['ask', 'info', 'find', 'profile', 'code']; // (front to back, should two be open)
 const popupOpen = (name) => $(`s-${name}`).open;
 const popupTop = () => POPUPS.find(popupOpen) || '';
 function openPopup(name) {
@@ -174,6 +179,7 @@ const top = () => popupTop() || overlay || (screen === 'home' ? panel || 'home' 
 
 function show(name, beside = '') {
   closePopups();
+  hideItemTip();
   screen = name;
   panel = name === 'home' ? beside : '';
   if (name !== 'game') paintScene();
@@ -552,12 +558,64 @@ function setCode(next) {
 async function submitCode() {
   if (code.length !== CODE_LEN || busy) return;
   codeTried = code;
+  if (room) {
+    // Already in a room: the code of another takes you there - once you have said so.
+    // (The server looks at the other room first: if it is not there, or full, you stay where you are.)
+    if (code === room.code) {
+      $('join-error').textContent = 'You are in this room.';
+      return;
+    }
+    const to = code;
+    if (!(await ask({ title: `Go to room ${to}?`, body: whatLeavingDoes(), yes: 'Change rooms' }))) {
+      codeTried = ''; // (typed again, it asks again)
+      return setCode('');
+    }
+    if (code !== to || busy) return;
+  }
+  const was = room?.code;
   const ok = await enterRoom('join', { code, name: myName }, $('join-error'), $('btn-join-go'));
-  if (!ok && top() === 'home') {
+  if (ok) {
+    if (was && was !== room.code) toast(`You are in room ${room.code} now`);
+    setCode(''); // (the room says its own code; the squares are free for the next one)
+  } else if (top() === 'home' || room) {
     $('digits').classList.add('bad');
     sfx.play('lose');
   }
 }
+// (what becomes of the room you are in when you go to another)
+function whatLeavingDoes() {
+  const people = room ? room.players.filter((p) => !p.bot).length : 0;
+  return !amHost() ? 'You leave the room you are in.' : people > 1 ? 'You are the host here: the room passes to the next player.' : 'Nobody else is in this room: it closes when you go.';
+}
+// On a narrow screen the title scroll is not beside the room: a key in the room's
+// top bar opens a small sheet for the other room's code. Its button is the question.
+for (const id of ['btn-other', 'btn-other-low']) {
+  $(id).addEventListener('click', () => {
+    if (!room) return;
+    $('code-input').value = '';
+    $('code-error').textContent = '';
+    $('code-note').textContent = whatLeavingDoes();
+    sfx.play('click');
+    openPopup('code');
+  });
+}
+$('code-input').addEventListener('input', () => {
+  const inp = $('code-input');
+  inp.value = inp.value.replace(/\D/g, '').slice(0, CODE_LEN);
+  $('code-error').textContent = '';
+});
+$('code-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const to = $('code-input').value.replace(/\D/g, '');
+  if (to.length !== CODE_LEN) return void ($('code-error').textContent = `Type the ${CODE_LEN} digits of the room's code.`);
+  if (room && to === room.code) return void ($('code-error').textContent = 'You are in this room.');
+  const was = room?.code;
+  // (enterRoom opens the new room, which closes this sheet; if the room is not there or full, the sheet stays and says so)
+  const ok = await enterRoom('join', { code: to, name: myName }, $('code-error'), $('btn-code-go'));
+  if (ok && was && was !== room.code) toast(`You are in room ${room.code} now`);
+  else if (!ok) sfx.play('lose');
+});
+
 function retryCode() {
   if (code.length !== CODE_LEN) {
     // not whole yet: say what is missing, and put the keyboard where it goes
@@ -572,8 +630,10 @@ function retryCode() {
 
 // Typing a digit anywhere on this screen goes into the code.
 function typeCode(next) {
+  const on = top();
   setCode(next);
-  if (top() === 'home' && !isTouch && document.activeElement !== $('digits')) $('digits').focus({ preventScroll: true });
+  // (typed from the room: the squares take the focus too, so Enter and Backspace go on belonging to the code)
+  if ((on === 'home' || on === 'lobby') && top() === on && !isTouch && document.activeElement !== $('digits')) $('digits').focus({ preventScroll: true });
 }
 
 // Tapping the code opens our own little number pad under it (a phone has no
@@ -598,7 +658,7 @@ $('btn-join-go').addEventListener('click', () => {
   retryCode();
 });
 addEventListener('paste', (e) => {
-  if (top() !== 'home') return;
+  if (top() !== 'home' && top() !== 'lobby') return;
   const text = e.clipboardData?.getData('text') || '';
   // an invite link (its ?room=), a code on its own, or any four digits standing together
   const found = text.match(/[?&]room=(\d{4})(?!\d)/) || text.match(/(?<!\d)(\d{4})(?!\d)/);
@@ -1062,6 +1122,97 @@ function buildItems() {
     box.append(b);
   }
 }
+// --- an item, explained where you point at it ---------------------------------------
+// Rest the pointer on an item in the room (the host's buttons, a guest's row of
+// icons), or bring the keyboard's focus to one, and a card opens over it: the
+// How to play demo of that item, playing, with its name and what it does. It
+// never takes the pointer, and it goes when the pointer or the focus does.
+// (tip, tipFor, tipTimer and peeker are declared at the top, with the rest of what the menus remember)
+function itemTip() {
+  if (tip) return tip;
+  const box = el('div', 'item-tip');
+  box.id = 'item-tip';
+  box.hidden = true;
+  box.setAttribute('role', 'tooltip');
+  box.innerHTML = '<div class="it-demo"></div><div class="it-what"><span class="pic"></span><span class="words"><b></b><small></small></span><em></em></div><i class="it-tail"></i>';
+  document.body.append(box);
+  tip = { box, demo: box.querySelector('.it-demo'), pic: box.querySelector('.pic'), name: box.querySelector('b'), blurb: box.querySelector('small'), state: box.querySelector('em') };
+  return tip;
+}
+// (what the card says, and where it stands: above the item, or below it if there is no room above)
+function paintItemTip() {
+  if (!tip || !tipFor) return;
+  if (!tipFor.isConnected) return hideItemTip();
+  const kind = tipFor.dataset.kind;
+  const info = ITEM_INFO[kind];
+  tip.pic.innerHTML = svg(kind);
+  tip.name.textContent = info.name;
+  tip.blurb.textContent = info.blurb;
+  const host = tipFor.tagName === 'BUTTON';
+  const inBox = host && tipFor.classList.contains('in');
+  tip.state.hidden = !host;
+  tip.state.textContent = inBox ? 'In the boxes' : 'Left out';
+  tip.state.classList.toggle('out', !inBox);
+  const z = tip.box.currentCSSZoom || 1;
+  const at = tipFor.getBoundingClientRect();
+  const size = tip.box.getBoundingClientRect();
+  const left = Math.min(Math.max(8, at.left + at.width / 2 - size.width / 2), innerWidth - size.width - 8);
+  const above = at.top - size.height - 12 >= 8;
+  tip.box.classList.toggle('below', !above);
+  tip.box.style.left = `${left / z}px`;
+  tip.box.style.top = `${(above ? at.top - size.height - 12 : at.bottom + 12) / z}px`;
+  tip.box.style.setProperty('--tail', `${(at.left + at.width / 2 - left) / z}px`);
+}
+function showItemTip(target) {
+  if (tipFor === target || !ITEM_INFO[target.dataset.kind]) return;
+  const t = itemTip();
+  tipFor = target;
+  t.box.hidden = false;
+  t.demo.hidden = !peeker; // (until the demos have been fetched: the words alone)
+  paintItemTip();
+  const play = () => {
+    if (tipFor !== target) return;
+    t.demo.hidden = !peeker.show(t.demo, target.dataset.kind);
+    paintItemTip(); // (it has its full height now)
+  };
+  if (peeker) play();
+  else import('./demo.js').then((m) => ((peeker = m.itemPeek), play())).catch(() => {});
+}
+function hideItemTip() {
+  clearTimeout(tipTimer);
+  tipFor = null;
+  if (tip) tip.box.hidden = true;
+  peeker?.hide();
+}
+{
+  const item = (e) => (e.target instanceof Element ? e.target.closest('#opt-items .item, .gc-items [data-kind]') : null);
+  const lobby = $('s-lobby');
+  lobby.addEventListener('pointerover', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const it = item(e);
+    if (!it || it === tipFor) return;
+    clearTimeout(tipTimer);
+    // (a moment's rest before the first card; going along the row, the next one at once)
+    if (tipFor) showItemTip(it);
+    else tipTimer = setTimeout(() => showItemTip(it), 220);
+  });
+  lobby.addEventListener('pointerout', (e) => {
+    const it = item(e);
+    if (!it || (e.relatedTarget instanceof Node && it.contains(e.relatedTarget))) return;
+    clearTimeout(tipTimer);
+    // (unless the pointer went straight on to another item, the card goes)
+    const next = e.relatedTarget instanceof Element ? e.relatedTarget.closest('#opt-items .item, .gc-items [data-kind]') : null;
+    if (!next) hideItemTip();
+  });
+  lobby.addEventListener('focusin', (e) => {
+    const it = item(e);
+    if (it && it.matches(':focus-visible')) showItemTip(it);
+  });
+  lobby.addEventListener('focusout', (e) => item(e) && hideItemTip());
+  addEventListener('scroll', hideItemTip, true);
+  addEventListener('resize', hideItemTip);
+}
+
 function toggleItem(kind) {
   if (!amHost() || !room.settings.powerups) return;
   const now = itemsIn();
@@ -1157,9 +1308,9 @@ function syncOptions() {
     b.classList.toggle('in', on);
     b.disabled = !boxes;
     b.setAttribute('aria-pressed', String(on));
-    b.setAttribute('aria-label', `${info.name}: ${on ? 'in the boxes. Take it out' : 'not in the boxes. Put it in'}`);
-    b.title = `${info.name}: ${info.blurb}`;
+    b.setAttribute('aria-label', `${info.name}: ${info.blurb}. ${on ? 'In the boxes: take it out' : 'Not in the boxes: put it in'}`);
   }
+  if (tipFor) paintItemTip(); // (the card over an item says whether it is in)
   paintCards();
   paintFaces();
 }
@@ -1231,7 +1382,7 @@ function paintGuestCard() {
   const boxes = fact('box', s.powerups ? 'Lucky boxes' : 'No lucky boxes');
   if (s.powerups) {
     const row = el('span', 'gc-items');
-    for (const kind of itemsIn()) row.insertAdjacentHTML('beforeend', `<i title="${ITEM_INFO[kind].name}">${svg(kind)}</i>`);
+    for (const kind of itemsIn()) row.insertAdjacentHTML('beforeend', `<i data-kind="${kind}" role="img" aria-label="${ITEM_INFO[kind].name}: ${ITEM_INFO[kind].blurb}">${svg(kind)}</i>`);
     boxes.append(row);
   }
   box.append(head, pics, facts);
@@ -2293,8 +2444,10 @@ function goBack() {
   else if (overlay === 'results') backFromResults();
   else if (screen === 'game') openPause();
   else if (panel === 'help') closeHelp();
-  else if (panel === 'lobby') leaveIfSure();
-  else if (screen === 'name' && myName) toHome();
+  else if (panel === 'lobby') {
+    if (code) setCode(''); // (a code half typed for another room: Esc takes that back first)
+    else leaveIfSure();
+  } else if (screen === 'name' && myName) toHome();
 }
 
 // One place for every shortcut. Returns true when the key was used.
@@ -2338,6 +2491,13 @@ function shortcut(key, e) {
     // Enter on the code (or anywhere but a button, once the code is complete) tries it again
     if (key === 'enter' && (document.activeElement === $('digits') || (code.length === CODE_LEN && !onButton))) return retryCode(), true;
   } else if (at === 'lobby') {
+    // The title scroll is still there beside the room, and so is its code: digits go into
+    // it from anywhere in the room (the fourth asks before it takes you to the other room).
+    if (/^\d$/.test(key)) return typeCode(code + key), true;
+    if (code) {
+      if (key === 'backspace') return typeCode(code.slice(0, -1)), true;
+      if (key === 'enter' && document.activeElement === $('digits')) return retryCode(), true;
+    }
     // Enter starts the match from anywhere but a button (a button does what it says)
     if (key === 'enter' && !onButton) {
       if (!$('btn-start').hidden && !$('btn-start').disabled) $('btn-start').click();

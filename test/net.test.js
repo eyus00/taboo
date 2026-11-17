@@ -758,6 +758,57 @@ try {
     await sleep(150);
   });
 
+  await test('from one room to another: joining a second room leaves the first; a room that is not there, or full, leaves you where you are', async () => {
+    const one = client('Ichika');
+    const two = client('Futaba');
+    const walker = client('Aruku');
+    const people = (x) => x.room.players.filter((p) => !p.bot);
+    // (a room's own list arrives with the answer; after that, with every change)
+    const made = async (x, event, msg) => {
+      const res = await x.call(event, msg);
+      if (res.room) x.room = res.room;
+      return res;
+    };
+    const r1 = (await made(one, 'create', { name: 'Ichika' })).room.code;
+    const r2 = (await made(two, 'create', { name: 'Futaba' })).room.code;
+    assert.ok((await made(walker, 'join', { code: r1, name: 'Aruku' })).ok);
+    await until(() => people(one).length === 2, 'in the first room');
+    // a room that is not there: an error, and nothing changes
+    const none = ['0000', '9999', '5555'].find((c) => c !== r1 && c !== r2);
+    const miss = await walker.call('join', { code: none, name: 'Aruku' });
+    assert.ok(miss.error && /No room/.test(miss.error));
+    await sleep(120);
+    assert.equal(people(one).length, 2, 'still in the first room');
+    // a full room: the same
+    two.socket.emit('settings', { size: 2, bots: false });
+    await until(() => two.room.settings.size === 2 && two.room.players.length === 1, 'two seats, no bots');
+    const filler = client('Michiru');
+    assert.ok((await made(filler, 'join', { code: r2, name: 'Michiru' })).ok);
+    const full = await walker.call('join', { code: r2, name: 'Aruku' });
+    assert.ok(full.error && /full/.test(full.error));
+    await sleep(120);
+    assert.equal(people(one).length, 2, 'a full room: still in the first');
+    // room for one more: over they go - the first room has a bot in the seat again, and hears no more of them
+    two.socket.emit('settings', { size: 3 });
+    await until(() => two.room.settings.size === 3, 'a third seat');
+    const over = await made(walker, 'join', { code: r2, name: 'Aruku' });
+    assert.ok(over.ok && over.room.code === r2);
+    await until(() => people(one).length === 1 && people(two).length === 3, 'left the first, in the second');
+    assert.equal(one.room.players.length, 6, 'a bot took the seat they left');
+    assert.equal(walker.room.code, r2, 'and the room they hear from is the second');
+    // joining the room you are in changes nothing
+    const again = await walker.call('join', { code: r2, name: 'Aruku' });
+    assert.ok(again.ok);
+    await sleep(100);
+    assert.equal(people(two).length, 3);
+    // the host of a room with someone in it walks away: the room passes on
+    assert.ok((await made(two, 'join', { code: r1, name: 'Futaba' })).ok);
+    await until(() => walker.room.hostId !== two.socket.id && people(walker).length === 2, 'the second room has a new host');
+    assert.ok([filler.socket.id, walker.socket.id].includes(walker.room.hostId));
+    for (const x of [one, two, walker, filler]) x.socket.close();
+    await sleep(150);
+  });
+
   console.log(`net: ${passed} tests passed`);
 } finally {
   clearInterval(chase);
