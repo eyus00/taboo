@@ -122,7 +122,7 @@ export const ECLIPSE_SIGHT = 150; // what they still see: a circle of this radiu
 export const GHOST_TICKS = 300; // Vanish: 5 s in which nobody else is shown where you are (a touch still counts)
 export const GHOST_NEAR = 84; // bots notice someone they cannot see only when that someone is this close (px): bumping distance
 export const STAR_TICKS = 240; // Titan: 4 s in which nothing lands on you - no tag, no bomb, no item, no thorns
-export const PORTAL_SETTLE_TICKS = 18; // a portal takes you only once your feet have been on the ground this long (0.3 s): landing in or beside one does not send you off
+export const PORTAL_SETTLE_TICKS = 8; // a portal takes you only once your feet have been on the ground this long (about an eighth of a second): landing in one does not send you off at once, but you barely wait
 export const DASH_TICKS = 12; // a fifth of a second...
 export const DASH_SPEED = 1200; // ...at this speed, dead straight the way you face: 240 px, six tiles (a run covers 66 px in that time)
 

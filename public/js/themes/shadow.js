@@ -30,7 +30,7 @@ const snap = (v, s) => Math.round(v / s) * s;
 // --- the players are blocks -------------------------------------------------------------
 const BLOCK = 32; // a side of one, in the 32 x 40 box a style draws a player in (it stands on the feet)
 const TURN = Math.PI * 2;
-const SPIN = TURN * 0.95; // how fast a block turns over in the air: an ordinary jump is one whole turn
+const SPIN = TURN * 0.55; // how fast a block turns over in the air: unhurried - an ordinary jump is a little over half a turn, finished as it lands
 // How far each block has turned, remembered per screen (the scene a renderer built is
 // the key: the match, every demo and every menu portrait have their own).
 const turns = new WeakMap();
@@ -57,7 +57,7 @@ function turnOf(sc, pv, t) {
   } else if (st.a) {
     // on the ground: finish the turn it is nearest to, quickly, and lie flat
     const to = Math.round(st.a / TURN) * TURN;
-    st.a += (to - st.a) * (1 - Math.exp(-dt * 22));
+    st.a += (to - st.a) * (1 - Math.exp(-dt * 13));
     if (Math.abs(to - st.a) < 0.012) st.a = 0;
   }
   return st.a;

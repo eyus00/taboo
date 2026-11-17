@@ -213,7 +213,7 @@ test('portals: you fly to the partner as an orb, with no control, and are not se
   assert.ok(p.orb > 0, 'works again after stepping out');
   // A portal waits for feet that have been on the ground a moment: coming down in one - off a jump,
   // a trampoline, a launcher - sends you nowhere, and there is time to step away.
-  assert.ok(PORTAL_SETTLE_TICKS >= 15 && PORTAL_SETTLE_TICKS <= 30, 'a quarter to half a second');
+  assert.ok(PORTAL_SETTLE_TICKS >= 6 && PORTAL_SETTLE_TICKS <= 12, 'a tenth to a fifth of a second');
   const drop = makeState(60 - PW / 2, floorY - 150); // falling straight into the mouth of the one at x = 60
   let air = 0;
   while (!drop.ground && air < 120) {
@@ -225,8 +225,8 @@ test('portals: you fly to the partner as an orb, with no control, and are not se
   assert.equal(drop.orb, 0, 'still here just before the moment is up');
   run(drop, 0, 4);
   assert.ok(drop.orb > 0, 'stay, and it takes you');
-  const off = makeState(60 - PW / 2, floorY - 150); // the same fall, but walking away on landing
-  while (!off.ground) stepPlayer(off, 0, box);
+  const off = makeState(60 - PW / 2, floorY - 150); // the same fall, but steering away as they land
+  while (!off.ground) stepPlayer(off, off.y > floorY - 40 ? IN_RIGHT : 0, box); // (already steering away as they come down)
   run(off, IN_RIGHT, 40);
   assert.ok(off.orb === 0 && off.x > 200 && portalAt(box, off.x, off.y) < 0, 'step away in time and you stay where you are');
 });
