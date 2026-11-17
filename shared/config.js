@@ -22,13 +22,13 @@ export const SNAP_EVERY = 2; // server broadcasts every 2nd tick (30 Hz)
 // --- Movement feel -----------------------------------------------------------
 // Running has a little weight: you pick up speed over about a tenth of a
 // second, and reversing direction costs a brief skid before you go the other way.
-export const MOVE_SPEED = 330; // px/s top speed
+export const MOVE_SPEED = 350; // px/s top speed
 export const IT_SPEED_MUL = 1.1; // the chaser is faster, so chases end
-export const GROUND_ACCEL = 2900; // px/s^2 while speeding up
-export const GROUND_TURN = 4600; // braking when you push against your own motion
-export const GROUND_STOP = 3200; // braking when you let go
-export const AIR_ACCEL = 1800;
-export const AIR_TURN = 2450;
+export const GROUND_ACCEL = 3100; // px/s^2 while speeding up
+export const GROUND_TURN = 4900; // braking when you push against your own motion
+export const GROUND_STOP = 3400; // braking when you let go
+export const AIR_ACCEL = 1900;
+export const AIR_TURN = 2600;
 export const AIR_KEEP = 0.985; // per tick: momentum mostly carries when you let go mid-air
 
 // Jumps are floaty: gentle gravity plus air resistance, so you rise in a smooth
@@ -78,7 +78,7 @@ export const INTRO_MS = 4200; // before the countdown: the draw for arena, style
 // Boxes appear around the arena. Touch one (with empty hands) and you get a
 // random item to keep; press USE to set it off whenever you like - right up to
 // the buzzer.
-export const ITEM_KINDS = ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'quake', 'warp', 'eclipse', 'dash'];
+export const ITEM_KINDS = ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'quake', 'warp', 'eclipse', 'dash', 'ghost', 'star'];
 export const ITEM_INFO = {
   speed: { name: 'Swift', blurb: 'Run much faster for 6 s' },
   jump: { name: 'Spring', blurb: 'Jump much higher for 7 s' },
@@ -91,6 +91,8 @@ export const ITEM_INFO = {
   warp: { name: 'Warp', blurb: 'The oni lands beside the nearest runner; a runner lands far from the oni' },
   eclipse: { name: 'Eclipse', blurb: 'Everyone else is left in the dark for 4 s' },
   dash: { name: 'Dash', blurb: 'Shoot straight ahead in a flash' },
+  ghost: { name: 'Vanish', blurb: 'Nobody else can see you for 5 s' },
+  star: { name: 'Titan', blurb: 'Nothing can touch you for 4 s' },
 };
 export const PICKUP_TYPES = ITEM_KINDS; // older name, still used by the art styles
 export const PICKUP_INFO = ITEM_INFO;
@@ -117,6 +119,10 @@ export const WARP_GAP = 26; // the oni lands with this much air between it and t
 export const WARP_DROP = 30; // "beside" means level with them, give or take this much
 export const ECLIPSE_TICKS = 240; // 4 s of night for everyone else
 export const ECLIPSE_SIGHT = 150; // what they still see: a circle of this radius (world units) around themselves
+export const GHOST_TICKS = 300; // Vanish: 5 s in which nobody else is shown where you are (a touch still counts)
+export const GHOST_NEAR = 84; // bots notice someone they cannot see only when that someone is this close (px): bumping distance
+export const STAR_TICKS = 240; // Titan: 4 s in which nothing lands on you - no tag, no bomb, no item, no thorns
+export const PORTAL_SETTLE_TICKS = 18; // a portal takes you only once your feet have been on the ground this long (0.3 s): landing in or beside one does not send you off
 export const DASH_TICKS = 12; // a fifth of a second...
 export const DASH_SPEED = 1200; // ...at this speed, dead straight the way you face: 240 px, six tiles (a run covers 66 px in that time)
 
@@ -138,7 +144,8 @@ export const FLAG_CAP_TICKS = 150; // standing there alone: 2.5 s to take a free
 export const FLAG_CROWD = 2; // more of you fill it faster, up to this many times as fast
 export const FLAG_PAY_TICKS = 300; // a flag in your colour pays every 5 s...
 export const FLAG_POINTS = 1; // ...this much
-export const TEAM_NAMES = ['Sun', 'Moon'];
+export const TEAM_NAMES = ['Tigers', 'Dragons']; // (the warm side, the cool side; plural: "Tigers hold...", "Dragons win")
+export const FLAG_LETTERS = 'ABC'; // the flags by name, in the order they stand on the map: A at the warm side's end, B high in the middle, C at the cool side's end
 export const TEAM_COLORS = ['#e2543f', '#3f7fe2'];
 // colour slots handed out by team, so one side is warm and the other cool
 export const TEAM_SLOTS = [[0, 3, 5, 6, 8], [1, 2, 4, 7, 9]]; // red, yellow, pink, orange, brown | blue, green, purple, teal, silver
@@ -193,8 +200,7 @@ export const COLOR_NAMES = ['Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Pink', 
 // Art styles (drawing code lives in public/js/themes). Ink is the house style.
 export const THEMES = [
   { id: 'ink', name: 'Ink & Sakura', blurb: 'Brush strokes on rice paper' },
-  { id: 'space', name: 'Orbit', blurb: 'Astronauts on a space station' },
-  { id: 'alien', name: 'Xeno', blurb: 'A glowing alien world' },
+  { id: 'shadow', name: 'Shadow', blurb: 'Black ink, white steel' },
   { id: 'neon', name: 'Neon District', blurb: 'Cyberpunk rain and chrome' },
   { id: 'nightmare', name: 'Nightmare', blurb: 'Something is watching' },
   { id: 'sketch', name: 'Sketchbook', blurb: 'Doodles come alive' },

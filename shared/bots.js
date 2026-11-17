@@ -5,7 +5,7 @@
 // stealing a flag - and then follows the route there one move at a time,
 // pressing the same buttons a person would.
 
-import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, FLAG_HALF, FLAG_UP, FLAG_CAP_TICKS, BLAST_RADIUS } from './config.js';
+import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, FLAG_HALF, FLAG_UP, FLAG_CAP_TICKS, BLAST_RADIUS, GHOST_NEAR } from './config.js';
 import { buildNav, surfaceAt, surfaceNear, drive, walk } from './nav.js';
 
 function rng(seed) {
@@ -68,6 +68,8 @@ const dirBits = (d) => (d < 0 ? IN_LEFT : d > 0 ? IN_RIGHT : 0);
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const NEAR = 13; // close enough to where we wanted to stand
 const gap = (a, b) => Math.hypot(a.s.x - b.s.x, a.s.y - b.s.y);
+// Can this bot see that player? Someone who has Vanished only when they are close enough to bump into.
+const sees = (me, o) => !!o && (o.s.gho === 0 || gap(o, me) < GHOST_NEAR);
 
 // Returns input bits for this tick.
 export function botThink(sim, slot, mem) {
@@ -90,6 +92,11 @@ export function botThink(sim, slot, mem) {
   if (s.ground) {
     const was = mem.surf >= 0 ? nav.surfaces[mem.surf] : null;
     let cur = was && stillOn(nav, was, cx, feet, s.gk) ? was : surfaceAt(nav, cx, feet, s.gk);
+    if (mem.plan && mem.plan.e.type === 'portal' && s.tp === 0 && was && cur !== was) {
+      // standing in the mouth of the portal we mean to take: it takes whoever waits there a moment
+      // (PORTAL_SETTLE_TICKS), so we are still on our way - not on whatever ground is nearest
+      if (Math.abs(cx - mem.plan.e.x) < 40 && Math.abs(nav.heightAt(was, clamp(cx, was.x0, was.x1)) - feet) <= 1) cur = was;
+    }
     if (mem.plan && mem.plan.e.type === 'portal' && s.tp > 0) {
       // just out of a portal, standing in its mouth: we are as good as on the ground we planned to step out onto
       const out = nav.surfaces[mem.plan.e.to];
@@ -195,7 +202,7 @@ function dashDir(sim, me, mem) {
   const cy = s.y + PH / 2;
   if (sim.isIt(me)) {
     for (const o of sim.targets(me)) {
-      if (o.bomb || o.s.orb > 0 || o.immune > 0 || o.s.shd > 0) continue;
+      if (o.bomb || o.s.orb > 0 || o.immune > 0 || o.s.shd > 0 || !sees(me, o)) continue;
       const dx = o.s.x - s.x;
       if (Math.abs(dx) < 70 || Math.abs(dx) > 250 || Math.abs(o.s.y - s.y) > 34) continue;
       if (!walled(sim.arena, cx, cy, o.s.x + PW / 2, cy)) return Math.sign(dx);
@@ -216,6 +223,7 @@ function wantsToUse(sim, me, mem) {
   let nearest = Infinity;
   let prey = Infinity; // ...the nearest one we could actually tag
   for (const o of sim.targets(me)) {
+    if (!sees(me, o)) continue;
     const d = gap(o, me);
     nearest = Math.min(nearest, d);
     if (!o.bomb && o.s.orb === 0 && o.immune === 0) prey = Math.min(prey, d);
@@ -225,6 +233,8 @@ function wantsToUse(sim, me, mem) {
     if (kind === 'swap') return nearest > 500;
     if (kind === 'warp') return prey > 380 && prey < Infinity; // too far to run: be there now
     if (kind === 'quake') return prey > 70 && prey < 400; // they hang in the air for a second: near enough to get there in that time
+    if (kind === 'ghost') return prey > 150 && prey < 620; // out of sight for the last stretch
+    if (kind === 'star') return prey < 260; // nothing they throw now will stop us
     return nearest < (kind === 'blast' ? BLAST_RADIUS * 0.85 : 480);
   }
   const it = chaserOf(sim, me);
@@ -240,6 +250,8 @@ function wantsToUse(sim, me, mem) {
   }
   if (kind === 'swap') return danger < 200; // let someone else stand here
   if (kind === 'warp') return danger < 230; // gone, to the far end of the arena
+  if (kind === 'ghost') return danger < 340; // gone, without going anywhere
+  if (kind === 'star') return danger < 150; // they are on top of us: let them try
   return danger < (kind === 'storm' || kind === 'eclipse' ? 420 : kind === 'blast' ? BLAST_RADIUS * 0.8 : kind === 'quake' ? 340 : 300);
 }
 
@@ -273,12 +285,15 @@ function decide(sim, me, mem, nav) {
     mem.itSince = sim.tick;
   }
   if (sim.it === me.slot) {
-    const prey = sim.players.filter((o) => o && o !== me && o.s.dead === 0);
-    if (!hunt(sim, me, mem, nav, prey)) wander(sim, me, mem, nav, null);
+    const prey = sim.players.filter((o) => o && o !== me && o.s.dead === 0 && sees(me, o)); // (whoever has Vanished is simply not there)
+    if (!hunt(sim, me, mem, nav, prey)) {
+      mem.target = -1;
+      wander(sim, me, mem, nav, null);
+    }
     return;
   }
   mem.target = -1;
-  const it = sim.players[sim.it];
+  const it = sees(me, sim.players[sim.it]) ? sim.players[sim.it] : null;
   if (!evade(sim, me, mem, nav, it)) wander(sim, me, mem, nav, it);
 }
 
@@ -287,13 +302,13 @@ function decide(sim, me, mem, nav) {
 function chaserOf(sim, me) {
   if (!sim.teams) {
     const it = sim.players[sim.it];
-    return it && it !== me ? it : null;
+    return it && it !== me && sees(me, it) ? it : null;
   }
   if (me.bomb) return null;
   let best = null;
   let bestD = Infinity;
   for (const o of sim.players) {
-    if (!o || !o.bomb || o.team === me.team || o.s.dead > 0) continue;
+    if (!o || !o.bomb || o.team === me.team || o.s.dead > 0 || !sees(me, o)) continue;
     const d = gap(o, me);
     if (d < bestD) {
       bestD = d;
@@ -315,7 +330,7 @@ function inRing(o, f) {
 function decideTeam(sim, me, mem, nav) {
   const foes = sim.players.filter((o) => o && o.team !== me.team && o.s.dead === 0);
   if (me.bomb) {
-    const free = foes.filter((o) => !o.bomb);
+    const free = foes.filter((o) => !o.bomb && sees(me, o));
     const busy = (o) => (sim.flags.some((f) => inRing(o, f)) ? -320 : 0);
     if (free.length && hunt(sim, me, mem, nav, free, busy)) return;
     // every one of them has a bomb already: nothing to pass it to, so make ourselves useful
@@ -400,7 +415,7 @@ function hunt(sim, me, mem, nav, prey, bonus) {
   let bestD = Infinity;
   for (const o of prey) {
     let d = Math.hypot(o.s.x - s.x, (o.s.y - s.y) * 1.3);
-    if (o.immune > 25) d += 900;
+    if (o.immune > 25 || o.s.inv > 20) d += 900; // (no use: they cannot be tagged just now)
     if (o.s.shd > 0) d += 250;
     if (o.slot === mem.target) d -= 140;
     if (o.slot === mem.snub) d += 700;
@@ -646,7 +661,7 @@ function glide(nav, s, mem, want) {
 // Up close: run straight at them (or straight away from them).
 function pursue(sim, me, mem, nav) {
   const o = sim.players[mem.direct.slot];
-  if (!o || o.s.dead > 0 || o.s.orb > 0) {
+  if (!o || o.s.dead > 0 || o.s.orb > 0 || !sees(me, o)) {
     mem.direct = null;
     mem.think = 0;
     return 0;

@@ -103,7 +103,7 @@ for (let i = 0; i < 14; i++) {
 // ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
-const PANELS = ['rooms', 'lobby', 'help'];
+const PANELS = ['lobby', 'help'];
 // the first letter of a name, for its seal
 const initial = (name) => (Array.from(String(name || '').trim())[0] || '?').toUpperCase();
 
@@ -191,7 +191,8 @@ function show(name, beside = '') {
     draw.clear();
   }
   // which entry of the title scroll is open
-  $('btn-play').toggleAttribute('aria-current', panel === 'rooms' || panel === 'lobby');
+  $('btn-create').toggleAttribute('aria-current', panel === 'lobby');
+  if (name === 'home' && !beside) homeReady();
   $('btn-help').toggleAttribute('aria-current', panel === 'help');
   setOverlay('');
 }
@@ -286,13 +287,14 @@ function toHome(message = '', focus) {
   room = null;
   play.game = null;
   $('home-error').textContent = message;
+  setCode(''); // (a code typed earlier is not waiting there)
   show('home');
   if (focus) focusFirst(focus);
 }
 
 // Close whatever is open beside the title scroll; the focus goes back to the entry that opened it.
 function closePanel() {
-  const opener = panel === 'help' ? $('btn-help') : $('btn-play');
+  const opener = panel === 'help' ? $('btn-help') : $('btn-create');
   $('home-error').textContent = '';
   show('home');
   focusFirst(opener);
@@ -335,7 +337,6 @@ $('name').addEventListener('input', () => {
 // Go back to whatever was open before How to play.
 function reopen(from) {
   if (room) return openLobby(); // the room you are in comes first
-  if (from === 'rooms') return openRooms(code);
   closePanel();
 }
 
@@ -433,7 +434,10 @@ function setConn(state, text, more = '') {
 $('btn-conn').addEventListener('click', () => $('conn').classList.toggle('open'));
 $('btn-conn').addEventListener('blur', () => $('conn').classList.remove('open'));
 setConn('wait', 'Lighting the lantern…');
-socket.on('connect', () => setConn('ok', 'Server awake', 'You are connected.'));
+socket.on('connect', () => {
+  setConn('ok', 'Server awake', 'You are connected.');
+  refreshGames(); // (how many rooms are open, for the title scroll)
+});
 socket.on('connect_error', () => setConn('bad', 'Waking the server…', NAP));
 socket.on('disconnect', () => {
   setConn('bad', 'Reconnecting…', NAP);
@@ -446,10 +450,6 @@ socket.on('disconnect', () => {
 // ---------------------------------------------------------------------------
 // The title scroll
 // ---------------------------------------------------------------------------
-$('btn-play').addEventListener('click', () => {
-  if (room) openLobby(); // already in a room: that is where the game is
-  else openRooms('');
-});
 $('btn-help').addEventListener('click', () => (panel === 'help' ? closeHelp() : openHelp()));
 function paintSound() {
   const word = `Sound ${sfx.muted ? 'off' : 'on'}`;
@@ -492,7 +492,7 @@ $('btn-help-back').addEventListener('click', closeHelp);
 const orList = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}` : String(items[0]));
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const flagPay = `${plural(FLAG_POINTS, 'point')} every ${Math.round(FLAG_PAY_TICKS / TICK_RATE)} seconds`;
-for (const [key, value] of Object.entries({ bomb: plural(BOMB_POINTS, 'point'), flagpay: flagPay, flagtime: (FLAG_CAP_TICKS / TICK_RATE).toFixed(1).replace('.0', ''), rounds: orList(CUP_ROUNDS) })) {
+for (const [key, value] of Object.entries({ bomb: plural(BOMB_POINTS, 'point'), flagpay: flagPay, flagtime: (FLAG_CAP_TICKS / TICK_RATE).toFixed(1).replace('.0', ''), rounds: orList(CUP_ROUNDS), teams: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}` })) {
   for (const e of document.querySelectorAll(`[data-n="${key}"]`)) e.textContent = value;
 }
 for (const k of ITEM_KINDS) {
@@ -508,21 +508,19 @@ for (const k of ITEM_KINDS) {
 // ---------------------------------------------------------------------------
 // Play: the way in to every online game
 // ---------------------------------------------------------------------------
-// Three ways in: host a room of your own (the one big button), look through
-// the rooms that are open to everyone (a popup of their own, with a few ways
-// to narrow them down), or type the code a friend gave you (digits go
-// straight in, from anywhere on the screen).
+// Three ways in, all on the title scroll: host a room of your own (the big
+// button), look through the rooms that are open to everyone (a popup, with a
+// few ways to narrow them down), or type the code a friend gave you (digits
+// go straight in, from anywhere on the title scroll).
 let code = '';
 let codeTried = '';
 const svg = (name) => `<svg class="ic" aria-hidden="true"><use href="#i-${name}" /></svg>`;
 
-function openRooms(start) {
-  for (const id of ['join-error', 'create-error']) $(id).textContent = '';
+// (the title scroll is in front, with nothing open beside it)
+function homeReady() {
   $('numpad').hidden = true;
   $('digits').classList.remove('open');
   codeTried = '';
-  show('home', 'rooms');
-  setCode(start);
   paintGames(); // what we already know, straight away...
   watchGames(); // ...then the latest
 }
@@ -530,7 +528,10 @@ function openRooms(start) {
 // Host: a room of your own. It starts private, and the button in the room
 // opens it to everyone - unless you asked for an open one from the list.
 const hostGame = (errorEl, open, btn) => enterRoom('create', { name: myName, open }, errorEl, btn);
-$('btn-create').addEventListener('click', () => hostGame($('create-error'), false, $('btn-create')));
+$('btn-create').addEventListener('click', () => {
+  if (room) openLobby(); // already in a room: that is where the game is
+  else hostGame($('home-error'), false, $('btn-create'));
+});
 
 // A friend's room: the code is typed straight into the screen.
 function setCode(next) {
@@ -552,7 +553,7 @@ async function submitCode() {
   if (code.length !== CODE_LEN || busy) return;
   codeTried = code;
   const ok = await enterRoom('join', { code, name: myName }, $('join-error'), $('btn-join-go'));
-  if (!ok && top() === 'rooms') {
+  if (!ok && top() === 'home') {
     $('digits').classList.add('bad');
     sfx.play('lose');
   }
@@ -572,7 +573,7 @@ function retryCode() {
 // Typing a digit anywhere on this screen goes into the code.
 function typeCode(next) {
   setCode(next);
-  if (top() === 'rooms' && !isTouch && document.activeElement !== $('digits')) $('digits').focus({ preventScroll: true });
+  if (top() === 'home' && !isTouch && document.activeElement !== $('digits')) $('digits').focus({ preventScroll: true });
 }
 
 // Tapping the code opens our own little number pad under it (a phone has no
@@ -596,9 +597,8 @@ $('btn-join-go').addEventListener('click', () => {
   sfx.play('click');
   retryCode();
 });
-$('btn-rooms-back').addEventListener('click', closePanel);
 addEventListener('paste', (e) => {
-  if (top() !== 'rooms') return;
+  if (top() !== 'home') return;
   const text = e.clipboardData?.getData('text') || '';
   // an invite link (its ?room=), a code on its own, or any four digits standing together
   const found = text.match(/[?&]room=(\d{4})(?!\d)/) || text.match(/(?<!\d)(\d{4})(?!\d)/);
@@ -626,7 +626,7 @@ function watchGames() {
   clearInterval(gamesTimer);
   refreshGames();
   gamesTimer = setInterval(() => {
-    if (panel !== 'rooms') return clearInterval(gamesTimer);
+    if (top() !== 'home' && !popupOpen('find')) return clearInterval(gamesTimer);
     if (!document.hidden) refreshGames();
   }, 2500);
 }
@@ -672,9 +672,12 @@ function paintGames() {
   // the Play menu: how many there are (a grey bar until the server has said)
   const known = games !== null;
   const count = $('find-count');
-  count.classList.toggle('sk', !known && socket.connected);
-  const said = known ? (games.length ? `${games.length} open now` : 'None open right now') : socket.connected ? '' : 'Waking the server…';
-  if (count.textContent !== said) count.textContent = said;
+  const many = known && games.length ? String(games.length) : '';
+  if (count.textContent !== many) count.textContent = many;
+  count.hidden = !many;
+  const said = known ? (games.length ? `${games.length} open now` : 'none open right now') : 'looking…';
+  $('btn-find').title = `Open rooms: ${said}`;
+  $('btn-find').setAttribute('aria-label', `Open rooms: ${said} (P)`);
   if (!popupOpen('find')) return;
   const box = $('games');
   const list = shownGames();
@@ -751,19 +754,21 @@ async function joinGame(roomCode, btn) {
 // otherwise), `show` when, `hot` the key that steps it.
 const OPTIONS = [
   { id: 'mode', key: 'mode', hot: 'r', label: 'Game', type: 'modes', box: 'opt-mode', info: 'game', values: MODES.map((m) => [m.id, m.name]), icon: (v) => MODE_ICON[v], show: (s) => s.game !== 'cup' },
-  // a tournament is scored on time as the oni (everyone for themselves), or played as a team battle
-  { id: 'sides', key: 'mode', hot: 'r', label: 'Game', type: 'modes', box: 'opt-mode', info: 'cup', values: [['potato', 'Free-for-all'], ['team', 'Team Bomb']], icon: (v) => (v === 'team' ? 'bomb' : 'crowd'), on: (s, v) => (v === 'team') === (s.mode === 'team'), show: (s) => s.game === 'cup' },
-  { id: 'rounds', key: 'rounds', hot: 'n', label: 'Rounds', box: 'opt-mode', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup' },
+  // a tournament is a knockout (the oni at the buzzer is out, round after round), or a team battle over a number of rounds
+  { id: 'sides', key: 'mode', hot: 'r', label: 'Game', type: 'modes', box: 'opt-mode', info: 'cup', values: [['potato', 'Knockout'], ['team', 'Team Bomb']], icon: (v) => (v === 'team' ? 'bomb' : 'oni'), on: (s, v) => (v === 'team') === (s.mode === 'team'), show: (s) => s.game === 'cup' },
+  { id: 'rounds', key: 'rounds', hot: 'n', label: 'Rounds', box: 'opt-mode', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup' && s.mode === 'team' },
   { id: 'theme', hot: 's', label: 'Style', type: 'cards', box: 'style-cards', values: [['random', 'Random'], ...THEMES.map((t) => [t.id, t.name])], on: (s, v) => stageValue('theme') === v, set: (v) => setStage('theme', v) },
   { id: 'arena', hot: 'a', label: 'Stage', type: 'cards', box: 'arena-cards', values: [['random', 'Random'], ...ARENAS.map((a) => [a.id, a.name])], on: (s, v) => stageValue('arena') === v, set: (v) => setStage('arena', v) },
-  { id: 'duration', key: 'duration', hot: 'l', label: 'Round time', box: 'options', values: DURATIONS.map((d) => [d, `${d} s`]) },
   { id: 'powerups', key: 'powerups', hot: 'p', label: 'Lucky boxes', box: 'options', info: 'boxes', values: [[true, 'On'], [false, 'Off']] },
+  { id: 'duration', key: 'duration', hot: 'l', label: 'Round time', box: 'options', values: DURATIONS.map((d) => [d, `${d} s`]) },
 ];
 const optionById = (id) => OPTIONS.find((o) => o.id === id);
 const settings = () => room.settings;
 const locked = () => !amHost();
 const isOn = (o, s, value) => (o.on ? o.on(s, value) : String(s[o.key]) === String(value));
 const isCup = () => room.settings.game === 'cup';
+// (a knockout: every round the oni at the buzzer is out, so it has one round fewer than players)
+const isKnockout = () => isCup() && room.settings.mode !== 'team';
 // the room is in front (with or without a popup over it)
 const inRoom = () => panel === 'lobby' && !overlay;
 
@@ -790,12 +795,15 @@ function changeSetting(patch) {
   // (what the server will do too, so the screen does not wait for it)
   if (patch.game === 'cup' && s.game !== 'cup' && patch.mode === undefined) s.mode = 'team';
   Object.assign(s, patch);
-  if ('size' in patch || 'bots' in patch) fitStages();
+  if ('size' in patch || 'bots' in patch || 'mode' in patch || 'game' in patch) fitStages();
   socket.emit('settings', patch);
   touched();
   // (whether there are two sides decides how the players are shown; the seats, how many of them)
-  if ('mode' in patch || 'game' in patch || 'bots' in patch || 'size' in patch) renderLobby();
-  else syncOptions();
+  if ('mode' in patch || 'game' in patch || 'bots' in patch || 'size' in patch || 'powerups' in patch) renderLobby();
+  else {
+    syncDoor();
+    syncOptions();
+  }
 }
 
 // --- how many play: the people in the room, and the bots in the seats nobody
@@ -803,13 +811,24 @@ function changeSetting(patch) {
 // fewer) players than it suits it is locked, and goes back to Random if it
 // was chosen.
 const people = () => room.players.filter((p) => !p.bot);
-const headcount = () => Math.max(MIN_PLAYERS, room.settings.bots ? Math.max(room.settings.size, people().length) : people().length);
+const headcount = () => Math.max(MIN_PLAYERS, room.settings.bots ? Math.max(room.settings.size, room.players.length) : room.players.length);
+// how many rounds are being set up, and how many play in round k (a knockout loses one a round)
+const roundsNow = () => (!isCup() ? 1 : isKnockout() ? Math.max(1, headcount() - 1) : room.settings.rounds);
+const playersIn = (k) => (isKnockout() ? Math.max(MIN_PLAYERS, headcount() - k) : headcount());
 const stageRange = (id) => ARENAS.find((a) => a.id === id)?.players || [MIN_PLAYERS, MAX_PLAYERS];
-const stageFits = (id, n = headcount()) => id === 'random' || !id || (n >= stageRange(id)[0] && n <= stageRange(id)[1]);
+const fitsCount = (id, n) => n >= stageRange(id)[0] && n <= stageRange(id)[1];
+// Can this stage be chosen for the round(s) in hand? (For "every round" it has to suit every one of them.)
+const stageFits = (id, sel = stageSel) => {
+  if (id === 'random' || !id) return true;
+  const rounds = sel === 'all' || !isCup() ? Array.from({ length: roundsNow() }, (_, k) => k) : [sel];
+  return rounds.every((k) => fitsCount(id, playersIn(k)));
+};
 const rangeText = (id) => stageRange(id).join('–');
 function fitStages() {
   const s = room.settings;
-  for (const st of s.plan) if (!stageFits(st.arena)) st.arena = 'random';
+  s.plan.forEach((st, k) => {
+    if (st.arena !== 'random' && !fitsCount(st.arena, playersIn(k))) st.arena = 'random';
+  });
   s.arena = s.plan[0].arena;
 }
 function setSize(to) {
@@ -835,7 +854,7 @@ $('btn-bots').addEventListener('click', toggleBots);
 // --- the stage: an arena and a style. A tournament has one of each for every
 // round; `stageSel` says which round a choice is for right now.
 let stageSel = 'all'; // 'all', or a round of the tournament (0 = the first)
-const planNow = () => room.settings.plan.slice(0, isCup() ? room.settings.rounds : 1);
+const planNow = () => room.settings.plan.slice(0, roundsNow());
 
 // What counts as chosen: the selected round's pick - for "every round", the
 // pick they all share ('' if they do not).
@@ -852,7 +871,7 @@ function setStage(what, value) {
     s.plan[0][what] = value;
     socket.emit('settings', { stage: { i: 0, [what]: value } });
   } else if (stageSel === 'all') {
-    for (const st of s.plan.slice(0, s.rounds)) st[what] = value;
+    for (const st of s.plan) st[what] = value;
     socket.emit('settings', { [what]: value });
   } else {
     s.plan[stageSel][what] = value;
@@ -933,24 +952,25 @@ function title(o) {
   return h;
 }
 
-// One match, or a tournament: two big tabs across the top of the room.
+// Quick Play, or a tournament: one switch (two radio buttons underneath; an
+// ink thumb slides to the one that is on).
 const FORMATS = [['quick', 'Quick Play', 'play'], ['cup', 'Tournament', 'cup']];
 function buildFormat() {
   const box = $('opt-format');
   box.textContent = '';
   for (const [game, name, icon] of FORMATS) {
-    const b = el('button', 'rm-tab');
-    b.type = 'button';
-    b.dataset.game = game;
-    b.setAttribute('role', 'tab');
-    b.innerHTML = svg(icon);
-    const words = el('span', 'words');
-    words.append(el('b', '', name));
-    b.append(words);
-    if (game === 'quick') b.append(el('kbd', '', 'G'));
-    b.addEventListener('click', () => setFormat(game));
-    box.append(b);
+    const item = el('label');
+    const inp = document.createElement('input');
+    inp.type = 'radio';
+    inp.name = 'format';
+    inp.value = game;
+    inp.addEventListener('change', () => setFormat(game));
+    const face = el('span', '', name);
+    face.insertAdjacentHTML('afterbegin', svg(icon));
+    item.append(inp, face);
+    box.append(item);
   }
+  box.append(el('i', 'thumb'), el('kbd', '', 'G'));
 }
 
 function buildOptions() {
@@ -1014,25 +1034,83 @@ function buildOptions() {
     row.append(title(o), group);
     box.append(row);
   }
+  // a knockout has as many rounds as it takes: one fewer than players
+  const fact = el('div', 'opt ko');
+  fact.id = 'ko-rounds';
+  fact.append(el('h3', 'lab', 'Rounds'), el('p', 'ko-n'));
+  fact.title = 'One round fewer than players: every round the oni at the buzzer is out';
+  $('opt-mode').append(fact);
+  buildItems();
+}
+
+// --- what is in the lucky boxes: every item to begin with. Each is a small
+// button under the switch: press it to take the item out, or put it back.
+// (An empty list means all of them.)
+const itemsIn = () => {
+  const chosen = room.settings.items || [];
+  return chosen.length ? ITEM_KINDS.filter((k) => chosen.includes(k)) : ITEM_KINDS.slice();
+};
+function buildItems() {
+  const box = $('opt-items');
+  box.textContent = '';
+  for (const kind of ITEM_KINDS) {
+    const b = el('button', 'item');
+    b.type = 'button';
+    b.dataset.kind = kind;
+    b.innerHTML = svg(kind);
+    b.addEventListener('click', () => toggleItem(kind));
+    box.append(b);
+  }
+}
+function toggleItem(kind) {
+  if (!amHost() || !room.settings.powerups) return;
+  const now = itemsIn();
+  let next = now.includes(kind) ? now.filter((k) => k !== kind) : ITEM_KINDS.filter((k) => now.includes(k) || k === kind);
+  if (!next.length) return toast('Keep one item, or turn the boxes off');
+  if (next.length === ITEM_KINDS.length) next = [];
+  room.settings.items = next;
+  socket.emit('settings', { items: next });
+  touched();
+  sfx.play('click');
+  syncOptions();
 }
 
 function syncOptions() {
   const s = settings();
   const lock = locked();
   $('s-lobby').classList.toggle('guest', lock);
-  for (const id of ['options', 'opt-mode', 'arena-cards', 'style-cards']) $(id).classList.toggle('locked', lock);
+  // the host sets things up; a guest reads what was set up, as a card
+  $('rm-setup').hidden = lock;
+  $('guest-card').hidden = !lock;
+  if (lock) return paintGuestCard();
   renderRounds();
   for (const inp of $('s-lobby').querySelectorAll('input[type="radio"][name^="opt-"]')) {
     const o = optionById(inp.name.slice(4));
     if (!o) continue;
     const value = o.values[inp.dataset.i][0];
     inp.checked = isOn(o, s, value);
-    // a stage built for a different number of players is shut (its card says for how many it is)
+    // a stage built for a different number of players is not offered (the "about" panel has them all)
     const shut = o.id === 'arena' && !stageFits(value);
     inp.disabled = lock || shut;
     inp.parentElement.classList.toggle('on', inp.checked);
-    if (o.id === 'arena') inp.parentElement.classList.toggle('shut', shut);
+    if (o.id === 'arena') {
+      inp.parentElement.classList.toggle('shut', shut);
+      inp.parentElement.hidden = shut;
+    }
   }
+  // the stage grid keeps its ten places whatever is on offer; a line under it says why some are not
+  const grid = $('arena-cards');
+  for (const old of grid.querySelectorAll('.spare')) old.remove();
+  const offered = [...grid.children].filter((c) => !c.hidden).length;
+  for (let k = offered; k < 10; k++) {
+    // (an unseen card: the same size as a real one, so the rows are as tall as ever)
+    const spare = el('i', 'card spare');
+    spare.setAttribute('aria-hidden', 'true');
+    spare.append(el('span', 'pic'), el('span', 'cap', '.'));
+    grid.append(spare);
+  }
+  const fewer = grid.querySelectorAll('.card.shut').length;
+  $('stage-note').textContent = !fewer ? '' : isKnockout() && stageSel === 'all' && offered <= 1 ? 'Pick a round to choose its stage.' : `${fewer} more for other numbers of players.`;
   for (const row of $('s-lobby').querySelectorAll('[data-opt]')) {
     const o = optionById(row.dataset.opt);
     row.hidden = !!o.show && !o.show(s);
@@ -1061,14 +1139,138 @@ function syncOptions() {
     const cap = box.querySelector('.card[data-id="random"] .cap');
     if (cap) cap.textContent = left && left < could ? `Random · ${left}` : 'Random';
   }
-  // the format: which tab is up (a guest sees only the one that is)
-  for (const tab of $('opt-format').children) {
-    const on = s.game === tab.dataset.game;
-    tab.setAttribute('aria-selected', String(on));
-    tab.disabled = lock;
-    tab.hidden = lock && !on;
+  // the format: which way the switch is thrown
+  $('opt-format').dataset.on = s.game;
+  for (const inp of $('opt-format').querySelectorAll('input')) inp.checked = inp.value === s.game;
+  // a knockout: how many rounds it will take
+  const ko = isKnockout();
+  $('ko-rounds').hidden = !ko;
+  if (ko) $('ko-rounds').lastChild.innerHTML = `<b>${roundsNow()}</b>`; // (one out a round: one round fewer than players)
+  // the items in the boxes (nothing to choose while the boxes are off)
+  const boxes = !!s.powerups;
+  const inBox = itemsIn();
+  $('opt-items').classList.toggle('off', !boxes);
+  for (const b of $('opt-items').children) {
+    const kind = b.dataset.kind;
+    const on = inBox.includes(kind);
+    const info = ITEM_INFO[kind];
+    b.classList.toggle('in', on);
+    b.disabled = !boxes;
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', `${info.name}: ${on ? 'in the boxes. Take it out' : 'not in the boxes. Put it in'}`);
+    b.title = `${info.name}: ${info.blurb}`;
   }
-  // who can come in: one button that says which it is (and, for the host, changes it)
+  paintCards();
+  paintFaces();
+}
+// --- A guest's side of the room: what the host has set up, as a card to
+// read - the game and what it asks of you, the style and the stage as
+// pictures, the rules as a few tags, and (in a tournament whose rounds
+// differ) the plan round by round.
+const GAME_LINE = { potato: "Don't be the oni when the clock runs out", time: 'Spend the least time as the oni', team: 'Hold the flags, and pass your bombs on', ko: 'The oni at the buzzer is out, round after round' };
+// (a guest's match card: the way to win, in two or three steps)
+const HOW_TO_WIN = {
+  potato: ['Touch someone to pass the oni on', "Don't be the oni when the clock stops"],
+  time: ['Touch someone to pass the oni on', 'Every second you are the oni is counted', 'The least time wins'],
+  team: ["Stand in a flag's ring: it pays your side", 'Stick your bomb on an enemy by touching them', `A bomb still in hand at the buzzer gives the others ${BOMB_POINTS}`],
+  ko: ['Whoever is the oni at the buzzer is out', 'Everyone else plays the next round', 'The last one standing wins'],
+};
+function paintGuestCard() {
+  const s = settings();
+  const box = $('guest-card');
+  const cup = isCup();
+  const ko = isKnockout();
+  const plan = planNow();
+  const sig = JSON.stringify([s.game, s.mode, s.rounds, plan, s.duration, s.powerups, s.items, s.pool, headcount(), fontsIn]);
+  if (box.dataset.sig === sig) return paintFaces();
+  box.dataset.sig = sig;
+  box.textContent = '';
+  // the game
+  const head = el('header', 'gc-head');
+  head.innerHTML = `<span class="crest">${svg(ko ? 'oni' : MODE_ICON[s.mode])}</span>`;
+  const words = el('div', 'words');
+  words.append(el('p', 'kicker', cup ? `Tournament · ${roundsNow()} rounds` : 'Quick Play'), el('h3', '', ko ? 'Knockout' : nameOfMode(s.mode)), el('p', 'line', GAME_LINE[ko ? 'ko' : s.mode]));
+  head.append(words);
+  // the style and the stage, as pictures (what Random draws from, if that is not everything)
+  const jobs = [];
+  const picture = (what, label) => {
+    const fig = el('figure', 'gc-pic');
+    const one = plan.every((st) => st[what] === plan[0][what]) ? plan[0][what] : '';
+    const real = one && one !== 'random';
+    let frame;
+    if (real) {
+      frame = el('img');
+      frame.alt = '';
+      const style = paintIn(plan[0].theme);
+      jobs.push([what === 'theme' ? one : style, () => (frame.src = what === 'theme' ? styleStill(one, 320, 180) : scenePreview(one, style, 320, 180))]);
+    } else {
+      frame = el('span', 'any', one ? '?' : '');
+      if (!one) frame.innerHTML = svg('shuffle');
+    }
+    const left = one === 'random' ? poolOf(what).filter((id) => what !== 'arena' || plan.some((_, k) => fitsCount(id, playersIn(k)))) : [];
+    const all = stageList(what).length;
+    const name = real ? stageList(what).find((x) => x.id === one)?.name || one : !one ? 'Changes every round' : left.length && left.length < all ? `Random · one of ${left.length}` : 'Random';
+    const cap = el('figcaption');
+    cap.append(el('small', '', label), el('b', '', name));
+    fig.append(frame, cap);
+    return fig;
+  };
+  const pics = el('div', 'gc-pics');
+  pics.append(picture('theme', 'Style'), picture('arena', 'Stage'));
+  // the rules, as tags
+  const facts = el('ul', 'gc-facts');
+  const fact = (icon, text) => {
+    const li = el('li');
+    li.innerHTML = svg(icon);
+    li.append(text);
+    facts.append(li);
+    return li;
+  };
+  fact('clock', `${s.duration} s a round`);
+  fact('crowd', `${headcount()} players`);
+  const boxes = fact('box', s.powerups ? 'Lucky boxes' : 'No lucky boxes');
+  if (s.powerups) {
+    const row = el('span', 'gc-items');
+    for (const kind of itemsIn()) row.insertAdjacentHTML('beforeend', `<i title="${ITEM_INFO[kind].name}">${svg(kind)}</i>`);
+    boxes.append(row);
+  }
+  box.append(head, pics, facts);
+  // a tournament whose rounds differ: the plan, round by round
+  if (cup && !plan.every((st) => st.arena === plan[0].arena && st.theme === plan[0].theme)) {
+    const rounds = el('ol', 'gc-rounds');
+    plan.forEach((st, k) => {
+      const li = el('li');
+      const name = (what) => (st[what] === 'random' ? 'Random' : stageList(what).find((x) => x.id === st[what])?.name || st[what]);
+      li.append(el('b', '', String(k + 1)), `${name('arena')} · ${name('theme')}`);
+      rounds.append(li);
+    });
+    box.append(rounds);
+  } else {
+    // otherwise there is room to say how the game is won, step by step, and which keys do what
+    const how = el('section', 'gc-how');
+    const steps = el('ol');
+    HOW_TO_WIN[ko ? 'ko' : s.mode].forEach((text, i) => {
+      const li = el('li');
+      li.append(el('b', '', String(i + 1)), text);
+      steps.append(li);
+    });
+    how.append(el('h4', 'lab', 'How to win'), steps);
+    if (!isTouch) {
+      const keys = el('p', 'gc-keys');
+      keys.innerHTML = '<span><kbd>A</kbd><kbd>D</kbd>run</span><span><kbd>W</kbd>jump, twice</span><span><kbd>S</kbd>drop</span><span><kbd>E</kbd>use your item</span>';
+      how.append(keys);
+    }
+    box.append(how);
+  }
+  paintQueue(jobs, () => panel === 'lobby' && box.dataset.sig === sig);
+  paintFaces();
+}
+
+// (the top of the room: who may come in - for everyone, host or guest)
+function syncDoor() {
+  const s = settings();
+  const lock = locked();
+  // one button that says which it is (and, for the host, changes it)
   const door = $('btn-open');
   door.classList.toggle('on', !!s.open);
   door.disabled = lock;
@@ -1076,8 +1278,6 @@ function syncOptions() {
   const what = s.open ? 'Public: anyone can find this room and come in' : 'Private: only people with the code can come in';
   door.title = what;
   door.setAttribute('aria-label', lock ? what : `${what}. Make it ${s.open ? 'private' : 'public'} (V)`);
-  paintCards();
-  paintFaces();
 }
 $('btn-open').addEventListener('click', () => {
   if (!amHost()) return;
@@ -1126,7 +1326,7 @@ function hotOption(letter, back) {
   if (letter === 'b') return toggleBots();
   if (letter === 'g') {
     setFormat(s.game === 'cup' ? 'quick' : 'cup');
-    $('opt-format').querySelector('[aria-selected="true"]')?.focus();
+    $('opt-format').querySelector('input:checked')?.focus();
     return true;
   }
   const o = OPTIONS.find((x) => x.hot === letter && (!x.show || x.show(s)));
@@ -1149,33 +1349,25 @@ function hotOption(letter, back) {
 function renderRounds() {
   const tabs = $('round-tabs');
   const cup = isCup();
-  $('round-strip').hidden = !cup;
-  if (!cup) {
-    stageSel = 'all';
-    // (Quick Play keeps the strip's place, unseen, so the room is the same height either way: one chip stands in for the row)
-    tabs.textContent = '';
-    const stand = el('label');
-    stand.append(el('span', '', 'Every round'));
-    tabs.append(stand);
-    delete tabs.dataset.sig;
-    return;
-  }
-  const n = planNow().length;
+  if (!cup) stageSel = 'all';
+  const n = roundsNow();
   if (stageSel !== 'all' && stageSel >= n) stageSel = 'all';
-  const sig = JSON.stringify([n, stageSel]);
+  const sig = JSON.stringify([cup, n, stageSel]);
   if (tabs.dataset.sig === sig) return;
   tabs.dataset.sig = sig;
   const held = tabs.contains(document.activeElement);
   tabs.textContent = '';
-  for (const value of ['all', ...Array.from({ length: n }, (_, i) => i)]) {
+  // Quick Play is one round: it stands there alone. A tournament: "All", then each of its rounds.
+  for (const value of cup ? ['all', ...Array.from({ length: n }, (_, i) => i)] : ['all']) {
     const item = el('label');
     const inp = document.createElement('input');
     inp.type = 'radio';
     inp.name = 'round';
     inp.checked = stageSel === value;
-    inp.setAttribute('aria-label', value === 'all' ? 'Every round' : `Round ${value + 1}`);
+    inp.disabled = !cup;
+    inp.setAttribute('aria-label', !cup ? 'The one round' : value === 'all' ? 'Every round' : `Round ${value + 1}`);
     inp.addEventListener('change', () => pickRound(value));
-    item.append(inp, el('span', '', value === 'all' ? 'Every round' : String(value + 1)));
+    item.append(inp, el('span', '', !cup ? '1' : value === 'all' ? 'All' : String(value + 1)));
     tabs.append(item);
   }
   if (held) tabs.querySelector('input:checked')?.focus();
@@ -1208,7 +1400,7 @@ function paintCards() {
 const ABOUT_MODE = {
   potato: 'One player is the oni. Touch someone and it passes to them. Whoever is the oni when the clock runs out loses; everyone else wins.',
   time: 'The oni changes hands the same way, but every second you spend as the oni is counted. When time is up, the least time wins.',
-  team: `Sun against Moon. Stand in a flag's ring to turn it your colour: it then pays your side. Bombs are dealt out at the start; stick yours on an enemy by touching them. Every bomb goes off at the buzzer and scores ${BOMB_POINTS} for the other side.`,
+  team: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}. Three flags stand on every stage, one at each end and one high in the middle: stand in a flag's ring to turn it your colour, and it pays your side. Bombs are dealt out at the start; stick yours on an enemy by touching them. Every bomb goes off at the buzzer and scores ${BOMB_POINTS} for the other side.`,
 };
 function aboutRow(icon, name, text) {
   const row = el('div', 'info-row');
@@ -1231,9 +1423,8 @@ function aboutPic(name, text, dataset) {
 const ABOUT = {
   game: () => ['The games', MODES.map((m) => aboutRow(MODE_ICON[m.id], m.name, ABOUT_MODE[m.id]))],
   cup: () => ['Tournaments', [
-    aboutRow('cup', 'Rounds', 'Three, five or seven rounds. Points add up from round to round, and the last round counts double.'),
-    aboutRow('crowd', 'Free-for-all', 'Each round you score a point for every player who spent longer as the oni than you, and one more for not being the oni at the buzzer. From round 2 the leader starts as the oni.'),
-    aboutRow('bomb', 'Team Bomb', 'The same two sides all the way through; what they score each round adds up.'),
+    aboutRow('oni', 'Knockout', 'Hot Potato, round after round. Whoever is the oni at the buzzer is out and watches the rest; the others play on, on smaller stages as the field thins, until one is left standing.'),
+    aboutRow('bomb', 'Team Bomb', `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]} over three, five or seven rounds. The sides stay as they are, what they score adds up, and the last round counts double.`),
     aboutRow('storm', 'Twists', 'Every second round has one: Moon Gravity, Turbo or Item Frenzy.'),
   ]],
   style: () => ['Styles', [el('p', 'info-lead', 'A style changes how everything looks, never how it plays.'), el('div', 'info-grid')], (grid) => THEMES.forEach((t) => grid.append(aboutPic(t.name, t.blurb, { still: t.id })))],
@@ -1306,7 +1497,7 @@ function seat(p, opts = {}) {
   f.style.setProperty('--c', INK_COLORS[p.ci]);
   li.append(f, el('span', 'nm', p.name));
   const tags = [p.you && 'You', p.host && 'Host', p.bot && 'Bot'].filter(Boolean);
-  for (const t of tags) li.append(el('small', `tag ${t.toLowerCase()}`, t));
+  for (const t of tags) li.append(el('small', `badge ${t.toLowerCase()}`, t));
   if (p.score) li.append(el('small', 'score', p.score));
   const acts = el('span', 'acts');
   if (opts.cross != null) {
@@ -1340,8 +1531,8 @@ function openSeat(first) {
     b.addEventListener('click', run);
     return b;
   };
-  if (amHost()) acts.append(mini('add', '+ Bot', 'Put a bot in this seat', () => (sfx.play('click'), socket.emit('bot', { add: true }))));
   if (first) acts.append(mini('invite', 'Invite', 'Copy the invite link', copyInvite));
+  if (amHost()) acts.append(mini('add', '+ Bot', 'Put a bot in this seat', () => (sfx.play('click'), socket.emit('bot', { add: true }))));
   if (acts.childElementCount) li.append(acts);
   return li;
 }
@@ -1449,12 +1640,13 @@ function renderLobby() {
   measureBar();
   // someone joined and the match can start: Enter should start it, not copy the link again
   if (first === start && panel === 'lobby' && !overlay && [$('btn-copy'), document.body].includes(document.activeElement)) focusFirst();
+  syncDoor();
   syncOptions();
 }
 
 // The seats: the people (in the order they came), then the bots, then the
 // seats still open. In a team game the same rows stand under their side's
-// name - Sun, then Moon - in the colours they will wear; the sides are the
+// name - one side, then the other - in the colours they will wear; the sides are the
 // room's and stay as they are from match to match until someone crosses over
 // (their own arrow, or X), the host moves somebody, or shuffles (Z).
 function renderSeats(sided) {
@@ -1518,7 +1710,7 @@ function leaveRoom() {
   if (room) socket.emit('leave');
   rig = false;
   play.stop();
-  toHome('', $('btn-play'));
+  toHome('', $('btn-create'));
 }
 // Leaving a room cannot be taken back (it may close, or pass to someone
 // else), so it is asked about first: what will happen, Stay or Leave room.
@@ -1622,6 +1814,8 @@ function showResults(res) {
   // the rounds of a tournament, whether you lead). Who it was that won, and by
   // what, is the line under it. Someone only watching reads who won instead.
   const watching = !res.rows.some((r) => r.slot === mySlot);
+  // (in a knockout, someone who is out is still on its table: by the place they have in the room)
+  const seat = cup?.ko ? me()?.slot ?? mySlot : mySlot;
   let kicker;
   let title;
   let sub = '';
@@ -1651,16 +1845,22 @@ function showResults(res) {
       sub = forfeit ? 'Everyone else left.' : cup ? `${who}Final score.` : `${who}${points}`;
     }
   } else if (cup) {
-    kicker = cup.final ? 'Tournament over' : `Round ${cup.round} of ${cup.rounds}`;
-    const champs = `${list(winners)} win${winners.length > 1 ? '' : 's'} the tournament`;
+    // a knockout: who went out this round - and, at the end, who is left standing
+    const left = cup.table.filter((r) => !r.out).length;
+    const place = cup.table.findIndex((r) => r.slot === seat); // (the table comes best first; -1: never in it)
+    const gone = cup.caught >= 0 ? nameOf(cup.caught) : '';
+    kicker = cup.final ? 'Knockout · the final' : `Knockout · round ${cup.round} of ${cup.rounds}`;
     if (cup.final) {
-      title = watching ? `${champs}!` : verdict(iWon);
-      sub = forfeit ? 'Everyone else left.' : iWon ? (winners.length > 1 ? 'You share the title.' : 'Champion of the tournament.') : `${champs}.`;
+      const champ = `${list(winners)} win${winners.length > 1 ? '' : 's'} the knockout`;
+      title = watching ? `${list(winners)} win${winners.length > 1 ? '' : 's'}!` : verdict(iWon);
+      sub = forfeit ? 'Everyone else left.' : iWon ? 'The last one standing.' : `${champ}.${place > 0 ? ` You came ${ordinal(place + 1)} of ${cup.table.length}.` : ''}`;
+    } else if (cup.caught === mySlot) {
+      mood = 'lose';
+      title = 'You are out';
+      sub = `The oni at the buzzer. ${left} play on.`;
     } else {
-      const lead = cup.table[0];
-      const tied = cup.table.filter((r) => r.pts === lead.pts).length > 1;
-      title = tied ? 'Level at the top' : lead.slot === mySlot ? 'You lead' : watching ? `${lead.name} leads` : 'You trail';
-      sub = tied || lead.slot === mySlot || watching ? '' : `${lead.name} is in the lead.`;
+      title = watching ? `${gone} is out` : 'You are through';
+      sub = watching ? `${left} left.` : `${gone} is out. ${left} left.`;
     }
   } else if (forfeit) {
     kicker = 'Match over';
@@ -1693,7 +1893,7 @@ function showResults(res) {
   // finished tournament, or a match scored on time as the oni
   const ranked = !team && !forfeit && (cup ? cup.final : res.mode !== 'potato');
   $('res-podium').hidden = !ranked;
-  if (ranked) paintPodium(res, mySlot);
+  if (ranked) paintPodium(res, seat);
   // The hero of the screen: your own character (whoever won, for someone
   // watching) under the seal - unless the podium is up, which is that already.
   const star = watching ? res.winners[0] ?? res.rows[0]?.slot : mySlot;
@@ -1717,7 +1917,7 @@ function showResults(res) {
   $('res-teams').hidden = !team;
   $('res-table').hidden = !!team;
   if (team) paintSides(res, mySlot);
-  else paintBoard(res, mySlot, ranked);
+  else paintBoard(res, seat, ranked);
 
   renderResultButtons();
   setOverlay('results');
@@ -1780,7 +1980,9 @@ function paintFeats(res, mySlot) {
     feats.push(['target', mine.tags, whole, mine.tags === 1 ? 'tag' : 'tags', mine.tags > 0 && mine.tags === most('tags')]);
     const table = cup ? cup.table : res.mode !== 'potato' && res.reason !== 'forfeit' ? rows : null; // (both come best first)
     const place = table ? table.findIndex((r) => r.slot === mySlot) : -1;
-    if (place >= 0) feats.push(['star', place + 1, ordinal, `of ${table.length}`, place === 0]);
+    // (while a knockout is on, and you are in it, what counts is how many are left)
+    if (cup && !cup.final && place >= 0 && !table[place].out) feats.push(['crowd', table.filter((r) => !r.out).length, whole, 'still in', false]);
+    else if (place >= 0) feats.push(['star', place + 1, ordinal, `of ${table.length}`, place === 0]);
   }
   const counting = [];
   feats.forEach(([icon, value, write, label, best], i) => {
@@ -1887,7 +2089,7 @@ function paintPodium(res, mySlot) {
     if (!r) return;
     const step = el('div', `step p${i + 1}${r.slot === mySlot ? ' me' : ''}`);
     step.append(face(r.slot, 'lg'), el('b', r.name.length > 9 ? 'nm long' : 'nm', r.name)); // (a long name a size down, so it is whole)
-    step.append(el('span', 'stat', cup ? `${r.pts} pts` : r.row ? secs(r.row.ms) : ''));
+    step.append(el('span', 'stat', cup?.ko ? (r.out ? `Out in round ${r.out}` : 'Winner') : cup ? `${r.pts} pts` : r.row ? secs(r.row.ms) : ''));
     const block = el('div', 'block');
     block.append(el('i', i === 0 ? 'seal' : 'seal dark', String(i + 1)));
     step.append(block);
@@ -1900,18 +2102,19 @@ function paintBoard(res, mySlot, ranked) {
   const cup = res.cup;
   const board = $('res-table');
   board.textContent = '';
-  board.className = `board${cup ? ' cup' : ''}`;
+  const ko = !!cup?.ko;
+  board.className = `board${ko ? ' ko' : cup ? ' cup' : ''}`;
   const rows = ranking(res);
   const most = Math.max(1, ...rows.map((r) => (r.row ? r.row.ms : 0)));
   const head = el('li', 'hd');
-  head.append(el('span', '', ''), el('span', '', 'Player'), el('span', '', 'As oni'), ...(cup ? [el('span', '', 'Round'), el('span', '', 'Total')] : [el('span', '', 'Tags')]));
+  head.append(el('span', '', ''), el('span', '', 'Player'), el('span', '', 'As oni'), ...(ko ? [el('span', '', '')] : cup ? [el('span', '', 'Round'), el('span', '', 'Total')] : [el('span', '', 'Tags')]));
   board.append(head);
   rows.forEach((r, i) => {
-    const li = el('li', r.slot === mySlot ? 'me' : '');
+    const li = el('li', `${r.slot === mySlot ? 'me' : ''}${ko && r.out ? ' gone' : ''}`);
     const final = !cup || cup.final;
     const who = el('span', 'who');
     who.append(face(r.slot), r.name);
-    if (r.bot || r.row?.bot) who.append(el('span', 'tag bot', 'Bot'));
+    if (r.bot || r.row?.bot) who.append(el('span', 'badge bot', 'Bot'));
     // a seal for the winner, and one for whoever was it at the end
     // (not when nearly everyone won - Hot Potato - where the one seal that matters is the oni's)
     if (final && res.winners.includes(r.slot) && !ranked && res.winners.length * 2 <= rows.length) who.append(mark('勝', 'wins'));
@@ -1923,9 +2126,10 @@ function paintBoard(res, mySlot, ranked) {
       bar.style.width = `${Math.round((r.row.ms / most) * 100)}%`;
       track.append(bar);
       time.append(track, el('b', '', secs(r.row.ms)));
-    } else time.append(el('b', '', '-'));
+    } else time.append(el('span', 'track none'), el('b', '', ko ? secs(r.ms) : '-'));
     li.append(el('span', 'rank', String(i + 1)), who, time);
-    if (cup) li.append(el('span', 'gain', r.row ? `+${r.gained}` : '-'), el('span', 'pts', `${r.pts}`));
+    if (ko) li.append(el('span', r.out ? 'state out' : 'state', r.out ? `Out · round ${r.out}` : 'In'));
+    else if (cup) li.append(el('span', 'gain', r.row ? `+${r.gained}` : '-'), el('span', 'pts', `${r.pts}`));
     else li.append(el('span', 'num', String(r.row.tags)));
     board.append(li);
   });
@@ -1960,7 +2164,7 @@ function paintSides(res, mySlot) {
       const li = el('li', r.slot === mySlot ? 'me' : '');
       const who = el('span', r.name.length > 9 ? 'who long' : 'who'); // (a long name a size down, so it and its marks are whole)
       who.append(face(r.slot), r.name);
-      if (r.bot) who.append(el('span', 'tag bot', 'Bot'));
+      if (r.bot) who.append(el('span', 'badge bot', 'Bot'));
       // a bomb went off in their hands
       if (r.boom) {
         const blown = el('span', 'mark blown');
@@ -2052,7 +2256,7 @@ socket.on('kicked', () => {
   room = null;
   rig = false;
   play.stop();
-  toHome('The host sent you out of the room.', $('btn-play'));
+  toHome('The host sent you out of the room.', $('btn-create'));
 });
 
 socket.on('round', (msg) => {
@@ -2089,7 +2293,6 @@ function goBack() {
   else if (overlay === 'results') backFromResults();
   else if (screen === 'game') openPause();
   else if (panel === 'help') closeHelp();
-  else if (panel === 'rooms') closePanel();
   else if (panel === 'lobby') leaveIfSure();
   else if (screen === 'name' && myName) toHome();
 }
@@ -2110,11 +2313,6 @@ function shortcut(key, e) {
   const popup = popupTop();
   if (key === 'h' && at !== 'results' && !popup) return at === 'help' ? closeHelp() : openHelp(), true;
 
-  if (at === 'home' || at === 'lobby' || (at === 'help' && screen === 'home')) {
-    // the main menu's entries, also while it is folded away beside a room (on Play the digits are a room's code)
-    if (key === '1') return $('btn-play').click(), true;
-    if (key === '2') return $('btn-profile').click(), true;
-  }
   // the tools under the menu sit in a row: left and right walk along it
   if ((key === 'arrowleft' || key === 'arrowright') && document.activeElement?.classList.contains('tool')) return moveFocus(key === 'arrowright' ? 1 : -1), true;
   // inside a group of buttons (the rounds of a tournament, the two sides): left and right walk along it
@@ -2130,11 +2328,13 @@ function shortcut(key, e) {
     }
     return true;
   }
-  if (at === 'rooms') {
+  if (at === 'home') {
+    // the title scroll: digits are a room's code; a letter for each of the other ways in
     if (/^\d$/.test(key)) return typeCode(code + key), true;
     if (key === 'backspace') return typeCode(code.slice(0, -1)), true;
     if (key === 'c') return $('btn-create').click(), true;
     if (key === 'p') return openFind(), true;
+    if (key === 'n') return $('btn-profile').click(), true;
     // Enter on the code (or anywhere but a button, once the code is complete) tries it again
     if (key === 'enter' && (document.activeElement === $('digits') || (code.length === CODE_LEN && !onButton))) return retryCode(), true;
   } else if (at === 'lobby') {
@@ -2199,7 +2399,10 @@ addEventListener('resize', () => {
 // ---------------------------------------------------------------------------
 const invite = (new URLSearchParams(location.search).get('room') || '').replace(/\D/g, '').slice(0, CODE_LEN);
 if (invite) history.replaceState(null, '', location.pathname);
-const start = () => (invite.length === CODE_LEN ? openRooms(invite) : toHome());
+const start = () => {
+  toHome();
+  if (invite.length === CODE_LEN) setCode(invite); // an invite link: straight to the room
+};
 if (myName) start();
 else askName(start);
 

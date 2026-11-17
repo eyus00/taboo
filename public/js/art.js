@@ -7,7 +7,7 @@
 //   playerPortrait(themeId, colourIndex, opts?) -> data URL (PNG), or null
 //       One character standing still, in that art style and colour, exactly as
 //       the game draws it. Cached, so asking again costs nothing.
-//         themeId      'ink' | 'space' | ... The style must be loaded already
+//         themeId      'ink' | 'shadow' | ... The style must be loaded already
 //                      (it always is for the round on screen; otherwise
 //                      `await loadTheme(themeId)` first) - if not, null.
 //         colourIndex  0-9: which of the style's ten player colours. For a

@@ -11,12 +11,14 @@
 // The view is close in on your own player and follows them. While a round is
 // being introduced, and when it is over, it pulls back to show the whole arena.
 
-import { ART_W, ART_H, PW, PH, BODY_SCALE, MAX_PLAYERS, TEAM_COLORS, BLAST_RADIUS, FLAG_HALF, FLAG_UP, ECLIPSE_TICKS, ECLIPSE_SIGHT } from '/shared/config.js';
-import { LEDGE_H } from '/shared/arenas.js';
+import { ART_W, ART_H, PW, PH, BODY_SCALE, MAX_PLAYERS, TEAM_COLORS, BLAST_RADIUS, FLAG_HALF, FLAG_UP, FLAG_LETTERS, ECLIPSE_TICKS, ECLIPSE_SIGHT } from '/shared/config.js';
+import { LEDGE_H, VIEW_USUAL } from '/shared/arenas.js';
 import { THEME_MAP } from './themes/index.js';
 import { clamp, mulberry32, hashStr, hash1, rgba, rr, KIND_COLORS, PORTAL_COLORS } from './util.js';
 
-const VIEW_H = 660; // world units of height on screen during play: close enough to feel fast
+// World units of height on screen during play: close enough to feel fast. A stage says its own
+// (`arena.view`: a big stage is watched from a little further off); this is for one that does not.
+const VIEW_H = VIEW_USUAL;
 const VIEW_W_MIN = 760; // ...but never narrower than this (phones held upright)
 const MAX_BG_PIXELS = 6.5e6; // cap on the background canvas (keeps 4K / retina screens fast)...
 const BIG_BG = 1.5; // ...up to this much more for a stage bigger than the usual 64 x 36 tiles (not on phones), so it is not drawn coarser
@@ -123,7 +125,7 @@ export class Renderer {
     }
     const fit = Math.min(cssW / A.w, cssH / A.h);
     const follow = !this.opts.whole;
-    const kCss = this.opts.zoom || (follow ? Math.min(clamp(cssH / VIEW_H, 0.5, 2.4), cssW / VIEW_W_MIN) : fit);
+    const kCss = this.opts.zoom || (follow ? Math.min(clamp(cssH / (A.view || VIEW_H), 0.5, 2.4), cssW / VIEW_W_MIN) : fit);
     const pad = follow ? this.opts.padBottom || 0 : 0;
     this.padB = pad / kCss; // the same, in world units
     this.zFit = Math.min(1, fit / kCss); // how far the view pulls back to show everything
@@ -548,7 +550,7 @@ export class Renderer {
     const out = [];
     if (!pv) return out;
     for (const o of this.last) {
-      if (!o || o.id === pv.id) continue;
+      if (!o || o.id === pv.id || o.unseen || o.titan) continue; // (nothing lands on a Titan; someone out of sight is not given away)
       if (pv.team >= 0 ? o.team === pv.team : kind === 'freeze' && !pv.isIt && !o.isIt) continue;
       out.push(o);
     }
@@ -662,6 +664,18 @@ export class Renderer {
       if (pv) for (let i = 0; i < 2; i++) this.emit({ x: pv.cx, y: pv.y + 14, life: 0.55 + i * 0.12, size: 16, grow: 760 - i * 260, shape: 'ring', width: 9 - i * 5, color: i ? col : '#14122e' });
       for (const o of this.hitBy(pv, kind)) {
         for (let i = 0; i < 4; i++) this.emit({ x: o.cx - 18 + i * 12, y: o.y - 34 - (i % 2) * 8, vy: 50, drag: 3, life: 0.6, size: 11 - (i % 2) * 3, color: '#14122e', alpha: 0.85 });
+      }
+    } else if (kind === 'ghost') {
+      // gone in a puff: a pale ring closing on where they stood, and wisps drifting up
+      this.emit({ x: e.x, y: e.y, life: 0.34, size: 46, grow: -120, shape: 'ring', width: 3.5, color: col });
+      for (let i = 0; i < 9; i++) this.emit({ x: e.x + (Math.random() - 0.5) * 30, y: e.y + 16 - Math.random() * 44, vx: (Math.random() - 0.5) * 50, vy: -50 - Math.random() * 70, drag: 2, life: 0.55 + Math.random() * 0.25, size: 5 + Math.random() * 5, grow: 10, color: i % 3 ? col : '#ffffff', alpha: 0.5 });
+    } else if (kind === 'star') {
+      // a Titan: gold bursts out of them, twice, and sparks fly
+      if (pv && pv.local) this.shake(5);
+      for (let i = 0; i < 2; i++) this.emit({ x: e.x, y: e.y, life: 0.36 + i * 0.14, size: 14, grow: 230 - i * 90, shape: 'ring', width: 6 - i * 3, color: i ? '#ffffff' : col });
+      for (let i = 0; i < 14; i++) {
+        const a = (i / 14) * 6.283;
+        this.emit({ x: e.x, y: e.y, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260 - 40, g: 300, drag: 2.6, life: 0.5, size: 3.2, color: i % 2 ? col : '#fff6c9' });
       }
     } else if (kind === 'swap') {
       const o = this.last[e.to];
@@ -1084,7 +1098,7 @@ export class Renderer {
         g.font = '800 15px system-ui, sans-serif';
         g.textAlign = 'center';
         g.textBaseline = 'middle';
-        g.fillText('ABCD'[i], x + 13, y - 66 + wave * 0.3);
+        g.fillText(FLAG_LETTERS[i] || '', x + 13, y - 66 + wave * 0.3);
       });
     }
 
@@ -1103,6 +1117,10 @@ export class Renderer {
     const th = this.theme;
     const out = [];
     const seen = new Array(MAX_PLAYERS).fill(false);
+    // (for Vanish: whose eyes these are - someone only watching sees everybody)
+    const mine = view.players.find((p) => p.local);
+    const mySide = mine ? (mine.team ?? -1) : -1;
+    const watching = !mine;
     for (const p of view.players) {
       seen[p.slot] = true;
       let a = this.anim[p.slot];
@@ -1137,6 +1155,8 @@ export class Renderer {
         slow: !!p.slw,
         dark: !!p.ecl, // night has fallen on them (Eclipse)
         dashing: !!p.dsh,
+        ghost: !!p.gho, // Vanish: out of sight for everyone but themselves and their own side
+        titan: !!p.inv, // Titan: nothing touches them
         team: p.team ?? -1,
         local: !!p.local,
         itTicks: p.itTicks,
@@ -1153,6 +1173,22 @@ export class Renderer {
         }
         this.last[p.slot] = null;
         continue;
+      }
+      if (pv.ghost && !pv.local && !watching && !(mySide >= 0 && pv.team === mySide)) {
+        // Vanish: this screen is not shown where they are - no body, no dust, no name, no pointer,
+        // no footfall. (this.last keeps the place, so a tag still flashes where it happens.)
+        if (!a.unseen) {
+          a.unseen = true;
+          this.vanishFx(pv);
+        }
+        Object.assign(a, { dead: false, orb: pv.orb, ground: p.ground, vy: p.vy, x: p.x, y: p.y, squash: 0 });
+        pv.unseen = true;
+        this.last[p.slot] = pv;
+        continue;
+      }
+      if (a.unseen) {
+        a.unseen = false; // back in sight
+        this.vanishFx(pv);
       }
       if (a.dead) {
         a.dead = false;
@@ -1224,6 +1260,10 @@ export class Renderer {
           a.streak = t;
           this.emit({ x: pv.cx - pv.face * 10, y: pv.y + 6 + Math.random() * 28, vx: -pv.vx * 0.15, life: 0.16, size: 1.6, shape: 'line', width: 2, color: KIND_COLORS.speed, back: true, lx: -pv.face * 18 });
         }
+        // a Titan sheds gold
+        if (pv.titan && Math.random() < dt * 16) {
+          this.emit({ x: pv.cx + (Math.random() - 0.5) * 34, y: pv.feet - 6 - Math.random() * 46, vy: -40 - Math.random() * 40, life: 0.45, size: 2.4, color: Math.random() < 0.3 ? '#ffffff' : KIND_COLORS.star });
+        }
         if (pv.springy && p.ground && Math.random() < dt * 8) {
           this.emit({ x: pv.cx + (Math.random() - 0.5) * 24, y: pv.feet - 2, vy: -70, life: 0.4, size: 2, color: KIND_COLORS.jump, back: true });
         }
@@ -1260,6 +1300,13 @@ export class Renderer {
       const a = (i / 10) * 6.283;
       this.emit({ x: x + Math.cos(a) * 12, y: y + Math.sin(a) * 12, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, drag: 3, life: 0.35, size: 2.4, color: i % 2 ? pv.color : '#ffffff' });
     }
+  }
+
+  // Someone going out of sight (Vanish), or coming back into it: a pale puff where they stand.
+  vanishFx(pv) {
+    const y = pv.y + PH / 2;
+    this.emit({ x: pv.cx, y, life: 0.3, size: 34, grow: -70, shape: 'ring', width: 3, color: KIND_COLORS.ghost });
+    for (let i = 0; i < 7; i++) this.emit({ x: pv.cx + (Math.random() - 0.5) * 26, y: y + 14 - Math.random() * 40, vx: (Math.random() - 0.5) * 40, vy: -40 - Math.random() * 50, drag: 2, life: 0.5, size: 4 + Math.random() * 4, grow: 8, color: KIND_COLORS.ghost, alpha: 0.45 });
   }
 
   // Travelling between portals: a bright ball of light with sparks circling it.
@@ -1299,8 +1346,9 @@ export class Renderer {
   drawPlayer(g, pv, t) {
     const th = this.theme;
     const U = th.pixel;
-    // tag protection: flash between solid and see-through
-    const a = pv.immune ? (Math.floor(t * 14) % 2 ? 0.45 : 0.95) : 1;
+    // tag protection: flash between solid and see-through. Vanish (only they and their own side
+    // get this far): a faint shape, so they know where they are - and that nobody else does
+    const a = pv.ghost ? 0.32 + 0.07 * Math.sin(t * 5 + pv.id) : pv.immune ? (Math.floor(t * 14) % 2 ? 0.45 : 0.95) : 1;
     // the body is drawn larger than the hitbox, standing on the same feet: the style
     // draws its 32 x 40 character as ever, inside a scale about the middle of the feet
     const S = this.bodyK;
@@ -1326,7 +1374,7 @@ export class Renderer {
       th.player(g, pv, t, this.scene);
       g.restore();
     }
-    if (!pv.frozen && !pv.slow && !pv.shield && !pv.dark) return;
+    if (!pv.frozen && !pv.slow && !pv.shield && !pv.dark && !pv.titan) return;
     // what the renderer adds to a body (ice, cloud, ward, shadow) grows with it
     g.save();
     if (S !== 1) g.transform(S, 0, 0, S, pv.cx * (1 - S), pv.feet * (1 - S));
@@ -1367,6 +1415,39 @@ export class Renderer {
       g.beginPath();
       g.ellipse(pv.cx, pv.y + 19, 27 * pulse, 30 * pulse, 0, -2.4 + t * 2, -1.5 + t * 2);
       g.stroke();
+    }
+    if (pv.titan) {
+      // nothing touches them: a gold outline that breathes, and four glints turning round it
+      const pulse = 1 + 0.06 * Math.sin(t * 9);
+      const cy = pv.y + 19;
+      g.strokeStyle = KIND_COLORS.star;
+      g.lineWidth = 3.5;
+      g.globalAlpha = 0.9;
+      g.beginPath();
+      g.ellipse(pv.cx, cy, 25 * pulse, 31 * pulse, 0, 0, 6.283);
+      g.stroke();
+      g.globalAlpha = 0.28;
+      g.fillStyle = KIND_COLORS.star;
+      g.fill();
+      g.globalAlpha = 1;
+      g.fillStyle = '#ffffff';
+      for (let i = 0; i < 4; i++) {
+        const a2 = t * 3.2 + (i * 6.283) / 4;
+        const x = pv.cx + Math.cos(a2) * 27 * pulse;
+        const y = cy + Math.sin(a2) * 33 * pulse;
+        const r = 3.2 + 1.2 * Math.sin(t * 11 + i);
+        g.beginPath();
+        g.moveTo(x, y - r * 1.7);
+        g.lineTo(x + r * 0.5, y - r * 0.5);
+        g.lineTo(x + r * 1.7, y);
+        g.lineTo(x + r * 0.5, y + r * 0.5);
+        g.lineTo(x, y + r * 1.7);
+        g.lineTo(x - r * 0.5, y + r * 0.5);
+        g.lineTo(x - r * 1.7, y);
+        g.lineTo(x - r * 0.5, y - r * 0.5);
+        g.closePath();
+        g.fill();
+      }
     }
     if (pv.dark) {
       // blinded by an eclipse: a black sun over their head (beside the storm cloud, if they have that too)

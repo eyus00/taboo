@@ -50,6 +50,7 @@ import {
   SPEED_BUFF_MUL,
   JUMP_BUFF_MUL,
   DASH_SPEED,
+  PORTAL_SETTLE_TICKS,
   IN_LEFT,
   IN_RIGHT,
   IN_JUMP,
@@ -93,6 +94,9 @@ export function makeState(x, y) {
     slw: 0, // ticks of slow motion left (someone used Storm)
     ecl: 0, // ticks of night left (someone used Eclipse): changes nothing here, only what this player is shown
     dsh: 0, // ticks of a Dash left: straight ahead at full tilt, no steering
+    gho: 0, // ticks of Vanish left: nobody else is shown where we are (changes nothing here)
+    inv: 0, // ticks of Titan left: nothing touches us - here that means thorns; the rules see to the rest
+    gt: 0, // ticks our feet have been on the ground (counted up to PORTAL_SETTLE_TICKS): a portal waits for that
     hz: 0, // ticks until thorns can hurt us again
     w: PW,
     h: PH,
@@ -128,9 +132,12 @@ export function packState(s) {
     s.hz,
     s.ecl,
     s.dsh,
+    s.gho,
+    s.inv,
+    s.gt,
   ];
 }
-export const STATE_LEN = 26;
+export const STATE_LEN = 29;
 
 export function unpackState(a) {
   const s = makeState(a[0], a[1]);
@@ -162,6 +169,9 @@ export function unpackState(a) {
   s.hz = a[23];
   s.ecl = a[24] || 0;
   s.dsh = a[25] || 0;
+  s.gho = a[26] || 0;
+  s.inv = a[27] || 0;
+  s.gt = a[28] || 0;
   return s;
 }
 
@@ -178,6 +188,8 @@ export const PF_DEAD = 256;
 export const PF_SLOW = 512;
 export const PF_DARK = 1024;
 export const PF_DASH = 2048;
+export const PF_GHOST = 4096;
+export const PF_STAR = 8192;
 
 export function publicFlags(s) {
   return (
@@ -192,7 +204,9 @@ export function publicFlags(s) {
     (s.dead > 0 ? PF_DEAD : 0) |
     (s.slw > 0 ? PF_SLOW : 0) |
     (s.ecl > 0 ? PF_DARK : 0) |
-    (s.dsh > 0 ? PF_DASH : 0)
+    (s.dsh > 0 ? PF_DASH : 0) |
+    (s.gho > 0 ? PF_GHOST : 0) |
+    (s.inv > 0 ? PF_STAR : 0)
   );
 }
 
@@ -347,6 +361,18 @@ function onRamps(p, arena, prevCx, prevFeet, wasGround, vy0, down) {
   }
 }
 
+// Is this player standing in (or passing through) that portal's mouth?
+const inMouth = (p, a) => !(p.x + PW < a.x + 10 || p.x > a.x + a.w - 10 || p.y + PH < a.y + 10 || p.y > a.y + a.h - 4);
+
+// The portal whose mouth a player at (x, y) would be in, or -1. (Warp uses it: a
+// portal waits a moment before it takes someone, so "stood still for three ticks"
+// does not show that a spot is clear of one.)
+export function portalAt(arena, x, y) {
+  const p = { x, y };
+  for (let i = 0; i < arena.portals.length; i++) if (inMouth(p, arena.portals[i])) return i;
+  return -1;
+}
+
 // Advance one player by one tick.
 //   bits  - IN_LEFT | IN_RIGHT | IN_JUMP | IN_DOWN
 //   arena - a parsed arena
@@ -375,6 +401,8 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
   if (p.shd > 0) p.shd--;
   if (p.slw > 0) p.slw--;
   if (p.ecl > 0) p.ecl--;
+  if (p.gho > 0) p.gho--;
+  if (p.inv > 0) p.inv--;
   let dashing = p.dsh > 0;
   if (dashing) p.dsh--;
   if (p.hz > 0) p.hz--;
@@ -548,8 +576,8 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
     }
   }
 
-  // thorns: a sting, a short stun, and you are thrown back off them
-  if (p.hz === 0) {
+  // thorns: a sting, a short stun, and you are thrown back off them (a Titan walks straight through)
+  if (p.hz === 0 && p.inv === 0) {
     const sp = arena.spikes;
     for (let i = 0; i < sp.length; i++) {
       const z = sp[i];
@@ -569,17 +597,27 @@ export function stepPlayer(p, bits, arena, isIt = false, twist = NO_TWIST) {
     p.coyote = COYOTE_TICKS;
     p.air = AIR_JUMPS;
     p.nc = false;
+    if (p.gt < PORTAL_SETTLE_TICKS) p.gt++;
   } else {
+    p.gt = 0;
     if (p.coyote > 0) p.coyote--;
     if (p.vy >= 0 && !lifted) p.nc = false;
   }
 
-  // portals: step in and fly to the partner as an orb
+  // Portals: walk in and fly to the partner as an orb. A portal only takes someone
+  // whose feet have been on the ground for a moment (PORTAL_SETTLE_TICKS): coming
+  // down in or beside one off a jump, a trampoline or a launcher, or dropping past
+  // its mouth, sends you nowhere - there is time to step away, and it takes you
+  // only if you stay.
   let inPortal = false;
   const po = arena.portals;
   for (let i = 0; i < po.length; i++) {
     const a = po[i];
-    if (p.x + PW < a.x + 10 || p.x > a.x + a.w - 10 || p.y + PH < a.y + 10 || p.y > a.y + a.h - 4) continue;
+    if (!inMouth(p, a)) continue;
+    if (!p.ground || p.gt < PORTAL_SETTLE_TICKS) {
+      if (p.tp > 0) inPortal = true; // (still standing in the one we came out of)
+      break;
+    }
     inPortal = true;
     if (p.tp === 0) {
       const d = po[a.to];

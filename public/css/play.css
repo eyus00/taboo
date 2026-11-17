@@ -74,7 +74,8 @@ body.no-kbd #hud kbd { display: none; }
 
 /* --- top centre: the board. One row: [Sun's players][Sun's score] [clock] [Moon's score][Moon's players],
    kept clear of the menu button on the right by a margin that is mirrored on the left, so the clock
-   stands in the very middle. Under it, in one line: flag A, the round's name, flag B. --- */
+   stands in the very middle. Under it the round's name - in a team battle the three flags, A B C as they
+   stand on the map, and the name is the first of the tags below. --- */
 #top {
   position: absolute; top: var(--pad-t); --edge: calc(max(var(--pad-l), var(--pad-r)) + 96px); left: var(--edge); right: var(--edge);
   display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: center; justify-items: center; gap: 5px 8px;
@@ -94,6 +95,8 @@ body.no-kbd #hud kbd { display: none; }
 .tag { pointer-events: auto; display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 12px 0 10px; font: 800 11.5px/1 var(--f-ui); letter-spacing: 0.07em; text-transform: uppercase; white-space: nowrap; color: #fff; background: var(--plaque); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
 .tag .ic { font-size: 10.5px; }
 .tag .short { display: none; }
+.tag.mode { font-weight: 700; font-size: 12.5px; letter-spacing: 0; text-transform: none; } /* (a team battle: the round's name, where the flags have taken its place) */
+.tag.left { background: var(--coal); box-shadow: inset 0 -2px 0 var(--hot); } /* a knockout: how many are still in */
 .tag.twist { color: #1c1b1f; background: var(--ready); }
 .tag.x2 { background: var(--hot); font-size: 12.5px; letter-spacing: 0.05em; }
 /* While the round is about to begin (the 3-2-1 and a beat after GO) the twist and
@@ -134,7 +137,7 @@ body.no-kbd #hud kbd { display: none; }
 /* a flag: its letter, and a bar that fills with the colour of whoever is taking it */
 .h-flags { display: flex; gap: 6px; }
 .flagchip { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 11px 0 8px; background: var(--plaque); color: #e9e2cf; font: 800 14px/1 var(--f-ui); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
-#flags-b .flagchip { flex-direction: row-reverse; padding: 0 8px 0 11px; }
+.flagchip.rev { flex-direction: row-reverse; padding: 0 8px 0 11px; } /* (the last of the row mirrors the first) */
 .flagchip svg { width: 15px; height: 15px; display: block; }
 .flagchip .meter { display: block; width: clamp(46px, 5vw, 84px); height: 10px; background: rgba(255, 255, 255, 0.2); overflow: hidden; }
 .flagchip .meter i { display: block; width: 100%; height: 100%; transform-origin: 0 50%; transform: scaleX(0); transition: transform 0.12s linear; }
@@ -252,6 +255,7 @@ body:not(.no-kbd) #hud #itemdraw.land .tag kbd { display: inline-grid; }
 #brief .b-hd { display: flex; align-items: center; gap: 12px; padding: 8px 20px 6px calc(var(--seal) + 4px); min-height: calc(var(--seal) - 16px); box-shadow: inset 0 -2px 0 var(--hot); }
 #brief .b-title { font: 400 clamp(28px, 4vmin, 40px)/1.1 var(--f-brush); white-space: nowrap; padding-top: 2px; }
 #brief .b-side { margin-left: auto; padding: 3px 12px 2px; font: 800 12px/1.4 var(--f-ui); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
+#brief .b-left { color: #fff; background: var(--hot); } /* a knockout: how many are still in it */
 #brief .b-n { position: absolute; left: -12px; top: -14px; width: var(--seal); height: var(--seal); display: grid; place-items: center; padding-top: 3px; font: 400 calc(var(--seal) * 0.69)/1 var(--f-brush); color: #fff; background: var(--hot); clip-path: var(--blot); transform: rotate(-6deg); }
 #brief .b-n.pop { animation: brief-n 0.3s cubic-bezier(0.2, 1.4, 0.4, 1); }
 @keyframes brief-n { from { transform: rotate(-6deg) scale(2); opacity: 0.3; } }
@@ -329,7 +333,7 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
   .flagchip svg { width: 13px; height: 13px; }
   .flagchip .meter { width: 36px; height: 8px; }
   #pills li { font-size: 12px; line-height: 16px; }
-  #round-label { display: none; } /* (no room: the card before the round has said it) */
+  #round-label, .tag.mode { display: none; } /* (no room: the card before the round has said it) */
   /* (tags in their short form; the plain round tag makes way for the twist and the double points) */
   .tag { height: 19px; padding: 0 9px 0 8px; font-size: 10.5px; }
   .tag.x2 { font-size: 11.5px; }
@@ -418,3 +422,11 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
 }
 @keyframes hud-banner-calm { 0% { opacity: 0; } 8%, 75% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes hud-count-calm { 0%, 80% { opacity: 1; } 100% { opacity: 0.2; } }
+
+/* the narrowest phones (320 px): the clock and the two scores draw in a little, so the right-hand score clears the menu button */
+@media (max-width: 350px) {
+  #top { gap: 3px 3px; }
+  #timer { min-width: 52px; padding: 2px 7px 0; font-size: 29px; }
+  .h-score { font-size: 15.5px; padding: 5px 5px 3px; gap: 2px; clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%); }
+  .h-score .held { padding: 2px 3px 2px 1px; gap: 1px; }
+}

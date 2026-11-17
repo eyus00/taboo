@@ -88,6 +88,7 @@ function startChasing(players) {
     for (const p of players) {
       if (!p.snap || p.end || p.go === null) continue;
       const me = p.mine();
+      if (!me) continue; // (caught out of a knockout: watching)
       const other = p.snap[4].find((q) => q[0] !== me[0]);
       if (!other) continue;
       if (p.snap[2] === me[0]) p.bits = (other[1] > me[1] ? IN_RIGHT : IN_LEFT) | (n % 12 < 7 ? IN_JUMP : 0);
@@ -108,10 +109,11 @@ try {
     assert.match(code, /^\d{4}$/);
     assert.equal(res.room.hostId, a.socket.id);
     assert.equal(res.room.players[0].name, 'Anascript');
-    const { plan, pool, ...rest } = res.room.settings;
+    const { plan, pool, items, ...rest } = res.room.settings;
+    assert.deepEqual(items, [], 'every item is in the boxes');
     assert.deepEqual(rest, { game: 'quick', rounds: 5, mode: 'potato', size: 6, bots: true, arena: 'random', theme: 'random', duration: 60, powerups: true, open: false });
     assert.deepEqual(pool, { arena: [], theme: [] }, 'Random draws from everything');
-    assert.equal(plan.length, 7, 'a stage for every round a tournament can have');
+    assert.equal(plan.length, 9, 'a stage for every round a tournament can have (a knockout of ten is nine rounds)');
     assert.ok(plan.every((st) => st.arena === 'random' && st.theme === 'random'));
     a.room = res.room;
   });
@@ -133,6 +135,21 @@ try {
     a.socket.emit('settings', { size: 99 });
     await until(() => a.room.settings.size === 10, 'the size is kept within 2 to 10');
     assert.equal(a.room.players.length, 10);
+    // the two sides stay even whatever happens to the seats: a bot stands where a side is short, and the one that leaves comes from the side that has more
+    const even = () => [0, 1].map((t) => a.room.players.filter((p) => p.side === t).length);
+    assert.deepEqual(even(), [5, 5]);
+    const g = client('Gus');
+    assert.ok((await g.call('join', { code, name: 'Gus' })).ok);
+    await until(() => people().length === 2 && a.room.players.length === 10, 'someone walks into a full room of bots');
+    assert.deepEqual(even(), [5, 5], 'a bot of the side the newcomer joined made way');
+    for (const size of [9, 7, 4, 8]) {
+      a.socket.emit('settings', { size });
+      await until(() => a.room.players.length === size, `${size} seats`);
+      assert.ok(Math.abs(even()[0] - even()[1]) <= 1, `${size} seats: ${even().join(' v ')}`);
+    }
+    g.socket.disconnect();
+    await until(() => people().length === 1 && a.room.players.length === 8, 'and leaves again: a bot is back in the seat');
+    assert.deepEqual(even(), [4, 4]);
     a.socket.emit('settings', { size: 1 });
     await until(() => a.room.settings.size === 2 && a.room.players.length === 2, 'two at the least');
     a.socket.emit('settings', { size: 3 });
@@ -244,25 +261,35 @@ try {
   await test('only the host can change settings or start; bad values are ignored', async () => {
     b.socket.emit('start');
     b.socket.emit('settings', { arena: 'hills' });
-    a.socket.emit('settings', { arena: 'dojo', theme: 'space', mode: 'time', duration: 90, powerups: false, rounds: 3 });
+    a.socket.emit('settings', { arena: 'dojo', theme: 'shadow', mode: 'time', duration: 90, powerups: false, rounds: 3 });
     await until(() => b.room.settings.arena === 'dojo' && b.room.settings.mode === 'time', 'settings');
     a.socket.emit('settings', { arena: 'nope', theme: 'nope', mode: 'nope', duration: 5, powerups: 'yes', game: 'nope', rounds: 4, bots: 'yes', size: 'six' });
     await sleep(150);
-    const { plan, pool, ...rest } = b.room.settings;
-    assert.deepEqual(rest, { game: 'quick', rounds: 3, mode: 'time', size: 6, bots: false, arena: 'dojo', theme: 'space', duration: 90, powerups: false, open: false });
-    assert.ok(plan.every((st) => st.arena === 'dojo' && st.theme === 'space'), 'an arena or a style set like this goes for every round');
+    const { plan, pool, items, ...rest } = b.room.settings;
+    assert.deepEqual(rest, { game: 'quick', rounds: 3, mode: 'time', size: 6, bots: false, arena: 'dojo', theme: 'shadow', duration: 90, powerups: false, open: false });
+    assert.ok(plan.every((st) => st.arena === 'dojo' && st.theme === 'shadow'), 'an arena or a style set like this goes for every round');
     // one round of a tournament can have its own; junk is ignored
     a.socket.emit('settings', { stage: { i: 2, arena: 'hills', theme: 'neon' } });
     await until(() => b.room.settings.plan[2].arena === 'hills', 'round 3 planned');
     assert.deepEqual(b.room.settings.plan[2], { arena: 'hills', theme: 'neon' });
-    assert.deepEqual(b.room.settings.plan[1], { arena: 'dojo', theme: 'space' });
+    assert.deepEqual(b.room.settings.plan[1], { arena: 'dojo', theme: 'shadow' });
     a.socket.emit('settings', { stage: { i: 99, arena: 'hills' } });
     a.socket.emit('settings', { stage: { i: 1, arena: 'nowhere', theme: 'random' } });
     await until(() => b.room.settings.plan[1].theme === 'random', 'round 2 left to the draw');
     assert.equal(b.room.settings.plan[1].arena, 'dojo');
     assert.equal(b.room.settings.arena, 'dojo', 'arena and theme still say what round 1 is played on');
-    a.socket.emit('settings', { arena: 'dojo', theme: 'space' });
-    await until(() => b.room.settings.plan.every((st) => st.arena === 'dojo' && st.theme === 'space'), 'back to one stage for all');
+    a.socket.emit('settings', { arena: 'dojo', theme: 'shadow' });
+    await until(() => b.room.settings.plan.every((st) => st.arena === 'dojo' && st.theme === 'shadow'), 'back to one stage for all');
+    // which items are in the lucky boxes: a list of kinds, in the game's own order (junk is dropped; all of them is "everything")
+    a.socket.emit('settings', { items: ['ghost', 'dash', 'nonsense', 'dash'] });
+    await until(() => b.room.settings.items.length === 2, 'the item pool');
+    assert.deepEqual(b.room.settings.items, ['dash', 'ghost']);
+    b.socket.emit('settings', { items: ['star'] });
+    a.socket.emit('settings', { items: 'all' });
+    await sleep(150);
+    assert.deepEqual(b.room.settings.items, ['dash', 'ghost'], 'only the host chooses, and only with a list');
+    a.socket.emit('settings', { items: [] });
+    await until(() => b.room.settings.items.length === 0, 'back to every item');
     assert.equal(a.room.phase, 'lobby');
   });
 
@@ -384,66 +411,61 @@ try {
     assert.equal(a.end.rows.reduce((t, r) => t + r.tags, 0), a.tags.length, 'every tag is credited to someone');
   });
 
-  await test('tournament: rounds follow on their own, points add up, the leader starts as it, a champion is crowned', async () => {
+  await test('knockout tournament: every round the oni at the buzzer is out, the rest play on, the last one standing wins', async () => {
     a.socket.emit('lobby');
     await until(() => a.room.phase === 'lobby', 'back to lobby');
     a.socket.emit('settings', { game: 'cup', rounds: 3, arena: 'random' });
     await until(() => a.room.settings.game === 'cup' && a.room.settings.arena === 'random', 'cup settings');
     assert.equal(a.room.settings.mode, 'team', 'a tournament is played in teams unless the host chooses otherwise');
-    a.socket.emit('settings', { mode: 'time' }); // this test is about the free-for-all points
-    await until(() => a.room.settings.mode === 'time', 'free-for-all tournament');
+    a.socket.emit('settings', { mode: 'potato' }); // this test is about the knockout
+    await until(() => a.room.settings.mode === 'potato', 'knockout');
     for (const p of [a, b, c]) p.ends.length = 0;
-    const winsBefore = a.room.players.map((p) => p.wins);
+    const winsBefore = new Map(a.room.players.map((p) => [p.slot, p.wins]));
+    const slotOf = (x) => x.me().slot;
     a.socket.emit('start');
     startChasing([a, b, c]);
     const arenas = [];
-    const totals = { 0: 0, 1: 0, 2: 0 };
-    for (let round = 1; round <= 3; round++) {
+    const gone = [];
+    for (let round = 1; round <= 2; round++) {
       await until(() => a.round && a.round.cup && a.round.cup.round === round && a.go !== null, `round ${round} go`, 9000);
       arenas.push(a.round.arena);
-      assert.equal(a.round.cup.rounds, 3);
-      assert.equal(a.round.cup.double, round === 3, 'only the last round counts double');
-      assert.equal(a.round.twist !== 'none', round === 2, 'round 2 has a twist');
-      if (round === 1) assert.equal(a.round.cup.leader, -1);
-      else {
-        const top = Math.max(...Object.values(totals));
-        if (top > 0) {
-          assert.equal(totals[a.round.cup.leader], top, 'the leader is named');
-          assert.equal(a.go, a.round.cup.leader, 'and starts as it');
-        }
-      }
+      const cup = a.round.cup;
+      assert.deepEqual([cup.ko, cup.rounds, cup.left, cup.double], [true, 2, 4 - round, false], 'three players: two rounds, one fewer each time, nothing counts double');
+      assert.equal(a.round.twist, 'none', 'two rounds: no room for a twist');
+      assert.equal(a.round.players.length, 4 - round, 'only those still in it play');
+      assert.ok(gone.every((slot) => !a.round.players.some((p) => p.slot === slot)), 'whoever went out is not in the round');
+      assert.ok(a.round.players.some((p) => p.slot === a.round.it), 'one of those still in starts as it');
+      assert.deepEqual(a.room.players.filter((p) => p.out).map((p) => p.slot), gone, 'and the room says who is out');
       if (round === 2) {
         // nothing can be changed or restarted in the middle of a tournament
         a.socket.emit('settings', { game: 'quick', arena: 'dojo' });
         a.socket.emit('start');
         await sleep(100);
         assert.equal(a.room.settings.game, 'cup');
-        assert.equal(a.room.cup.round, 2);
+        assert.deepEqual([a.room.cup.round, a.room.cup.ko], [2, true]);
       }
-      await until(() => a.ends.length === round && b.ends.length === round, `round ${round} end`, (SHORT + 4) * 1000);
+      await until(() => a.ends.length === round && b.ends.length === round && c.ends.length === round, `round ${round} end (also for whoever is watching)`, (SHORT + 4) * 1000);
       const e = a.end;
       assert.equal(e.mode, 'cup');
-      assert.equal(e.cup.round, round);
-      assert.equal(e.cup.final, round === 3);
-      const safe = e.rows.filter((r) => r.slot !== e.loser).length;
-      assert.equal(safe, 2, 'exactly one player is it at the buzzer');
-      for (const r of e.rows) {
-        totals[r.slot] += r.pts;
-        if (round === 3) assert.equal(r.pts % 2, 0, 'double points');
-        if (r.slot === e.loser) assert.ok(r.pts <= 2 * (round === 3 ? 2 : 1), 'no bonus for whoever is it at the end');
-      }
-      for (const row of e.cup.table) assert.equal(row.pts, totals[row.slot], 'the table is the running total');
-      assert.deepEqual(e.cup.table.map((r) => r.pts), e.cup.table.map((r) => r.pts).sort((x, y) => y - x), 'most points first');
+      assert.deepEqual([e.cup.round, e.cup.ko, e.cup.final], [round, true, round === 2]);
+      assert.equal(e.rows.length, 4 - round);
+      assert.ok(e.loser >= 0 && e.cup.caught === e.loser, 'whoever is the oni at the buzzer is caught out');
+      gone.push(e.loser);
+      // the table: those still in first, then the ones who went out - the last to go first
+      assert.deepEqual(e.cup.table.filter((r) => r.out).map((r) => [r.slot, r.out]), gone.map((slot, i) => [slot, i + 1]).reverse());
+      assert.equal(e.cup.table.filter((r) => !r.out).length, 3 - round);
+      assert.equal(e.cup.table.length, 3, 'everyone who started is on it');
     }
     clearInterval(chase);
-    assert.equal(new Set(arenas).size, 3, `a different arena every round: ${arenas}`);
+    assert.equal(new Set(arenas).size, 2, `a different arena every round: ${arenas}`);
     const champ = a.end.cup.table[0];
-    assert.ok(a.end.winners.includes(champ.slot));
+    assert.deepEqual(a.end.winners, [champ.slot], 'one winner: the last one standing');
+    assert.ok(!gone.includes(champ.slot) && [a, b, c].map(slotOf).includes(champ.slot));
     await until(() => a.room.phase === 'results' && a.room.cup === null, 'tournament over');
-    const after = a.room.players.find((p) => p.slot === champ.slot).wins;
-    assert.equal(after, winsBefore[a.room.players.findIndex((p) => p.slot === champ.slot)] + 1, 'the cup counts as a win');
+    assert.equal(a.room.players.find((p) => p.slot === champ.slot).wins, winsBefore.get(champ.slot) + 1, 'the tournament counts as a win');
+    assert.ok(a.room.players.every((p) => !p.out), 'and everyone is back in for the next one');
     await sleep(BREAK + 400);
-    assert.equal(a.room.phase, 'results', 'no fourth round');
+    assert.equal(a.room.phase, 'results', 'no third round');
   });
 
   await test('team battle: sides belong to the room and can be changed in the lobby; a bot fills the short side; bombs, flags and a team result', async () => {
@@ -515,11 +537,11 @@ try {
     assert.equal(a.go, -1);
     assert.deepEqual(a.goBombs.slice().sort(), a.round.bombs.slice().sort(), 'and they go out as drawn');
     await until(() => a.snap && a.snap[1] === 1 && a.snap[8], 'team snapshot');
-    assert.equal(a.snap[8].length, 8, 'scores, who carries a bomb, whether it is over, and fill + owner of both flags');
+    assert.equal(a.snap[8].length, 10, 'scores, who carries a bomb, whether it is over, and fill + owner of the three flags');
     const bits = (m) => m.toString(2).replace(/0/g, '').length;
     assert.equal(bits(a.snap[8][2]), 2, 'two players carry a bomb');
     assert.equal(a.snap[8][3], 0);
-    assert.deepEqual(a.snap[8].slice(4), [0, -1, 0, -1], 'the flags start as nobody\'s');
+    assert.deepEqual(a.snap[8].slice(4), [0, -1, 0, -1, 0, -1], 'the flags start as nobody\'s');
     assert.ok(Array.isArray(a.snap[5]) && Array.isArray(a.snap[7]), 'boxes and puddles are lists');
     assert.equal(a.snap[4].length, 4, 'the bot is in the snapshot like anyone else');
     assert.equal(a.snap[4][0].length, 10, 'every player entry says what item they hold');
@@ -567,13 +589,13 @@ try {
     a.socket.emit('settings', { game: 'cup', mode: 'team', rounds: 3 });
     await until(() => a.room.settings.game === 'cup' && a.room.settings.mode === 'team', 'tournament settings');
     // each round of a tournament has its own arena and style
-    a.socket.emit('settings', { stage: { i: 0, arena: 'hills', theme: 'space' } });
+    a.socket.emit('settings', { stage: { i: 0, arena: 'hills', theme: 'shadow' } });
     a.socket.emit('settings', { stage: { i: 1, arena: 'canyon', theme: 'random' } });
     await until(() => a.room.settings.plan[1].arena === 'canyon', 'stages planned');
     a.round = null;
     a.socket.emit('start');
     await until(() => a.round && a.round.cup && a.round.cup.round === 1, 'round 1');
-    assert.deepEqual([a.round.arena, a.round.theme, a.round.random], ['hills', 'space', { arena: false, theme: false }], 'round 1 is played where the plan says');
+    assert.deepEqual([a.round.arena, a.round.theme, a.round.random], ['hills', 'shadow', { arena: false, theme: false }], 'round 1 is played where the plan says');
     assert.deepEqual(teamsNow(), sides0, 'round 1');
     const cols1 = a.round.cols.slice();
     c.socket.emit('side', 1 - sideOf(c));

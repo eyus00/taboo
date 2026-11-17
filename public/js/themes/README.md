@@ -14,7 +14,8 @@ are what made the old version slow.
 
 - **Art board**: 800 x 500 units (`ART_W`, `ART_H`). Backdrops are composed on it
   and scaled to cover the screen, so keep important things away from the edges.
-- **World**: arena units. Arenas are 2000 x 1120; a tile is 40; a player is
+- **World**: arena units. Arenas come in three sizes - 1920 x 1120 (duel), 2560 x 1440
+  and 3840 x 2160 (big; see `shared/arenas.js`) - so nothing may assume one; a tile is 40; a player is
   32 x 40 (`PW`, `PH`). On a typical laptop one world unit is about 0.7-1 screen
   pixel, so players are only ~25-35 px tall on screen: favour bold, simple
   shapes with the player's colour clearly visible over fine detail.
@@ -50,7 +51,7 @@ export default {
   // ---- pre-rendered into sprites by the renderer, called with t = 0 at the origin ----
   portal(g, po, t, i, scene)      // po = { cx, cy, w: 44, h: 76, pair }. Use PORTAL_COLORS[po.pair % 3] from util.js so pairs match.
                                   //   Must fit in a 92 x 112 box centred on (cx, cy). The renderer adds a gentle pulse + circling sparks.
-  pickup(g, kind, x, y, t, scene) // kind: 'speed' | 'jump' | 'shield' | 'freeze'. Fit in 68 x 68 centred on (x, y).
+  pickup(g, kind, x, y, t, scene) // kind: any of ITEM_KINDS (config.js) - 'speed', 'jump', ... 'ghost', 'star' - or 'box'. Fit in 68 x 68 centred on (x, y).
                                   //   Use drawIcon(g, kind, x, y, r, color) + KIND_COLORS from util.js so the icons stay recognisable.
   marker(g, cx, cy, t, pv, scene) // the "IT" sign that floats above a head: (cx, cy) is its bottom-centre anchor.
                                   //   Fit within x: cx-44..cx+44, y: cy-60..cy+18. Must read at ~25 px tall.
@@ -83,8 +84,11 @@ blink (1 -> 0 during a blink), seed (stable per player)
 The renderer draws your 32 x 40 player `BODY_SCALE` (1.25) times larger, scaled
 about the middle of the feet - draw at natural size, as if the box were 32 x 40;
 the hitbox stays 32 x 40. It also draws on top of your player: the frozen ice
-block, the shield ring, the storm cloud, the black sun of an eclipse, the name,
-the IT marker, and the orb while travelling through a portal.
+block, the shield ring, the storm cloud, the black sun of an eclipse, the gold
+outline of a Titan, the name, the IT marker, and the orb while travelling
+through a portal. Someone who has Vanished is not handed to you at all on the
+screens that may not see them; on their own (and their side's) you draw them
+as ever and the renderer fades the result.
 Whoever `isIt` should still look different in your own drawing (angry eyes, a
 glow sprite, a tint...) - it is the most important thing on screen.
 

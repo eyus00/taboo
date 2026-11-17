@@ -10,7 +10,7 @@
 //     few snapshots, so 30 updates a second looks smooth at 60+ fps.
 
 import { TICK_MS, TICK_RATE, MAX_PLAYERS, FLAG_CAP_TICKS, COUNTDOWN_MS, twistById } from '/shared/config.js';
-import { stepPlayer, unpackState, PF_GROUND, PF_FACE, PF_STUN, PF_FROZEN, PF_ORB, PF_SPEED, PF_JUMP, PF_SHIELD, PF_DEAD, PF_SLOW, PF_DARK, PF_DASH } from '/shared/physics.js';
+import { stepPlayer, unpackState, PF_GROUND, PF_FACE, PF_STUN, PF_FROZEN, PF_ORB, PF_SPEED, PF_JUMP, PF_SHIELD, PF_DEAD, PF_SLOW, PF_DARK, PF_DASH, PF_GHOST, PF_STAR } from '/shared/physics.js';
 
 const INTERP_TICKS = 6; // draw other players ~100 ms behind the newest snapshot
 const MAX_EXTRAPOLATE = 4;
@@ -124,6 +124,8 @@ export class NetGame {
         slw: f & PF_SLOW ? 1 : 0,
         ecl: f & PF_DARK ? 1 : 0,
         dsh: f & PF_DASH ? 1 : 0,
+        gho: f & PF_GHOST ? 1 : 0,
+        inv: f & PF_STAR ? 1 : 0,
         item: (e[9] || 0) & 15,
         arm: (e[9] || 0) & 16 ? 1 : 0,
         immune: e[6],
@@ -272,9 +274,11 @@ export class NetGame {
             slw: p.slw,
             ecl: p.ecl,
             dsh: p.dsh,
+            gho: p.gho,
+            inv: p.inv,
             dead: p.dead,
           });
-          me = { spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw, ecl: p.ecl, item: latest.item, arm: latest.arm };
+          me = { spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw, ecl: p.ecl, gho: p.gho, inv: p.inv, item: latest.item, arm: latest.arm };
         } else {
           players.push({ ...base, ...sample(this.hist[slot], rt, this.phase === 'over') });
         }
@@ -317,7 +321,7 @@ export class NetGame {
   }
 }
 
-const pose = (p) => ({ vx: p.vx, vy: p.vy, ground: p.ground, face: p.face, stun: p.stun, frz: p.frz, orb: p.orb, spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw, ecl: p.ecl, dsh: p.dsh });
+const pose = (p) => ({ vx: p.vx, vy: p.vy, ground: p.ground, face: p.face, stun: p.stun, frz: p.frz, orb: p.orb, spd: p.spd, jmp: p.jmp, shd: p.shd, slw: p.slw, ecl: p.ecl, dsh: p.dsh, gho: p.gho, inv: p.inv });
 
 // Position of a remote player at render time `rt` (in server ticks).
 function sample(h, rt, freeze) {

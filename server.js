@@ -34,9 +34,10 @@ import {
   TWISTS,
   twistById,
   IN_MASK,
+  ITEM_KINDS,
 } from './shared/config.js';
-import { ARENA_IDS, arenaById, arenasFor, arenaFits } from './shared/arenas.js';
-import { Sim, standings, cupPoints, makeTeams } from './shared/sim.js';
+import { ARENAS, ARENA_IDS, arenaById, arenasFor, arenaFits } from './shared/arenas.js';
+import { Sim, standings, makeTeams } from './shared/sim.js';
 import { makeBot, botThink, prepareBots, BOT_NAMES } from './shared/bots.js';
 import { packState, publicFlags } from './shared/physics.js';
 
@@ -116,6 +117,16 @@ function uniqueName(room, name) {
 const members = (room) => [...room.players.values(), ...room.bots.values()];
 // How many will play the next round (the stages are fitted to this).
 const headcount = (room) => Math.max(MIN_PLAYERS, room.players.size + room.bots.size);
+// A knockout tournament: every round the oni at the buzzer is out, until one is left.
+const isKnockout = (s) => s.game === 'cup' && s.mode !== 'team';
+// Who is still in it (everyone, unless a knockout is on).
+const stillIn = (room) => members(room).filter((p) => !p.out);
+// Of the stages that fit, the ones built for the smallest crowd: a knockout moves to smaller ground as the field thins.
+const snuggest = (ids) => {
+  const most = (id) => ARENAS.find((a) => a.id === id).players[1];
+  const least = Math.min(...ids.map(most));
+  return ids.filter((id) => most(id) === least);
+};
 
 // A room has a number of seats. People sit in them; a bot can sit in any seat
 // nobody has (the host puts one there, or takes it away); a seat with nobody
@@ -133,7 +144,8 @@ function addBot(room) {
   const sizes = sideSizes(room);
   const id = `bot-${++room.botSeq}`;
   // (in a team game it stands on the side that is short)
-  room.bots.set(id, { id, name: botName(room, slot), slot, side: sizes[0] <= sizes[1] ? 0 : 1, playing: false, wins: 0, pts: 0, itMs: 0, rtt: 0, bot: true });
+  // (one that turns up while a knockout is on sits it out, like anyone who arrives late)
+  room.bots.set(id, { id, name: botName(room, slot), slot, side: sizes[0] <= sizes[1] ? 0 : 1, playing: false, wins: 0, pts: 0, itMs: 0, rtt: 0, bot: true, out: !!room.cup?.ko });
 }
 function botName(room, slot) {
   const taken = new Set(members(room).map((p) => p.name.toLowerCase()));
@@ -142,9 +154,14 @@ function botName(room, slot) {
 function syncBots(room) {
   const s = room.settings;
   if (s.size < room.players.size) s.size = Math.min(MAX_PLAYERS, room.players.size); // (never fewer seats than people)
-  // more members than seats: the bots leave, the newest first
-  const list = [...room.bots.values()];
-  while (list.length && room.players.size + list.length > s.size) room.bots.delete(list.pop().id);
+  // more members than seats: the bots leave - from the side that has more of the room, the newest
+  // first (so someone who walks in, or a seat taken away, leaves the two sides as even as they were)
+  while (room.bots.size && room.players.size + room.bots.size > s.size) {
+    const sizes = sideSizes(room);
+    const newest = [...room.bots.values()].reverse();
+    const bot = (sizes[0] !== sizes[1] && newest.find((b) => b.side === (sizes[0] > sizes[1] ? 0 : 1))) || newest[0];
+    room.bots.delete(bot.id);
+  }
   if (s.bots) while (room.players.size + room.bots.size < s.size) addBot(room);
   // (someone called Zap walks in: the bot called Zap takes another name)
   const people = new Set([...room.players.values()].map((p) => p.name.toLowerCase()));
@@ -166,10 +183,14 @@ function makeRoom(room, to) {
 }
 
 // A stage chosen for a different number of players goes back to Random.
+// (In a knockout each round has one player fewer than the one before: round k is fitted to n - k.)
 function fitPlan(room) {
   const s = room.settings;
   const n = headcount(room);
-  for (const st of s.plan) if (st.arena !== 'random' && !arenaFits(st.arena, n)) st.arena = 'random';
+  const ko = isKnockout(s);
+  s.plan.forEach((st, k) => {
+    if (st.arena !== 'random' && !arenaFits(st.arena, ko ? Math.max(MIN_PLAYERS, n - k) : n)) st.arena = 'random';
+  });
   s.arena = s.plan[0].arena;
 }
 
@@ -193,10 +214,10 @@ function roomState(room) {
     hostId: room.hostId,
     phase: room.phase, // lobby | countdown | playing | results
     settings: room.settings,
-    cup: room.cup ? { round: room.cup.round, rounds: room.cup.rounds } : null,
-    // side: which team (0 Sun, 1 Moon) the player is on whenever the game is a team battle
+    cup: room.cup ? { round: room.cup.round, rounds: room.cup.rounds, ko: !!room.cup.ko } : null,
+    // side: which team (0 or 1) the player is on whenever the game is a team battle
     // bot: one of the bots filling the seats nobody has taken (they come after the people)
-    players: members(room).map((p) => ({ id: p.id, name: p.name, slot: p.slot, side: p.side, playing: p.playing, wins: p.wins, pts: p.pts, bot: !!p.bot })),
+    players: members(room).map((p) => ({ id: p.id, name: p.name, slot: p.slot, side: p.side, playing: p.playing, wins: p.wins, pts: p.pts, bot: !!p.bot, out: !!p.out })),
   };
 }
 
@@ -241,7 +262,8 @@ function roundInfo(room) {
     random: g.random, // what was left to chance: { arena, theme }
     teams: g.teams, // team battle: team (0 or 1) of each slot; otherwise null
     cols: g.cols, // which player colour each slot is drawn in this round
-    cup: g.cup, // null, or { round, rounds, double, leader }
+    cup: g.cup, // null, or { round, rounds, double, leader, ko, left }
+    items: g.sim.itemPool || [], // which items are in the boxes ([]: all of them)
     playing: g.state === 'playing',
     countdown: Math.max(0, g.goAt - Date.now()),
     // everyone in this round: the real players still in it, and any bots filling in (bot: true)
@@ -254,7 +276,7 @@ function roundInfo(room) {
 
 // The stage plan: an arena and a style for every round a tournament can have
 // (a quick match is round 1). 'random' leaves it to the draw.
-const MAX_ROUNDS = Math.max(...CUP_ROUNDS);
+const MAX_ROUNDS = Math.max(...CUP_ROUNDS, MAX_PLAYERS - 1); // (a knockout of ten is nine rounds)
 const okArena = (v) => v === 'random' || ARENA_IDS.includes(v);
 const okTheme = (v) => v === 'random' || THEME_IDS.includes(v);
 const newPlan = (arena, theme) => Array.from({ length: MAX_ROUNDS }, () => ({ arena, theme }));
@@ -278,9 +300,16 @@ function sideSizes(room, bots = true) {
 }
 
 function addPlayer(room, socket, name) {
-  // A bot gives up its seat for them, if that is what it takes.
-  const list = [...room.bots.values()];
-  while (list.length && room.players.size + list.length >= room.settings.size) room.bots.delete(list.pop().id);
+  // Sides belong to the room: a newcomer joins the one with fewer people on it (a
+  // coin toss if they are level) and stays there until they - or the host - change it.
+  const sizes = sideSizes(room, false);
+  const side = sizes[0] === sizes[1] ? (Math.random() < 0.5 ? 0 : 1) : sizes[0] < sizes[1] ? 0 : 1;
+  // A bot gives up its seat for them, if that is what it takes: the newest one on
+  // the side they are joining, so the two sides stay as even as they were.
+  while (room.bots.size && room.players.size + room.bots.size >= room.settings.size) {
+    const newest = [...room.bots.values()].reverse();
+    room.bots.delete((newest.find((b) => b.side === side) || newest[0]).id);
+  }
   // The lowest free place. Bots hold the highest ones; one that is still
   // playing out the round in progress only has its place taken if nothing
   // else is left (the newcomer watches this round anyway, and that bot is
@@ -290,11 +319,8 @@ function addPlayer(room, socket, name) {
   let slot = 0;
   while (used.has(slot) || bots.has(slot)) slot++;
   if (slot >= MAX_PLAYERS) for (slot = 0; used.has(slot); ) slot++;
-  // Sides belong to the room: a newcomer joins the smaller one (a coin toss if
-  // they are level) and stays there until they - or the host - change it.
-  const sizes = sideSizes(room, false);
-  const side = sizes[0] === sizes[1] ? (Math.random() < 0.5 ? 0 : 1) : sizes[0] < sizes[1] ? 0 : 1;
-  const player = { id: socket.id, name: uniqueName(room, name), slot, side, playing: false, wins: 0, pts: 0, itMs: 0, rtt: 0 };
+  // (someone who walks in while a knockout is on watches the rest of it)
+  const player = { id: socket.id, name: uniqueName(room, name), slot, side, playing: false, wins: 0, pts: 0, itMs: 0, rtt: 0, out: !!room.cup?.ko };
   room.players.set(socket.id, player);
   socket.join(room.code);
   socket.data.code = room.code;
@@ -332,7 +358,7 @@ function leaveRoom(socket) {
       finishRound(room, 'forfeit');
       return;
     }
-  } else if (!g && room.cup && members(room).length < MIN_PLAYERS) {
+  } else if (!g && room.cup && stillIn(room).length < MIN_PLAYERS) {
     endCup(room); // between rounds and nobody left to play against
   }
   emitRoom(room);
@@ -341,11 +367,17 @@ function leaveRoom(socket) {
 // ---------------------------------------------------------------------------
 // Rounds
 // ---------------------------------------------------------------------------
+// A tournament is a team battle over a number of rounds (the points add up),
+// or a knockout: Hot Potato round after round, and every time the oni at the
+// buzzer is out - as many rounds as it takes to leave one standing.
 function startCup(room) {
-  room.cup = { round: 0, rounds: room.settings.rounds, arenas: [], lastTwist: '', teamPts: [0, 0] };
-  for (const p of members(room)) {
+  const ko = isKnockout(room.settings);
+  const all = members(room);
+  room.cup = { round: 0, rounds: ko ? all.length - 1 : room.settings.rounds, arenas: [], lastTwist: '', teamPts: [0, 0], ko, gone: [] };
+  for (const p of all) {
     p.pts = 0;
     p.itMs = 0;
+    p.out = false;
   }
 }
 
@@ -354,6 +386,7 @@ function endCup(room) {
   room.nextTimer = null;
   room.cup = null;
   room.phase = 'lobby';
+  for (const p of members(room)) p.out = false;
 }
 
 function startRound(room) {
@@ -364,7 +397,8 @@ function startRound(room) {
   // what this round is played on: the plan's entry for it (a quick match is round 1)
   const stage = s.plan[cup ? Math.min(cup.round, MAX_ROUNDS - 1) : 0];
   syncBots(room);
-  const everyone = members(room);
+  const everyone = stillIn(room); // (in a knockout: whoever has not been caught out yet)
+  if (cup?.ko) cup.rounds = cup.round + everyone.length - 1; // one out a round from here (someone may have left)
   // the stages that suit this many players (a small one is chaos with ten in it, a big one empty with two):
   // the draw is among them, and one that was chosen for a different crowd is drawn again
   const fits = arenasFor(everyone.length).filter((id) => ARENA_IDS.includes(id));
@@ -372,7 +406,8 @@ function startRound(room) {
   let arenaId = fitting.includes(stage.arena) ? stage.arena : 'random';
   const drawn = arenaId === 'random';
   if (drawn) {
-    const pool = drawFrom(fitting, s.pool.arena); // (the ones the host left in the draw)
+    let pool = drawFrom(fitting, s.pool.arena); // (the ones the host left in the draw)
+    if (cup?.ko) pool = snuggest(pool); // a knockout: smaller ground as the field thins
     if (cup) {
       // a tournament visits every stage before repeating one
       cup.arenas = cup.arenas.filter((id) => pool.includes(id));
@@ -387,6 +422,7 @@ function startRound(room) {
 
   const sim = new Sim(arenaById(arenaId));
   sim.powerups = s.powerups;
+  sim.itemPool = s.items.slice(); // which items are in the boxes ([]: all of them)
   let twist = 'none';
   let info = null;
   let startIt = -1;
@@ -397,13 +433,8 @@ function startRound(room) {
       twist = pick(TWISTS.slice(1).map((t) => t.id), cup.lastTwist);
       cup.lastTwist = twist;
     }
-    if (cup.round > 1) {
-      // the leader starts as it (a tie for the lead is settled by a coin toss)
-      const all = everyone;
-      const top = Math.max(...all.map((p) => p.pts));
-      if (top > 0) startIt = pick(all.filter((p) => p.pts === top).map((p) => p.slot));
-    }
-    info = { round: cup.round, rounds: cup.rounds, double: last, leader: startIt };
+    // ko: a knockout (the oni at the buzzer is out); left: how many are still in it this round
+    info = { round: cup.round, rounds: cup.rounds, double: last && !cup.ko, leader: -1, ko: cup.ko, left: everyone.length };
   }
   sim.twist = twistById(twist);
 
@@ -493,15 +524,20 @@ function finishRound(room, reason) {
   const forfeit = reason === 'forfeit';
   const team = g.mode === 'team';
   if (!forfeit) g.sim.finish(); // (already done when the clock ran out; this is for safety)
-  let { rows, winners, loser, score, win } = standings(g.sim, names, team ? 'team' : cup ? 'time' : g.mode);
-  if (cup && !team) loser = g.sim.it;
+  let { rows, winners, loser, score, win } = standings(g.sim, names, team ? 'team' : g.mode);
   if (forfeit) {
     // everyone else left: whoever stayed wins, whatever the clock says
     winners = rows.map((r) => r.slot);
     loser = -1;
   }
   const bySlot = new Map(members(room).filter((p) => p.playing).map((p) => [p.slot, p])); // (who played this round)
-  const gained = cup && !team && !forfeit ? cupPoints(g.sim, g.cup.double) : {};
+  const gained = {};
+  // a knockout: whoever is the oni when the clock runs out is out of the tournament
+  const caught = cup?.ko && !forfeit ? bySlot.get(loser) : null;
+  if (caught) {
+    caught.out = true;
+    cup.gone.push({ slot: caught.slot, name: caught.name, round: cup.round, bot: !!caught.bot });
+  }
   for (const p of members(room)) {
     if (!p.playing) continue;
     if (cup) {
@@ -522,7 +558,7 @@ function finishRound(room, reason) {
     cup: null,
   };
   if (cup) {
-    const final = cup.round >= cup.rounds || forfeit || members(room).length < MIN_PLAYERS;
+    const final = cup.ko ? forfeit || stillIn(room).length < MIN_PLAYERS : cup.round >= cup.rounds || forfeit || members(room).length < MIN_PLAYERS;
     let table = [];
     if (team) {
       // the last round counts double here too
@@ -537,25 +573,27 @@ function finishRound(room, reason) {
         out.winners = rows.filter((r) => best < 0 || r.team === best).map((r) => r.slot);
       }
     } else {
-      // the table: most points first, less time as it breaks ties
-      table = members(room)
-        .sort((a, b) => b.pts - a.pts || a.itMs - b.itMs || a.slot - b.slot)
-        .map((p) => ({ slot: p.slot, name: p.name, pts: p.pts, ms: p.itMs, gained: gained[p.slot] || 0, bot: !!p.bot }));
-      if (final) {
-        const best = table[0];
-        out.winners = table.filter((r) => r.pts === best.pts && r.ms === best.ms).map((r) => r.slot);
-      }
+      // the table of a knockout: whoever is still in (less time as the oni first), then the ones who went out, the last to go first
+      // (out: the round they went out in, 0 while they are still in)
+      const row = (p, round) => ({ slot: p.slot, name: p.name, pts: 0, ms: p.itMs || 0, gained: 0, bot: !!p.bot, out: round });
+      const ms = new Map(members(room).map((p) => [p.slot, p.itMs]));
+      table = [
+        ...stillIn(room).filter((p) => bySlot.has(p.slot)).sort((a, b) => a.itMs - b.itMs || a.slot - b.slot).map((p) => row(p, 0)),
+        ...cup.gone.slice().reverse().map((q) => row({ ...q, itMs: ms.get(q.slot) }, q.round)),
+      ];
+      if (final) out.winners = table.filter((r) => !r.out).map((r) => r.slot); // the last one standing
     }
-    out.cup = { round: cup.round, rounds: cup.rounds, double: g.cup.double, final, next: final ? 0 : BREAK_MS, table };
+    out.cup = { round: cup.round, rounds: cup.rounds, double: g.cup.double, final, next: final ? 0 : BREAK_MS, table, ko: cup.ko, caught: caught ? caught.slot : -1 };
     if (final) {
       for (const slot of out.winners) if (bySlot.has(slot)) bySlot.get(slot).wins++;
       room.cup = null;
+      for (const p of members(room)) p.out = false;
     } else {
       room.nextAt = Date.now() + BREAK_MS;
       room.nextTimer = setTimeout(() => {
         room.nextTimer = null;
         if (rooms.get(room.code) !== room || room.game || !room.cup) return;
-        if (members(room).length < MIN_PLAYERS) {
+        if (stillIn(room).length < MIN_PLAYERS) {
           endCup(room);
           emitRoom(room);
         } else startRound(room);
@@ -798,8 +836,9 @@ io.on('connection', (socket) => {
       // open: anyone can find the room under "Public"; otherwise it takes the code
       // size: how many seats (2 to 10); bots: whether every open seat gets a bot by itself
       // pool: what Random draws from, for the stage and for the style ([] is all of them)
+      // items: which items are in the lucky boxes ([] is all of them)
       // arena / theme: what round 1 (and a quick match) is played on; plan: the same for every round of a tournament
-      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], size: DEFAULT_SIZE, bots: true, arena: 'random', theme: 'random', duration: DEFAULT_DURATION, powerups: true, open: msg?.open === true, plan: newPlan('random', 'random'), pool: { arena: [], theme: [] } },
+      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], size: DEFAULT_SIZE, bots: true, arena: 'random', theme: 'random', duration: DEFAULT_DURATION, powerups: true, open: msg?.open === true, plan: newPlan('random', 'random'), pool: { arena: [], theme: [] }, items: [] },
       game: null,
       cup: null,
       nextTimer: null,
@@ -872,6 +911,9 @@ io.on('connection', (socket) => {
     if (DURATIONS.includes(msg?.duration) || (TEST_DURATION && msg?.duration === TEST_DURATION)) s.duration = msg.duration;
     if (typeof msg?.powerups === 'boolean') s.powerups = msg.powerups;
     if (typeof msg?.open === 'boolean') s.open = msg.open;
+    // which items are in the boxes: items = [kinds] (all of them, or none that exist, is [])
+    const items = cleanPool(msg?.items, ITEM_KINDS);
+    if (items) s.items = items;
     // what Random may draw: pool = { arena?: [ids], theme?: [ids] }
     const arenaPool = cleanPool(msg?.pool?.arena, ARENA_IDS);
     const themePool = cleanPool(msg?.pool?.theme, THEME_IDS);

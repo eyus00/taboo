@@ -18,6 +18,7 @@ export class LocalGame {
     this.onEvent = opts.onEvent || (() => {});
     this.sim = new Sim(this.arena);
     this.sim.powerups = opts.powerups !== false;
+    this.sim.itemPool = Array.isArray(opts.items) ? opts.items.slice() : null; // which kinds are in the boxes (none given: all)
     this.twistId = opts.twist && opts.twist !== 'none' ? twistById(opts.twist).id : 'none';
     if (this.twistId !== 'none') this.sim.twist = twistById(this.twistId);
     this.cup = opts.cup || null;
@@ -73,6 +74,7 @@ export class LocalGame {
       duration: this.duration,
       twist: this.twistId,
       cup: this.cup,
+      items: this.sim.itemPool || [],
       it: this.teams ? -1 : this.startIt,
       bombs: this.teams ? this.sim.bombPlan : null, // team battle: who starts with a bomb
       teams: this.teams,
@@ -185,6 +187,8 @@ export class LocalGame {
         slw: s.slw,
         ecl: s.ecl,
         dsh: s.dsh,
+        gho: s.gho,
+        inv: s.inv,
         dead: s.dead,
         itTicks: p.itTicks,
         item: p.item,
@@ -216,7 +220,7 @@ export class LocalGame {
       players,
       boxes: sim.boxes,
       team: sim.teams ? { score: sim.score, over: sim.over, flags: sim.flags.map((f) => ({ x: f.x, y: f.y, owner: f.owner, fill: f.m / FLAG_CAP_TICKS })) } : null,
-      me: this.phase === 'playing' ? { spd: me.s.spd, jmp: me.s.jmp, shd: me.s.shd, slw: me.s.slw, ecl: me.s.ecl, item: me.item, arm: me.arm } : null,
+      me: this.phase === 'playing' ? { spd: me.s.spd, jmp: me.s.jmp, shd: me.s.shd, slw: me.s.slw, ecl: me.s.ecl, gho: me.s.gho, inv: me.s.inv, item: me.item, arm: me.arm } : null,
       code: null,
       ping: null,
       spectating: false,

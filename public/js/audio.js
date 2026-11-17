@@ -7,8 +7,7 @@ const VOICES = {
   sketch: { wave: 'triangle', pitch: 1.15, noise: 0.35 },
   arcade: { wave: 'square', pitch: 1, noise: 0.4 },
   ink: { wave: 'sine', pitch: 1.4, noise: 0.25 },
-  space: { wave: 'sine', pitch: 0.85, noise: 0.3 },
-  alien: { wave: 'triangle', pitch: 0.7, noise: 0.45 },
+  shadow: { wave: 'triangle', pitch: 0.8, noise: 0.6 }, // dry and low: wood, cloth and steel
 };
 
 export class Sfx {
@@ -142,6 +141,15 @@ export class Sfx {
         this.noise(0.16, 0.45 * vol, 7000);
         this.tone(320, 1500, 0.1, 0.1 * vol, 'sawtooth');
         this.tone(1500, 500, 0.12, 0.07 * vol, 'sine', 0.08);
+        break;
+      case 'ghost': // Vanish: a breath out, thinning to nothing
+        this.noise(0.32, 0.22 * vol, 5200);
+        this.tone(980, 240, 0.34, 0.09 * vol, 'sine');
+        this.tone(1480, 1960, 0.2, 0.04 * vol, 'sine', 0.12);
+        break;
+      case 'star': // Titan: a bright rising chord
+        [392, 523, 659, 1047].forEach((f, i) => this.tone(f, f * 1.02, 0.2, 0.13 * vol, 'triangle', i * 0.045));
+        this.noise(0.12, 0.2 * vol, 7000);
         break;
       case 'eclipse': // the light goes out
         this.tone(520, 130, 0.7, 0.16 * vol, 'sine');

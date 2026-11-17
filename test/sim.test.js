@@ -1,13 +1,14 @@
 // Rules + physics checks. Run with: npm test
 import assert from 'node:assert/strict';
 import {
-  PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, MOVE_SPEED, IMMUNE_TICKS, STUN_TICKS, RESPAWN_TICKS,
+  FLAG_LETTERS, PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, MOVE_SPEED, IMMUNE_TICKS, STUN_TICKS, RESPAWN_TICKS,
   SPEED_BUFF_MUL, TOUCH, AIR_JUMPS, twistById, IN_USE, ITEM_KINDS, BOX_FIRST_TICKS, ITEM_ARM_TICKS, STORM_SPEED, IT_SPEED_MUL,
   BLAST_RADIUS, BOMB_POINTS, FLAG_POINTS, FLAG_CAP_TICKS, FLAG_PAY_TICKS, FLAG_HALF, FLAG_UP, LAUNCH_VX, LAUNCH_VY,
   MAX_PLAYERS, PLAYER_COLORS, TEAM_SLOTS, ITEM_INFO, BODY_SCALE, BOX_EVERY_TICKS, QUAKE_STUN_TICKS, WARP_GAP, WARP_DROP, ECLIPSE_TICKS, DASH_TICKS, DASH_SPEED, JUMP_V, AIR_JUMP_V, JUMP_BUFFER_TICKS,
+  GHOST_TICKS, GHOST_NEAR, STAR_TICKS, PORTAL_SETTLE_TICKS, TEAM_NAMES, THEMES,
 } from '../shared/config.js';
-import { ARENAS, ARENA_IDS, arenaById, arenaFits, arenasFor, TILE, rampY } from '../shared/arenas.js';
-import { makeState, stepPlayer, packState, unpackState, STATE_LEN, publicFlags, PF_DARK, PF_DASH, isFree } from '../shared/physics.js';
+import { ARENAS, ARENA_IDS, arenaById, arenaFits, arenasFor, TILE, rampY, VIEW_USUAL } from '../shared/arenas.js';
+import { makeState, stepPlayer, packState, unpackState, STATE_LEN, publicFlags, PF_DARK, PF_DASH, PF_GHOST, PF_STAR, isFree, portalAt } from '../shared/physics.js';
 import { Sim, standings, cupPoints, makeTeams, warpSpots } from '../shared/sim.js';
 import { buildNav, surfaceAt } from '../shared/nav.js';
 import { makeBot, botThink } from '../shared/bots.js';
@@ -210,6 +211,24 @@ test('portals: you fly to the partner as an orb, with no control, and are not se
   assert.equal(p.tp, 0);
   ticksUntil(p, IN_LEFT, (q) => q.orb > 0, 60); // ...and back in
   assert.ok(p.orb > 0, 'works again after stepping out');
+  // A portal waits for feet that have been on the ground a moment: coming down in one - off a jump,
+  // a trampoline, a launcher - sends you nowhere, and there is time to step away.
+  assert.ok(PORTAL_SETTLE_TICKS >= 15 && PORTAL_SETTLE_TICKS <= 30, 'a quarter to half a second');
+  const drop = makeState(60 - PW / 2, floorY - 150); // falling straight into the mouth of the one at x = 60
+  let air = 0;
+  while (!drop.ground && air < 120) {
+    stepPlayer(drop, 0, box);
+    air++;
+  }
+  assert.ok(drop.ground && drop.orb === 0 && portalAt(box, drop.x, drop.y) === 0, 'landed in the portal: nothing happens yet');
+  run(drop, 0, PORTAL_SETTLE_TICKS - 3);
+  assert.equal(drop.orb, 0, 'still here just before the moment is up');
+  run(drop, 0, 4);
+  assert.ok(drop.orb > 0, 'stay, and it takes you');
+  const off = makeState(60 - PW / 2, floorY - 150); // the same fall, but walking away on landing
+  while (!off.ground) stepPlayer(off, 0, box);
+  run(off, IN_RIGHT, 40);
+  assert.ok(off.orb === 0 && off.x > 200 && portalAt(box, off.x, off.y) < 0, 'step away in time and you stay where you are');
 });
 
 test('slopes: walk up and down without bouncing, jump up through, hold down to pass under or drop', () => {
@@ -267,7 +286,7 @@ test('steep slopes: a runner always climbs from the low end, even with a speed b
 test('updrafts carry you up without any input and give your air jump back', () => {
   const p = makeState(2000, floorY);
   settle(p);
-  run(p, IN_RIGHT, 25); // walk into the column
+  run(p, IN_RIGHT, 22); // walk into the column
   let minY = p.y;
   let inside = 0;
   for (let i = 0; i < 150; i++) {
@@ -392,8 +411,10 @@ test('lag compensation: a touch on where the target was on the tagger\'s screen 
 });
 
 test('lucky boxes: you get an item to keep and set it off yourself - one at a time, any time up to the buzzer', () => {
-  assert.deepEqual(ITEM_KINDS, ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'quake', 'warp', 'eclipse', 'dash']);
+  assert.deepEqual(ITEM_KINDS, ['speed', 'jump', 'shield', 'freeze', 'blast', 'swap', 'storm', 'quake', 'warp', 'eclipse', 'dash', 'ghost', 'star']);
   assert.ok(ITEM_INFO.dash.blurb.length <= 45, 'a short line for Dash');
+  assert.deepEqual([ITEM_INFO.ghost.name, ITEM_INFO.star.name], ['Vanish', 'Titan']);
+  assert.ok(ITEM_INFO.ghost.blurb.length <= 45 && ITEM_INFO.star.blurb.length <= 45, 'short lines for the two new ones');
   for (const k of ITEM_KINDS) assert.ok(ITEM_INFO[k].name && ITEM_INFO[k].blurb, `${k} has a name and a blurb`);
   const sim = new Sim(box, () => 0.4);
   const a = sim.add(0);
@@ -564,6 +585,81 @@ test('lucky boxes: you get an item to keep and set it off yourself - one at a ti
   const bx = b.s.x;
   sim.step([0, 0]);
   assert.ok(b.s.dsh === 0 && Math.abs(b.s.x - bx) < 20, 'a stun ends it');
+  // Vanish: for five seconds everybody is told not to show where we are - and a touch still counts, both ways
+  apart();
+  use(b, 'ghost');
+  assert.ok(b.s.gho > GHOST_TICKS - 3 && a.s.gho === 0 && GHOST_TICKS === 300, 'five seconds, for whoever set it off only');
+  assert.ok(publicFlags(b.s) & PF_GHOST && !(publicFlags(a.s) & PF_GHOST), 'and everybody is told who is out of sight');
+  assert.equal(unpackState(JSON.parse(JSON.stringify(packState(b.s)))).gho, b.s.gho, 'the timer travels in the state');
+  a.s.x = b.s.x - PW;
+  sim.step([0, 0]);
+  assert.equal(sim.it, 1, 'out of sight is not out of reach: a touch tags them');
+  apart();
+  use(a, 'ghost'); // "it" out of sight: the same
+  b.s.x = a.s.x + PW;
+  sim.step([0, 0]);
+  assert.equal(sim.it, 1, 'and "it" can tag without being seen');
+  apart();
+  b.s.gho = 2;
+  sim.step([0, 0]);
+  sim.step([0, 0]);
+  assert.ok(b.s.gho === 0 && !(publicFlags(b.s) & PF_GHOST), 'then they are back in sight');
+  // Titan: for four seconds nothing lands on us - no tag, no item, no thorns - and what was on us is shaken off
+  apart();
+  b.s.slw = 100;
+  b.s.ecl = 100;
+  use(b, 'star');
+  assert.ok(b.s.inv > STAR_TICKS - 3 && STAR_TICKS === 240 && b.s.slw === 0 && b.s.ecl === 0, 'four seconds; the storm and the night on us are gone');
+  assert.ok(publicFlags(b.s) & PF_STAR && !(publicFlags(a.s) & PF_STAR), 'and everybody is told');
+  assert.equal(unpackState(JSON.parse(JSON.stringify(packState(b.s)))).inv, b.s.inv, 'the timer travels in the state');
+  a.s.x = b.s.x - PW;
+  for (let i = 0; i < 20; i++) sim.step([0, 0]);
+  assert.equal(sim.it, 0, 'touching a Titan tags nobody');
+  a.s.x = 2300;
+  for (const kind of ['freeze', 'storm', 'quake', 'eclipse', 'blast', 'swap']) {
+    a.s.x = b.s.x - 120; // (inside a blast)
+    a.s.stun = 0;
+    use(a, kind);
+    assert.ok(b.s.frz === 0 && b.s.slw === 0 && b.s.stun === 0 && b.s.ecl === 0 && b.s.x === 2800 && b.s.vx === 0, `${kind} does nothing to a Titan`);
+  }
+  a.s.x = 2300;
+  use(a, 'warp'); // "it" can still warp to one - and then stands beside somebody it cannot tag
+  for (let i = 0; i < 10; i++) sim.step([IN_RIGHT, 0]);
+  assert.equal(sim.it, 0, 'warping to a Titan gets "it" nowhere');
+  const thorny = { ...box, spikes: [{ x: 2795, y: 720 - 16, w: 60, h: 16 }] };
+  const tough = makeState(2800, floorY);
+  tough.inv = 60;
+  for (let i = 0; i < 20; i++) stepPlayer(tough, 0, thorny);
+  assert.ok(tough.stun === 0 && tough.hz === 0 && tough.x === 2800, 'a Titan stands in thorns unharmed');
+  const soft = makeState(2800, floorY);
+  for (let i = 0; i < 20; i++) stepPlayer(soft, 0, thorny);
+  assert.ok(soft.hz > 0, '(anyone else is stung)');
+  apart();
+  b.s.inv = 2;
+  b.s.x = 2800;
+  a.s.x = b.s.x - PW;
+  for (let i = 0; i < 4; i++) sim.step([0, 0]);
+  assert.equal(sim.it, 1, 'when it wears off they can be tagged again');
+  // The host's pool: only those kinds come out of the boxes (none chosen: all of them)
+  apart();
+  const kinds = (pool, who = b) => {
+    sim.itemPool = pool;
+    const seen = new Set();
+    let k = 0;
+    const was = sim.rnd;
+    sim.rnd = () => (k++ % 97) / 97;
+    for (let i = 0; i < 97; i++) seen.add(ITEM_KINDS[sim.rollItem(who) - 1]);
+    sim.rnd = was;
+    return [...seen].sort();
+  };
+  assert.deepEqual(kinds(['dash', 'ghost']), ['dash', 'ghost'], 'a pool of two: those two');
+  assert.deepEqual(kinds(['star']), ['star'], 'a pool of one');
+  assert.deepEqual(kinds([]), ITEM_KINDS.slice().sort(), 'nothing chosen: everything');
+  assert.deepEqual(kinds(null), ITEM_KINDS.slice().sort(), 'no pool: everything');
+  assert.deepEqual(kinds(['nonsense']), ITEM_KINDS.slice().sort(), 'a pool of unknown kinds: everything');
+  assert.deepEqual(kinds(['shield', 'speed'], a), ['speed'], 'whoever is it never draws a Ward...');
+  assert.deepEqual(kinds(['shield'], a), ['shield'], '...unless Wards are all there is (it turns into speed)');
+  sim.itemPool = null;
   // boxes keep coming and items keep working right up to the buzzer (there is no lock near the end any more) - and nothing after it
   apart();
   assert.equal(sim.locked, undefined);
@@ -1067,32 +1163,52 @@ test('if "it" leaves, someone else becomes it', () => {
 });
 
 // The player counts a stage's bots are tried with: all of them inside what the stage is meant for.
-const botCounts = (arena) => (arena.players[1] > 6 ? [5, 6, 8, 10] : [2, 4, 5, 6]);
+const sizeOf = (arena) => (arena.players[1] > 6 ? 'big' : arena.players[1] < 6 ? 'duel' : 'small');
+const botCounts = (arena) => ({ big: [5, 6, 8, 10], small: [2, 4, 5, 6], duel: [2, 3, 4] })[sizeOf(arena)];
 
-test('stages by size: six of 64 x 36 tiles for 2 to 6 players, three of 84 x 48 for 5 to 10; arenaFits and arenasFor say which', () => {
-  assert.equal(ARENAS.length, 9);
-  assert.equal(new Set(ARENA_IDS).size, 9);
+test('stages by size: two duel stages (48 x 28 tiles, 2 to 4 players), six small (64 x 36, 2 to 6), three big (96 x 54, 5 to 10); arenaFits and arenasFor say which', () => {
+  assert.equal(ARENAS.length, 11);
+  assert.equal(new Set(ARENA_IDS).size, 11);
   const small = ['hills', 'canyon', 'pagoda', 'zigzag', 'dojo', 'bramble'];
   const big = ['valley', 'gorge', 'halls'];
-  assert.deepEqual(ARENA_IDS, [...small, ...big]);
+  const duel = ['court', 'span'];
+  assert.deepEqual(ARENA_IDS, [...small, ...big, ...duel]);
   for (const a of ARENAS) {
-    const isBig = big.includes(a.id);
-    assert.deepEqual(a.players, isBig ? [5, 10] : [2, 6], `${a.id} is meant for ${a.players.join(' to ')} players`);
-    assert.deepEqual([a.w / TILE, a.h / TILE], isBig ? [84, 48] : [64, 36], `${a.id}: ${a.w / TILE} x ${a.h / TILE} tiles`);
+    const kind = sizeOf(a);
+    assert.equal(kind, big.includes(a.id) ? 'big' : duel.includes(a.id) ? 'duel' : 'small');
+    assert.deepEqual(a.players, { big: [5, 10], small: [2, 6], duel: [2, 4] }[kind], `${a.id} is meant for ${a.players.join(' to ')} players`);
+    assert.deepEqual([a.w / TILE, a.h / TILE], { big: [96, 54], small: [64, 36], duel: [48, 28] }[kind], `${a.id}: ${a.w / TILE} x ${a.h / TILE} tiles`);
     assert.ok(a.name && a.blurb && a.blurb.length <= 60, `${a.id}: a name, and a blurb of at most 60 characters (${a.blurb.length})`);
     assert.deepEqual(arenaById(a.id).players, a.players, 'the stage as a match plays it says the same');
+    // a big stage is watched from a little further off (and no stage from closer than the usual)
+    assert.equal(a.view, kind === 'big' ? 740 : VIEW_USUAL, `${a.id}: ${a.view} world units of height on screen`);
+    assert.equal(arenaById(a.id).view, a.view);
   }
-  assert.ok((84 * 48) / (64 * 36) >= 1.6 && (84 * 48) / (64 * 36) <= 2, 'a big stage has 1.6 to 2 times the room');
+  assert.ok(VIEW_USUAL === 660, 'the usual view');
+  assert.ok((96 * 54) / (64 * 36) >= 2 && (96 * 54) / (64 * 36) <= 2.5, 'a big stage has two to two and a half times the room of a small one');
+  assert.ok((48 * 28) / (64 * 36) >= 0.5 && (48 * 28) / (64 * 36) <= 0.65, 'a duel stage a little over half');
   for (let n = 2; n <= 10; n++) {
-    const want = n <= 4 ? small : n <= 6 ? [...small, ...big] : big;
+    const want = n <= 4 ? [...small, ...duel] : n <= 6 ? [...small, ...big] : big;
     assert.deepEqual(arenasFor(n), want, `stages for ${n} players`);
     for (const id of ARENA_IDS) assert.equal(arenaFits(id, n), want.includes(id), `${id} with ${n} players`);
   }
-  assert.ok(!arenaFits('nowhere', 4) && arenasFor(1).length === 6 && arenasFor(99).length === 3 && arenasFor().length === 6, 'never an empty list, never an unknown stage');
+  assert.ok(!arenaFits('nowhere', 4) && arenasFor(1).length === 8 && arenasFor(99).length === 3 && arenasFor().length === 8, 'never an empty list, never an unknown stage');
 });
 
-test('every arena: starts, bases and boxes stand on something; every surface can reach every other', () => {
+// Where a pad puts down someone who steps onto it and touches nothing: [x of their middle, y of their feet] - or null (off the map).
+function landing(arena, pad) {
+  const p = makeState(pad.cx - PW / 2, pad.y + pad.h - PH - 2);
+  for (let t = 0; t < 400; t++) {
+    stepPlayer(p, 0, arena);
+    if (p.dead > 0) return null;
+    if (t > 10 && p.ground && p.orb === 0) return [p.x + PW / 2, p.y + PH];
+  }
+  return null;
+}
+
+test('every arena: starts, three flags and boxes stand on something; every surface can reach every other; portals keep clear of pads', () => {
   const times = [];
+  const mids = [];
   for (const arena of ARENAS) {
     assert.ok(arena.name && arena.blurb, `${arena.id} has a name and a blurb`);
     const stands = ([x, y], what) => {
@@ -1104,17 +1220,41 @@ test('every arena: starts, bases and boxes stand on something; every surface can
     arena.respawns.forEach((sp, i) => stands(sp, `respawn point ${i}`));
     // starts 1, 3, 5 on the left half and 2, 4, 6 on the right
     arena.spawns.forEach(([x], i) => assert.equal(x + PW / 2 < arena.w / 2, i % 2 === 0, `${arena.id}: start ${i + 1} is on the ${i % 2 ? 'right' : 'left'}`));
-    // the two team bases: firm ground, one on each side
-    assert.equal(arena.bases.length, 2);
+    // three flag stands on firm ground: one at each end, and the third dead centre, higher up than both
+    const duel = sizeOf(arena) === 'duel';
+    assert.equal(arena.bases.length, 3);
+    assert.equal(FLAG_LETTERS.length, 3, 'a letter for each');
     arena.bases.forEach(([x, y], t) => stands([x - PW / 2, y - PH], `base ${t}`));
-    assert.ok(arena.bases[0][0] < arena.w * 0.4 && arena.bases[1][0] > arena.w * 0.6, `${arena.id}: bases on opposite sides`);
-    // portals come in pairs: two or three of them, at least one you can drop out of
-    assert.ok(arena.portals.length === 4 || arena.portals.length === 6, `${arena.id}: ${arena.portals.length / 2} portal pairs`);
+    // (in the order they stand on the map: A at the left end, B in the middle, C at the right end)
+    assert.ok(arena.bases[0][0] < arena.w * 0.4 && arena.bases[2][0] > arena.w * 0.6, `${arena.id}: bases on opposite sides`);
+    assert.equal(arena.bases[0][0], arena.w - arena.bases[2][0], `${arena.id}: the two ends mirror each other`);
+    assert.equal(arena.bases[0][1], arena.bases[2][1]);
+    assert.equal(arena.bases[1][0], arena.w / 2, `${arena.id}: the third flag is dead centre`);
+    assert.ok(arena.bases[1][1] <= arena.bases[0][1] - 6 * TILE && arena.bases[1][1] <= arena.h * 0.5, `${arena.id}: and high up (${arena.bases[1][1] / TILE} against ${arena.bases[0][1] / TILE})`);
+    // portals come in pairs: one to three of them (a duel stage: one at most), at least one you can drop out of
+    const pairs = arena.portals.length / 2;
+    assert.ok(Number.isInteger(pairs) && pairs <= 3 && pairs >= (duel ? 0 : 1), `${arena.id}: ${pairs} portal pairs`);
     for (const po of arena.portals) assert.equal(arena.portals[po.to].to, arena.portals.indexOf(po));
-    assert.ok(arena.portals.some((po) => po.drop), `${arena.id}: a portal pair you can let go of`);
-    // the whole toolbox is in use (sparingly: see the next test for how much of it there may be)
-    assert.ok(arena.tramps.some((t) => !t.vx) && arena.tramps.filter((t) => t.vx).length >= 2, `${arena.id}: trampolines and launchers`);
-    assert.ok(arena.lifts.length >= 1 && arena.spikes.length >= 4 && arena.ramps.length >= 4, `${arena.id}: updrafts, thorns, slopes`);
+    assert.ok(!pairs || arena.portals.some((po) => po.drop), `${arena.id}: a portal pair you can let go of`);
+    // the toolbox is in use, sparingly (see the next test for how much of it there may be); a duel stage has hardly any of it
+    if (duel) assert.ok(arena.tramps.length + arena.lifts.length + arena.spikes.length === 0, `${arena.id}: a duel stage has no pads, updrafts or thorns`);
+    else {
+      assert.ok(arena.tramps.some((t) => !t.vx) && arena.tramps.filter((t) => t.vx).length >= 2, `${arena.id}: trampolines and launchers`);
+      assert.ok(arena.lifts.length >= 1 && arena.spikes.length >= 2 && arena.ramps.length >= 4, `${arena.id}: updrafts, thorns, slopes`);
+    }
+    // Portals and pads never go together: no portal within six tiles of a pad on its level, of where a
+    // launcher or a trampoline puts you down, or of the top of an updraft; and plain ground for two tiles on its open side
+    for (const po of arena.portals) {
+      const feet = po.y + po.h;
+      for (const t of arena.tramps) {
+        if (Math.abs(t.y + t.h - feet) < TILE * 2) assert.ok(Math.abs(t.cx - po.cx) >= 6 * TILE, `${arena.id}: the portal at ${po.cx / TILE - 0.5},${feet / TILE} is ${Math.abs(t.cx - po.cx) / TILE} tiles from a pad`);
+        const land = landing(arena, t);
+        if (land) assert.ok(Math.hypot(land[0] - po.cx, land[1] - feet) >= 5 * TILE, `${arena.id}: the pad at ${t.cx / TILE},${(t.y + t.h) / TILE} puts you down at ${Math.round(land[0] / TILE)},${Math.round(land[1] / TILE)}, ${Math.round(Math.hypot(land[0] - po.cx, land[1] - feet) / TILE)} tiles from a portal`);
+      }
+      for (const z of arena.lifts) {
+        if (Math.abs(z.y - feet) < TILE * 3) assert.ok(Math.min(Math.abs(z.x - po.cx), Math.abs(z.x + z.w - po.cx)) >= 4 * TILE, `${arena.id}: the portal at ${po.cx / TILE - 0.5},${feet / TILE} is at the top of an updraft`);
+      }
+    }
 
     const t0 = performance.now();
     const nav = buildNav(arena);
@@ -1126,8 +1266,8 @@ test('every arena: starts, bases and boxes stand on something; every surface can
     for (const z of arena.spikes) {
       for (const sf of nav.surfaces) assert.ok(sf.ramp || Math.abs(sf.y - (z.y + z.h)) > 2 || sf.x1 <= z.x - 10 || sf.x0 >= z.x + z.w + 10, `${arena.id}: surface ${sf.id} runs into thorns`);
     }
-    // 10 to 14 lucky-box spots (14 to 20 on a big stage), each within reach of someone standing on the ground below it
-    const [fewest, most] = arena.players[1] > 6 ? [14, 20] : [10, 14];
+    // 10 to 14 lucky-box spots (14 to 20 on a big stage, 8 to 10 on a duel stage), each within reach of someone standing on the ground below it
+    const [fewest, most] = { big: [14, 20], small: [10, 14], duel: [8, 10] }[sizeOf(arena)];
     assert.ok(arena.pickups.length >= fewest && arena.pickups.length <= most, `${arena.id}: ${arena.pickups.length} box spots`);
     for (const pt of arena.pickups) {
       const under = nav.below(pt.x, pt.y - 30, null);
@@ -1135,12 +1275,22 @@ test('every arena: starts, bases and boxes stand on something; every surface can
     }
     // the bases are as far from each other in both directions
     const at = ([x, y]) => surfaceAt(nav, x, y);
-    const [b0, b1] = arena.bases.map(at);
-    assert.ok(b0 && b1, `${arena.id}: bases are on the route map`);
+    const [b0, b2, b1] = arena.bases.map(at); // (b2: the one in the middle)
+    assert.ok(b0 && b1 && b2, `${arena.id}: bases are on the route map`);
+    // (the route map cuts a long ledge into pieces, and the middle flag stands where two meet: measure to the nearer piece)
+    const mid = [-30, 30].map((dx) => at([arena.bases[1][0] + dx, arena.bases[1][1]]));
+    assert.ok(mid[0] && mid[1], `${arena.id}: ground on both sides of the middle flag`);
+    const toMid = (b) => Math.min(nav.dist[b.id][mid[0].id], nav.dist[b.id][mid[1].id]);
     const there = nav.dist[b0.id][b1.id];
     const back = nav.dist[b1.id][b0.id];
     assert.ok(Math.abs(there - back) < 0.1 * Math.max(there, back), `${arena.id}: base to base takes ${Math.round(there)} ticks one way, ${Math.round(back)} the other`);
+    // ...and the flag in the middle is as far from one end as from the other, and no further than the ends are from each other
+    const [m0, m1] = [toMid(b0), toMid(b1)];
+    assert.ok(Math.abs(m0 - m1) < 0.1 * Math.max(m0, m1), `${arena.id}: the middle flag is ${Math.round(m0)} ticks from one end, ${Math.round(m1)} from the other`);
+    assert.ok(m0 <= there * 1.15, `${arena.id}: the middle flag is ${Math.round(m0)} ticks from an end; the ends are ${Math.round(there)} apart`);
+    mids.push(`${arena.id} ${Math.round(m0 / 60)}s/${Math.round(there / 60)}s`);
   }
+  console.log(`      an end to the middle flag / end to end: ${mids.join(', ')}`);
   console.log(`      route maps: ${times.join(', ')}`);
 });
 
@@ -1178,14 +1328,15 @@ function openGround(arena, head = 5) {
   return { grid, floor, runs };
 }
 
-test('every arena has room to run: four clear flat stretches of 14 tiles (one of 24), a bottom floor that is mostly plain ground, few gadgets', () => {
+test('every arena has room to run: four clear flat stretches of 14 tiles (one of 24; a duel stage: 12, one of 16), a bottom floor that is mostly plain ground, few gadgets', () => {
   const log = [];
   for (const arena of ARENAS) {
     const { grid, floor, runs } = openGround(arena);
-    const long = runs.filter((q) => q.len >= 14).map((q) => q.len).sort((a, b) => b - a);
+    const [least, best] = sizeOf(arena) === 'duel' ? [12, 16] : [14, 24];
+    const long = runs.filter((q) => q.len >= least).map((q) => q.len).sort((a, b) => b - a);
     log.push(`${arena.id} ${long.join('/')}`);
-    assert.ok(long.length >= 4, `${arena.id}: only ${long.length} clear stretches of 14 tiles or more (${long})`);
-    assert.ok(long[0] >= 24, `${arena.id}: the longest clear stretch is ${long[0]} tiles`);
+    assert.ok(long.length >= 4, `${arena.id}: only ${long.length} clear stretches of ${least} tiles or more (${long})`);
+    assert.ok(long[0] >= best, `${arena.id}: the longest clear stretch is ${long[0]} tiles`);
     // few gadgets
     assert.ok(arena.tramps.length <= 8, `${arena.id}: ${arena.tramps.length} trampolines and launchers`);
     assert.ok(arena.lifts.length <= 4, `${arena.id}: ${arena.lifts.length} updrafts`);
@@ -1214,8 +1365,8 @@ test('every arena has room to run: four clear flat stretches of 14 tiles (one of
       assert.ok(at && at.len >= 6, `${arena.id}: the flag at ${x},${y} stands on ${at ? at.len : 0} clear tiles`);
     }
     // and lucky boxes turn up out in the open too
-    const out = arena.pickups.filter((pt) => runs.some((q) => q.len >= 14 && q.row === Math.floor(pt.y / TILE) + 1 && pt.x / TILE >= q.c0 && pt.x / TILE <= q.c1 + 1)).length;
-    assert.ok(arena.pickups.length >= 12 && out >= 4, `${arena.id}: ${arena.pickups.length} box spots, ${out} of them on open ground`);
+    const out = arena.pickups.filter((pt) => runs.some((q) => q.len >= least && q.row === Math.floor(pt.y / TILE) + 1 && pt.x / TILE >= q.c0 && pt.x / TILE <= q.c1 + 1)).length;
+    assert.ok(arena.pickups.length >= (sizeOf(arena) === 'duel' ? 8 : 12) && out >= 4, `${arena.id}: ${arena.pickups.length} box spots, ${out} of them on open ground`);
   }
   console.log(`      clear stretches of 14 tiles or more: ${log.join(', ')}`);
 });
@@ -1273,7 +1424,7 @@ function botMatch(arena, n, teams, seconds = 120) {
   return out;
 }
 
-test('bots play every arena with as many as it is meant for (2 to 6, or 5 to 10): tags keep happening, nobody stands about, pit falls are rare', () => {
+test('bots play every arena with as many as it is meant for (2 to 4, 2 to 6, or 5 to 10): tags keep happening, nobody stands about, pit falls are rare', () => {
   let falls = 0;
   let minutes = 0;
   const log = [];

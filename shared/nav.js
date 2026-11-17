@@ -82,8 +82,10 @@ export function drive(nav, e, s, mem, tx = e.x) {
         bits = Math.abs(cx - tx) > NEAR ? walk(a, cx, tx) : Math.abs(s.vx) > 70 ? 0 : IN_DOWN;
         break;
       case 'portal':
-        // a portal we just came out of will not take us until we step right out of it
-        bits = s.tp > 0 ? dirBits(-e.dir) : Math.abs(tx - cx) > 2 ? walk(a, cx, tx) : dirBits(e.dir);
+        // a portal we just came out of will not take us until we step right out of it;
+        // any other takes whoever stands in its mouth for a moment (PORTAL_SETTLE_TICKS):
+        // walk to the middle of it and wait there, rather than out the other side
+        bits = s.tp > 0 ? dirBits(-e.dir) : Math.abs(tx - cx) > 8 ? walk(a, cx, tx) : 0;
         break;
       case 'lift':
         if (e.lip != null) {

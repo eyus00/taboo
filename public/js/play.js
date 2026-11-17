@@ -5,7 +5,9 @@
 // The heads-up display, and where each part sits:
 //   top centre    the board: the clock, and in a team battle each side's score
 //                 and bombs beside it, that side's players beyond the score
-//                 (Sun left, Moon right), the flags and the round's name underneath
+//                 (the warm side left, the cool side right); underneath, the round's
+//                 name - or in a team battle the three flags, in the order they
+//                 stand on the map - and under that the round's tags
 //   top left      in a free-for-all, the list of players
 //   top right     the menu button
 //   bottom right  the minimap (on a phone: under the menu button, clear of the thumbs)
@@ -28,7 +30,7 @@
 //   play.finish() / play.stop() / play.hold(true|false)
 //   play.nameOf(slot), play.colorOf(slot), play.portraitOf(slot), play.mySlot(), play.el.spin
 
-import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, ITEM_ARM_TICKS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, PW, PH, THEMES } from '/shared/config.js';
+import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, ITEM_ARM_TICKS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, FLAG_LETTERS, PW, PH, THEMES } from '/shared/config.js';
 import { arenasFor, arenaById } from '/shared/arenas.js';
 import { Renderer } from './renderer.js';
 import { Input } from './input.js';
@@ -77,6 +79,8 @@ const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden=
 <symbol id="pi-quake" viewBox="0 0 24 24"><path d="M2 13.500l4-6 3.200 4.500L12 4l3.200 9.500 2.800-5 4 5" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 19.500h7l1.500-2 2 3.500 1.500-1.500h6" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="pi-warp" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9" fill="none" stroke="currentColor" stroke-width="2.600" stroke-linecap="round"/><path d="M12 7.800a4.200 4.200 0 1 1-4.200 4.200" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round"/><path d="M16.800 2.600l4.400.500-.900 4.300" fill="none" stroke="currentColor" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="pi-dash" viewBox="0 0 24 24"><path d="M2.500 8.200h7.300M1.800 12h5.600M3.400 15.800h6.300" fill="none" stroke="currentColor" stroke-width="2.300" stroke-linecap="round"/><path d="M11.400 5.200c3.900 1.900 7.400 4.200 10.600 6.800-3.200 2.600-6.700 4.900-10.600 6.800 1.300-4.500 1.300-9.100 0-13.600z" fill="currentColor"/></symbol>
+<symbol id="pi-ghost" viewBox="0 0 24 24"><path d="M5 20.500V11.200C5 6.900 8 3.500 12 3.500s7 3.400 7 7.700v9.300l-2.400-1.900-2.300 1.900-2.300-1.900-2.300 1.900-2.300-1.900L5 20.500z" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linejoin="round"/><circle cx="9.600" cy="11" r="1.400" fill="currentColor"/><circle cx="14.400" cy="11" r="1.400" fill="currentColor"/></symbol>
+<symbol id="pi-star" viewBox="0 0 24 24"><path d="M12 2.300l2.900 6.300 6.900.800-5.100 4.700 1.400 6.800L12 17.500 5.900 20.900l1.400-6.800L2.200 9.400l6.900-.800L12 2.300z" fill="currentColor"/></symbol>
 <symbol id="pi-eclipse" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2.500a9.500 9.500 0 1 1 0 19 9.500 9.500 0 0 1 0-19zM14.600 5.400a7 7 0 1 0 0 13.200 8.300 8.300 0 0 1 0-13.200z" fill="currentColor"/></symbol>
 <symbol id="pi-box" viewBox="0 0 24 24"><path d="M8 9a4 4 0 1 1 6 3.5c-1.300.800-2 1.500-2 3M12 19.500v.500" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
 <symbol id="pi-it" viewBox="0 0 24 24"><path d="M6 2.5c.3 2.6 1.300 4.300 3.200 5.400M18 2.500c-.300 2.600-1.300 4.300-3.200 5.400" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M5.5 9.5h13l-1 8.200c-.400 2.600-2.600 4.300-5.500 4.300s-5.100-1.700-5.500-4.300z" fill="currentColor"/></symbol>
@@ -115,7 +119,7 @@ export const play = {
           <div id="timer" aria-label="Seconds left">60</div>
           <b id="team-b" class="h-score" hidden></b>
           <ul id="roster-b" class="h-roster b" aria-label="${TEAM_NAMES[1]}"></ul>
-          <div id="under"><div id="flags-a" class="h-flags" hidden></div><div id="round-label"></div><div id="flags-b" class="h-flags" hidden></div></div>
+          <div id="under"><div id="flags" class="h-flags" hidden></div><div id="round-label"></div></div>
           <div id="tags" hidden></div>
         </div>
         <button id="btn-pause" class="hud-btn" aria-label="Menu (Esc)">${icon('menu')}</button>
@@ -140,7 +144,7 @@ export const play = {
           <button class="t-jump" data-bit="4" aria-label="Jump">${icon('up')}</button>
         </div>
       </div>`;
-    for (const id of ['stage', 'hud', 'pills', 'top', 'tags', 'tasks', 'timer', 'team-a', 'team-b', 'roster-a', 'roster-b', 'flags-a', 'flags-b', 'round-label', 'btn-pause', 'minimap', 'kit', 'status', 'itemslot', 'buffs', 'itemdraw', 'banner', 'brief', 'count', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
+    for (const id of ['stage', 'hud', 'pills', 'top', 'tags', 'tasks', 'timer', 'team-a', 'team-b', 'roster-a', 'roster-b', 'flags', 'round-label', 'btn-pause', 'minimap', 'kit', 'status', 'itemslot', 'buffs', 'itemdraw', 'banner', 'brief', 'count', 'spin', 'touch']) this.el[id.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = root.querySelector(`#${id}`);
     const E = this.el;
     E.use = E.touch.querySelector('.t-use');
     E.itemPic = E.itemslot.querySelector('.pic');
@@ -213,7 +217,7 @@ export const play = {
     // "play again" keeps the same bots on the same sides, as long as you ask for the same kind of match
     const key = `${s.mode}/${s.bots}/${name}`;
     const squad = this.squad && this.squad.key === key ? this.squad : null;
-    const g = new LocalGame({ arena, mode: s.mode, duration: s.duration, powerups: s.powerups, name, bots: s.bots, input: this.input, onEvent: (t, a, b) => this.onEvent(t, a, b), squad, twist: s.twist, cup: s.cup });
+    const g = new LocalGame({ arena, mode: s.mode, duration: s.duration, powerups: s.powerups, name, bots: s.bots, input: this.input, onEvent: (t, a, b) => this.onEvent(t, a, b), squad, twist: s.twist, cup: s.cup, items: s.items });
     this.squad = { key, ...g.squad };
     this.begin(g, arena, themeId, { ...g.info(), arena: arena.id, theme: themeId, random: { arena: s.arena === 'random', theme: s.theme === 'random' } });
   },
@@ -265,32 +269,38 @@ export const play = {
       E[id].hidden = !team;
       E[id].style.background = TEAM_COLORS[t];
     }
-    for (const box of [E.flagsA, E.flagsB]) {
-      box.hidden = !team;
-      box.textContent = '';
-    }
+    E.flags.hidden = !team;
+    E.flags.textContent = '';
     h.flagEls = [];
     if (team) {
-      // one marker per flag, in the order they stand on the map: a letter, and a bar that fills with a team's colour
+      // One marker per flag, in the order they stand on the map (A at the warm side's
+      // end, B high in the middle, C at the cool side's end): a letter, and a bar that
+      // fills with a team's colour. The last one is mirrored, so the row is symmetrical.
       arena.bases.forEach((_, i) => {
-        const chip = el('div', 'flagchip');
+        const chip = el('div', i === arena.bases.length - 1 && i > 0 ? 'flagchip rev' : 'flagchip');
         chip.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#pi-flag"/></svg>';
         const bar = el('span', 'meter');
         const fill = el('i');
         bar.append(fill);
-        chip.append(el('b', '', 'ABCD'[i]), bar);
-        (i < arena.bases.length / 2 ? E.flagsA : E.flagsB).append(chip); // (each beside the score of the side whose end of the map it stands at)
+        chip.append(el('b', '', FLAG_LETTERS[i]), bar);
+        E.flags.append(chip);
         h.flagEls.push({ chip, fill, sig: '' });
       });
     }
-    const mode = MODES.find((m) => m.id === info.mode)?.name || '';
-    E.roundLabel.textContent = this.kind === 'practice' && !info.cup ? `Practice · ${mode}` : mode;
+    const ko = !!info.cup?.ko;
+    const mode = ko ? 'Knockout' : MODES.find((m) => m.id === info.mode)?.name || '';
+    const label = this.kind === 'practice' && !info.cup ? `Practice · ${mode}` : mode;
+    // (a team battle has its flags where the round's name would be: there the name is the first of the tags)
+    E.roundLabel.textContent = team ? '' : label;
     // Whatever is special about this round stays on the board for all of it, as
     // tags under the round's name: the tournament round, the twist, and - loud -
     // the last round's double points. (Each has a short form for a phone.)
     const tags = [];
     const twist = info.twist && info.twist !== 'none' ? g.twist : null;
+    if (team) tags.push(['mode', '', label, label, label]);
     if (info.cup) tags.push(['round', '', `Round ${info.cup.round}/${info.cup.rounds}`, `${info.cup.round}/${info.cup.rounds}`, `Round ${info.cup.round} of ${info.cup.rounds} in this tournament`]);
+    // a knockout: how many are still in it (whoever is the oni at the buzzer goes out)
+    if (ko) tags.push(['left', 'it', info.cup.left === 2 ? 'The final' : `${info.cup.left} left`, info.cup.left === 2 ? 'Final' : `${info.cup.left} left`, info.cup.left === 2 ? 'The final: whoever is the oni at the buzzer loses the tournament' : `${info.cup.left} players are still in: the oni at the buzzer is out`]);
     if (twist?.name) tags.push(['twist', TWIST_ICONS[twist.id] || 'twist', twist.name, twist.name.split(' ')[0], `Twist: ${twist.name} - ${twist.blurb.toLowerCase()}`]);
     if (info.cup?.double) tags.push(['x2', '', '\u00d72 points', '\u00d72', 'The last round counts double']);
     E.tags.textContent = '';
@@ -302,7 +312,7 @@ export const play = {
       E.tags.append(tag);
     }
     E.tags.hidden = !tags.length;
-    E.hud.classList.toggle('tagged', tags.length > 0);
+    E.hud.classList.toggle('tagged', tags.some(([kind]) => kind !== 'mode'));
     // the first few matches come with a reminder of the controls (among the objectives)
     let played = 0;
     try {
@@ -487,13 +497,13 @@ export const play = {
       if (role) {
         E.status.firstChild.innerHTML = icon(role === 'bomb' ? 'bomb' : role === 'watch' ? 'eye' : 'it');
         E.status.lastChild.textContent =
-          role === 'watch' ? 'Watching - you play next round' : role === 'bomb' ? (before ? 'You start with a BOMB' : hot ? 'BOMB - get rid of it!' : 'BOMB - tag an enemy') : before ? 'You start as IT' : "YOU'RE IT - tag someone";
+          role === 'watch' ? (this.info?.cup?.ko ? 'You are out - watching' : 'Watching - you play next round') : role === 'bomb' ? (before ? 'You start with a BOMB' : hot ? 'BOMB - get rid of it!' : 'BOMB - tag an enemy') : before ? 'You start as IT' : "YOU'RE IT - tag someone";
       }
     }
 
     // boosts that are running
     const m = view.me;
-    const buffs = m ? [m.spd > 0 && ['speed', m.spd], m.jmp > 0 && ['jump', m.jmp], m.shd > 0 && ['shield', m.shd], m.slw > 0 && ['storm', m.slw], m.ecl > 0 && ['eclipse', m.ecl]].filter(Boolean) : [];
+    const buffs = m ? [m.spd > 0 && ['speed', m.spd], m.jmp > 0 && ['jump', m.jmp], m.shd > 0 && ['shield', m.shd], m.gho > 0 && ['ghost', m.gho], m.inv > 0 && ['star', m.inv], m.slw > 0 && ['storm', m.slw], m.ecl > 0 && ['eclipse', m.ecl]].filter(Boolean) : [];
     const bsig = buffs.map(([k, t]) => `${k}${Math.ceil(t / TICK_RATE)}`).join();
     if (bsig !== h.buffs) {
       h.buffs = bsig;
@@ -525,7 +535,9 @@ export const play = {
     this.hud.briefKind = info.mode;
     const head = el('div', 'b-hd');
     const seal = (this.hud.briefSeal = el('i', 'b-n'));
-    head.append(seal, el('b', 'b-title', MODES.find((m) => m.id === info.mode)?.name || 'Tag'));
+    const ko = !!info.cup?.ko;
+    head.append(seal, el('b', 'b-title', ko ? (info.cup.left === 2 ? 'Knockout final' : 'Knockout') : MODES.find((m) => m.id === info.mode)?.name || 'Tag'));
+    if (ko && info.cup.left > 2) head.append(el('span', 'b-side b-left', `${info.cup.left} left`));
     const side = team && me >= 0 ? (g.teamOf?.(me) ?? -1) : -1;
     if (side >= 0) {
       const tag = el('span', 'b-side', `You: ${TEAM_NAMES[side]}`);
@@ -534,7 +546,7 @@ export const play = {
     }
     b.append(head);
     let ic = 'eye';
-    let words = 'You are watching this round';
+    let words = ko ? 'You are out - watch the rest fight it out' : 'You are watching this round';
     let mine = false;
     if (me >= 0 && team) {
       mine = (info.bombs || []).includes(me);
@@ -569,7 +581,10 @@ export const play = {
       line('flag', '<b>Stand in a flag ring</b> to score');
       line('bomb', '<b>Pass your bomb</b> to an enemy before the buzzer');
     } else if (info.mode === 'time') line('clock', '<b>Least time as the oni</b> wins');
-    else line('it', "<b>Don't be the oni</b> at the buzzer");
+    else if (info.cup?.ko) {
+      line('it', info.cup.left === 2 ? '<b>The oni at the buzzer loses</b> the final' : '<b>The oni at the buzzer is out</b> of the tournament');
+      line('crown', info.cup.left === 2 ? '<b>The other one wins</b> it all' : '<b>Everyone else</b> plays the next round');
+    } else line('it', "<b>Don't be the oni</b> at the buzzer");
     // (the twist and a tournament's double points are tags on the board, lit up as the round begins; who starts as the oni is on the card before GO)
     if (teach) {
       const keys = el('li', 't-keys');
@@ -779,11 +794,14 @@ export const play = {
     const still = calm.matches;
     ms = Math.max(120, ms);
     const seq = [kind];
-    if (!still) {
+    // (only what the host put in the boxes rolls past - and with a single kind there is nothing to roll)
+    const chosen = ITEM_KINDS.filter((k) => (this.info?.items || []).includes(k));
+    const pool = chosen.length ? chosen : ITEM_KINDS;
+    if (!still && pool.length > 1) {
       const n = Math.max(5, Math.min(13, Math.round(ms / 68)));
       while (seq.length < n) {
-        let k = pickRandom(ITEM_KINDS);
-        if (k === seq[0]) k = ITEM_KINDS[(ITEM_KINDS.indexOf(k) + 1 + Math.floor(Math.random() * (ITEM_KINDS.length - 1))) % ITEM_KINDS.length];
+        let k = pickRandom(pool);
+        if (k === seq[0]) k = pool[(pool.indexOf(k) + 1 + Math.floor(Math.random() * (pool.length - 1))) % pool.length];
         seq.unshift(k);
       }
     }
@@ -972,8 +990,11 @@ export const play = {
       const u = inside(m.lists && m.lists[i]);
       if (u !== m.underList[i]) list.classList.toggle('aside', (m.underList[i] = u));
     });
+    const mySide = view.team ? (view.players.find((p) => p.local)?.team ?? -1) : -1;
     for (const p of view.players) {
       if (p.dead > 0 || (night && !p.local)) continue;
+      // Vanish: only they themselves (and their own side) still have them on the map
+      if (p.gho > 0 && !p.local && !(mySide >= 0 && p.team === mySide) && !view.spectating) continue;
       const x = (p.x + PW / 2) * k;
       const y = (p.y + PH / 2) * k;
       g.fillStyle = view.team && p.team >= 0 ? TEAM_COLORS[p.team] : this.colorOf(p.slot); // team battle: friend or foe at a glance
@@ -1065,7 +1086,7 @@ export const play = {
       // a = { slot, kind, x, y, to }
       const kind = ITEM_KINDS[a.kind];
       R.itemFx(a, kind);
-      sfx.play({ freeze: 'freeze', blast: 'blast', storm: 'storm', swap: 'swap', quake: 'quake', warp: 'warp', eclipse: 'eclipse', dash: 'dash' }[kind] || 'pick', a.slot === me || kind === 'quake' || kind === 'eclipse' ? 1 : 0.6);
+      sfx.play({ freeze: 'freeze', blast: 'blast', storm: 'storm', swap: 'swap', quake: 'quake', warp: 'warp', eclipse: 'eclipse', dash: 'dash', ghost: 'ghost', star: 'star' }[kind] || 'pick', a.slot === me || kind === 'quake' || kind === 'eclipse' ? 1 : 0.6);
       const who = a.slot === me ? 'You' : this.nameOf(a.slot);
       if (kind === 'blast') this.banner(`${who} set off a Blast!`, a.slot !== me);
       else if (kind === 'storm') this.banner(`${who} called a Storm!`, a.slot !== me);
@@ -1073,6 +1094,9 @@ export const play = {
       else if (kind === 'swap' && a.to >= 0 && (a.slot === me || a.to === me)) this.banner(a.slot === me ? `You swapped with ${this.nameOf(a.to)}` : `${who} swapped places with you!`, a.to === me);
       else if (kind === 'quake') this.banner(a.slot === me ? 'Quake! Everyone else is in the air' : `${who} shook the ground - Quake!`, a.slot !== me);
       else if (kind === 'eclipse') this.banner(a.slot === me ? 'Eclipse! Nobody else can see' : `${who} called an Eclipse!`, a.slot !== me);
+      else if (kind === 'ghost' && a.slot === me) this.banner('Vanish! Nobody can see you');
+      else if (kind === 'ghost' && (!team || this.game?.teamOf?.(me) !== this.game?.teamOf?.(a.slot))) this.banner(`${who} has vanished!`, true);
+      else if (kind === 'star') this.banner(a.slot === me ? 'Titan! Nothing can touch you' : `${who} is a Titan - nothing touches them`, a.slot !== me);
       else if (kind === 'warp' && a.to === me) this.banner(`${who} warped right beside you!`, true);
       else if (kind === 'warp' && a.slot === me && a.tx != null) this.banner(a.to >= 0 ? `Warp! Right beside ${this.nameOf(a.to)}` : team ? 'Warp! Far away from their bombs' : 'Warp! Far away from the oni');
     } else if (type === 'boom') {
@@ -1084,7 +1108,7 @@ export const play = {
     } else if (type === 'flag') {
       // a = { what: take | lose | pay, team, i }
       const mine = this.game?.teamOf?.(me) === a.team;
-      const letter = 'ABCD'[a.i];
+      const letter = FLAG_LETTERS[a.i];
       if (a.what === 'take') {
         this.banner(`${TEAM_NAMES[a.team]} hold flag ${letter}!`, !mine && me >= 0);
         sfx.play(mine ? 'pick' : 'block', 0.9);

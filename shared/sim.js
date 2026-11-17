@@ -32,6 +32,8 @@ import {
   WARP_DROP,
   ECLIPSE_TICKS,
   DASH_TICKS,
+  GHOST_TICKS,
+  STAR_TICKS,
   IN_LEFT,
   IN_RIGHT,
   BOMB_STUN_TICKS,
@@ -44,7 +46,7 @@ import {
   FLAG_POINTS,
   SAFE_BONUS,
 } from './config.js';
-import { makeState, stepPlayer, isFree } from './physics.js';
+import { makeState, stepPlayer, isFree, portalAt } from './physics.js';
 
 const HIST = 64; // ticks of position history kept for lag compensation
 const kindId = (name) => ITEM_KINDS.indexOf(name) + 1;
@@ -61,6 +63,7 @@ export class Sim {
     this.twist = { grav: 1, speed: 1, items: 1 }; // round modifier (see TWISTS in config.js)
     // lucky boxes and items
     this.powerups = true;
+    this.itemPool = null; // which kinds come out of the boxes: an array of ITEM_KINDS names (empty or null: all of them)
     this.boxes = []; // indices into arena.pickups where a box is waiting
     this.nextBox = Infinity; // set by start()
     // team battle (null teams = everyone for themselves)
@@ -221,7 +224,7 @@ export class Sim {
     let best = null;
     let bestD = Infinity;
     for (const o of this.players) {
-      if (!o || o === it || o.s.dead > 0 || o.immune > 0 || o.s.orb > 0) continue; // nobody is tagged mid-portal
+      if (!o || o === it || o.s.dead > 0 || o.immune > 0 || o.s.orb > 0 || o.s.inv > 0) continue; // nobody is tagged mid-portal, and nothing touches a Titan
       if (!this.enemies(it, o) || o.bomb) continue; // a bomb only sticks to the other team, and nobody carries two
       let hit = touching(it.s.x, it.s.y, o.s.x, o.s.y);
       if (!hit && i >= 0) hit = touching(it.s.x, it.s.y, this.hx[o.slot][i], this.hy[o.slot][i]);
@@ -290,15 +293,26 @@ export class Sim {
   }
 
   // What comes out of a box. Whoever is it has no use for a shield.
+  // Only kinds from the host's pool (sim.itemPool), if there is one. (A pool of
+  // Wards alone: whoever is it gets one all the same - it turns into a burst of speed.)
   rollItem(o) {
-    const pool = ITEM_KINDS.filter((k) => !(k === 'shield' && this.isIt(o)));
+    const chosen = this.itemPool && this.itemPool.length ? ITEM_KINDS.filter((k) => this.itemPool.includes(k)) : ITEM_KINDS;
+    const all = chosen.length ? chosen : ITEM_KINDS;
+    const fit = all.filter((k) => !(k === 'shield' && this.isIt(o)));
+    const pool = fit.length ? fit : all;
     return kindId(pool[Math.floor(this.rnd() * pool.length)]);
   }
 
   // Everyone the item should hit: the other side.
   //   everyone for themselves: all other players
   //   team battle: the enemy team
+  // (not a Titan: nothing lands on one)
   targets(o) {
+    return this.players.filter((t) => t && t !== o && t.s.dead === 0 && t.s.inv === 0 && this.enemies(o, t));
+  }
+
+  // Everyone on the other side who is in play, Titans included.
+  foes(o) {
     return this.players.filter((t) => t && t !== o && t.s.dead === 0 && this.enemies(o, t));
   }
 
@@ -383,6 +397,15 @@ export class Sim {
       }
     } else if (kind === 'eclipse') {
       for (const t of this.targets(o)) t.s.ecl = ECLIPSE_TICKS;
+    } else if (kind === 'ghost') {
+      // nobody else is shown where we are (the browsers see to that: see PF_GHOST); a touch still counts
+      s.gho = GHOST_TICKS;
+    } else if (kind === 'star') {
+      // nothing touches us: no tag, no bomb, no item (see targets() and tagFrom()), no thorns (physics) -
+      // and whatever was already on us is shaken off
+      s.inv = STAR_TICKS;
+      s.slw = 0;
+      s.ecl = 0;
     } else if (kind === 'dash') {
       // straight ahead: the way they are steering right now, else the way they face
       const dir = (bits & IN_RIGHT ? 1 : 0) - (bits & IN_LEFT ? 1 : 0);
@@ -403,7 +426,7 @@ export class Sim {
   warpFor(o) {
     const arena = this.arena;
     const s = o.s;
-    const foes = this.targets(o);
+    const foes = this.foes(o);
     const far = (a, x, y) => Math.hypot(a.s.x - x, a.s.y - y);
     if (this.isIt(o)) {
       // (someone still protected after a tag only if there is nobody else; never a spark between portals)
@@ -411,7 +434,7 @@ export class Sim {
       let best = null;
       let bestD = Infinity;
       for (const t of prey) {
-        const d = far(t, s.x, s.y) + (t.immune > 0 ? 1e6 : 0);
+        const d = far(t, s.x, s.y) + (t.immune > 0 || t.s.inv > 0 ? 1e6 : 0);
         if (d < bestD) {
           bestD = d;
           best = t;
@@ -554,7 +577,7 @@ export function standsAt(arena, x, y, drop = 4, ticks = 20, lift = 0) {
     stepPlayer(p, 0, arena);
     if (p.dead > 0 || p.stun > 0 || p.orb > 0 || p.vy < 0 || Math.abs(p.x - x) > 0.5) return null;
     if (!p.ground) still = 0;
-    else if (++still >= 3) return p.y - y <= drop ? [p.x, p.y] : null;
+    else if (++still >= 3) return p.y - y <= drop && portalAt(arena, p.x, p.y) < 0 ? [p.x, p.y] : null;
   }
   return null;
 }

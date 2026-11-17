@@ -94,7 +94,7 @@ export function fitText(ctx, text, maxWidth) {
 // ---------------------------------------------------------------------------
 // Power-up icons, shared by every art style so they are always recognisable.
 // ---------------------------------------------------------------------------
-export const KIND_COLORS = { speed: '#ffb020', jump: '#3ecf6e', shield: '#4aa3ff', freeze: '#8fe6ff', blast: '#ff6b3d', swap: '#c77dff', storm: '#ffe14d', quake: '#d9a05b', warp: '#3fe0c5', eclipse: '#8a7bf0', dash: '#ff5c9d', box: '#ffc83d' };
+export const KIND_COLORS = { speed: '#ffb020', jump: '#3ecf6e', shield: '#4aa3ff', freeze: '#8fe6ff', blast: '#ff6b3d', swap: '#c77dff', storm: '#ffe14d', quake: '#d9a05b', warp: '#3fe0c5', eclipse: '#8a7bf0', dash: '#ff5c9d', ghost: '#c9d2e6', star: '#ffd23f', box: '#ffc83d' };
 
 // Draws the icon for a power-up centred on (cx, cy), fitting a circle of radius r.
 export function drawIcon(g, kind, cx, cy, r, color) {
@@ -233,6 +233,33 @@ export function drawIcon(g, kind, cx, cy, r, color) {
     g.arc(0, 0, r * 0.95, 0, 6.283);
     g.arc(r * 0.34, 0, r * 0.78, 0, 6.283, true);
     g.fill('evenodd');
+  } else if (kind === 'ghost') {
+    // Vanish: a little ghost - a dome on a ragged hem, with holes for eyes
+    g.beginPath();
+    g.moveTo(-r * 0.72, r * 0.9);
+    g.lineTo(-r * 0.72, -r * 0.1);
+    g.arc(0, -r * 0.1, r * 0.72, Math.PI, 0);
+    g.lineTo(r * 0.72, r * 0.9);
+    g.lineTo(r * 0.36, r * 0.62);
+    g.lineTo(0, r * 0.9);
+    g.lineTo(-r * 0.36, r * 0.62);
+    g.closePath();
+    g.moveTo(-r * 0.12, -r * 0.12);
+    g.arc(-r * 0.28, -r * 0.12, r * 0.16, 0, 6.283, true);
+    g.moveTo(r * 0.44, -r * 0.12);
+    g.arc(r * 0.28, -r * 0.12, r * 0.16, 0, 6.283, true);
+    g.fill('evenodd');
+  } else if (kind === 'star') {
+    // Titan: a five-pointed star
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const q = i % 2 ? r * 0.44 : r;
+      if (i) g.lineTo(Math.cos(a) * q, Math.sin(a) * q);
+      else g.moveTo(Math.cos(a) * q, Math.sin(a) * q);
+    }
+    g.closePath();
+    g.fill();
   } else {
     // a lucky box: a question mark
     g.lineWidth = r * 0.34;

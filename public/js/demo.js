@@ -274,6 +274,38 @@ const ITEM_ACTS = {
     yield* runTo(me, 150); // (away, before it comes back)
     yield* hold(0, 45);
   },
+  *ghost(d) {
+    const me = d.cast([{ name: 'You', x: 280 }, { name: 'Oni', x: 40 }], { it: 1 });
+    d.give('ghost');
+    d.ai[1] = chase(0, false);
+    d.say('The oni closes in...');
+    yield* until(0, () => cx(me) - cx(d.p(1).s) < 130, 200);
+    d.say('Vanish! For five seconds nobody else can see you');
+    yield U;
+    d.ai[1] = pace(150, 330); // (it has lost you: it searches where you were)
+    yield* hold(0, 14);
+    yield* runTo(me, 505);
+    yield* hold(0, 60);
+    d.say('A touch still counts - keep out of the way');
+    yield* until(0, () => me.gho === 0, 300);
+    d.ai[1] = null;
+    yield* hold(0, 30);
+  },
+  *star(d) {
+    const me = d.cast([{ name: 'You', x: 300 }, { name: 'Oni', x: 520, face: -1 }], { it: 1 });
+    d.give('star');
+    d.say('Here comes the oni...');
+    yield* hold(0, 26);
+    d.say('Titan! For four seconds nothing can touch you');
+    yield U;
+    d.ai[1] = chase(0, false);
+    yield* until(0, () => Math.abs(cx(d.p(1).s) - cx(me)) < 30, 120);
+    d.say('No tag, no bomb, no item, no thorns');
+    yield* hold(0, 75);
+    d.ai[1] = null;
+    yield* runTo(me, 90); // (and off, while it lasts)
+    yield* hold(0, 40);
+  },
 };
 const ITEM_ORDER = ['box', ...ITEM_KINDS];
 
@@ -697,6 +729,8 @@ class Run {
         slw: s.slw,
         ecl: s.ecl,
         dsh: s.dsh,
+        gho: s.gho,
+        inv: s.inv,
         dead: s.dead,
         itTicks: p.itTicks,
         item: p.item,

@@ -196,11 +196,13 @@ kbd {
 }
 /* close: a cross in a circle, in the top right corner, with its key beside it */
 .m-x { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 2px; margin-left: auto; border: 0; background: none; color: var(--ink); }
-.m-x .ring { width: 38px; height: 38px; display: grid; place-items: center; font-size: 15px; color: var(--paper-lit); background: var(--ink); border: 2px solid var(--ink); border-radius: 50%; box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 3px rgba(243, 234, 214, 0.4); }
+/* (two black rings round the cross: a thick one outside, a paper's breadth of gap, a thin one inside) */
+.m-x .ring { position: relative; width: 38px; height: 38px; display: grid; place-items: center; font-size: 12px; color: var(--ink); background: none; border: 2.5px solid currentColor; border-radius: 50%; }
+.m-x .ring::after { content: ''; position: absolute; inset: 2.5px; border: 1px solid currentColor; border-radius: 50%; }
 .m-x kbd { background: var(--paper-lit); }
 .m-x:focus-visible { outline: none; }
 .m-x:focus-visible .ring { outline: 3px solid var(--red); outline-offset: 2px; }
-@media (hover: hover) { .m-x:hover .ring { background: var(--red-deep); border-color: var(--red-deep); box-shadow: inset 0 0 0 2px var(--red-deep), inset 0 0 0 3px rgba(243, 234, 214, 0.4); } }
+@media (hover: hover) { .m-x:hover .ring { color: var(--red-deep); } }
 /* (words for a screen reader only) */
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .link { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 5px 0 3px; color: var(--soft); font: 600 14px/1.2 var(--serif); border-bottom: 1.5px solid currentColor; }
@@ -217,7 +219,32 @@ input[type='text']::placeholder { color: rgba(28, 27, 31, 0.5); }
 input[type='text']:focus { border-bottom-color: var(--red); outline: none; }
 
 /* the main menu: Play is the one big thing (a stroke of red), the rest are sheets of paper */
-.menu { display: flex; flex-direction: column; gap: 12px; }
+.menu { display: flex; flex-direction: column; gap: 14px; }
+/* host a room (the big one); beside it a globe: the rooms that are open to everyone */
+.menu-row { display: flex; align-items: center; gap: 16px; }
+.menu-row .entry.primary { flex: 1 1 0; min-width: 0; }
+/* (a small square, not a second big button: Host is the one thing to press here) */
+.menu-row .entry.globe { position: relative; flex: 0 0 52px; width: 52px; height: 52px; min-height: 0; display: grid; place-items: center; padding: 0; box-shadow: none; }
+.menu-row .entry.globe > .ic { font-size: 24px; }
+.menu-row .entry.globe .count { position: absolute; right: -7px; bottom: -7px; min-width: 19px; height: 19px; display: grid; place-items: center; padding: 0 5px; font: 800 11px/1 var(--serif); font-style: normal; color: #fff3e0; background: var(--red-deep); border-radius: 10px; box-shadow: 0 0 0 2px var(--paper-lit); }
+.menu-row .entry.globe .count[hidden] { display: none; }
+.menu-row .entry kbd { position: absolute; right: -7px; top: -8px; background: var(--paper-lit); color: var(--ink); opacity: 1; }
+@media (hover: hover) { .menu-row .entry.globe:hover > .ic { rotate: -12deg; } }
+.menu-row .entry.globe > .ic { transition: rotate 150ms ease-out; }
+/* a friend's room: four squares for its code, and Join */
+.home-code { display: flex; flex-direction: column; gap: 8px; }
+.home-code .lab { display: flex; align-items: center; gap: 7px; margin: 0; font: 800 11.5px/1.2 var(--serif); letter-spacing: 0.16em; text-transform: uppercase; color: var(--red-deep); }
+.home-code .lab::after { display: none; }
+.home-code .lab .ic { font-size: 13px; color: var(--ink); }
+.home-code .hub-field .digits { gap: 6px; }
+.home-code .hub-field .digits span { width: 44px; height: 48px; font-size: 26px; }
+.home-code .hub-join { flex: 1 1 0; min-width: 0; }
+.home-code .error:empty { display: none; }
+.home-code .digits span.next { position: relative; }
+.home-code .digits:focus span.next::after, .home-code .digits.open span.next::after { content: ''; position: absolute; left: 50%; top: 22%; width: 2px; height: 56%; margin-left: -1px; background: var(--red); }
+.home-code .digits.open + .hub-join { display: none; }
+.home-code .numpad { grid-template-columns: repeat(6, 1fr); max-width: none; }
+.home-code .numpad .go { font-size: 16px; }
 .entry {
   position: relative; isolation: isolate; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 8px 16px; text-align: left; color: var(--ink);
   background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); transition: translate 150ms ease-out, scale 150ms ease-out;
@@ -378,7 +405,7 @@ body.in-game .conn { display: none; }
 .side li .who.long { font-size: 17.5px; }
 .side li.me { background: rgba(200, 55, 45, 0.09); }
 /* (a bot, on any board: a small label after its name) */
-.tag.bot { display: inline-block; margin-left: 7px; padding: 2px 4px 1px; font: 800 9px/1 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; vertical-align: 0.35em; color: var(--soft); border: 1.5px solid rgba(28, 27, 31, 0.3); }
+.badge.bot { display: inline-block; margin-left: 7px; padding: 2px 4px 1px; font: 800 9px/1 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; vertical-align: 0.35em; color: var(--soft); border: 1.5px solid rgba(28, 27, 31, 0.3); }
 .side.won { box-shadow: inset 0 0 0 2px var(--ink), 0 0 0 3px var(--red); }
 
 /* how to play: every lesson is a little live picture of the real game */
@@ -537,10 +564,10 @@ body:not(.no-kbd) .touch-only { display: none; }
 .outcome .actions { flex-wrap: nowrap; gap: 12px; }
 .outcome .actions .note { margin: 0 auto 0 0; min-width: 0; text-align: left; }
 .outcome .actions .note:empty { display: block; }
-.next { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin: 0; padding: 4px 16px 3px 12px; font: 800 12px/1 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; color: #fff3e0; background: var(--ink); clip-path: polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%); }
-.next[hidden] { display: none; }
-.next .ic { font-size: 15px; }
-.next b { min-width: 0.7em; font: 400 26px/1 var(--brush); letter-spacing: 0; color: #ffd9a3; text-align: center; }
+.next-round { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin: 0; padding: 4px 16px 3px 12px; font: 800 12px/1 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; color: #fff3e0; background: var(--ink); clip-path: polygon(9px 0, 100% 0, calc(100% - 9px) 100%, 0 100%); }
+.next-round[hidden] { display: none; }
+.next-round .ic { font-size: 15px; }
+.next-round b { min-width: 0.7em; font: 400 26px/1 var(--brush); letter-spacing: 0; color: #ffd9a3; text-align: center; }
 /* a narrow screen: the picture over the words, everything in the middle; the two buttons share the width */
 @media (max-width: 640px) {
   .verdict { flex-direction: column; gap: 8px; min-height: 0; text-align: center; }
@@ -549,7 +576,7 @@ body:not(.no-kbd) .touch-only { display: none; }
   .feats { justify-content: center; }
   .outcome .actions { flex-wrap: wrap; }
   .outcome .actions .note:empty { display: none; }
-  .outcome .actions .note, .next { flex: 1 1 100%; justify-content: center; text-align: center; margin: 0; }
+  .outcome .actions .note, .next-round { flex: 1 1 100%; justify-content: center; text-align: center; margin: 0; }
   .outcome .actions .btn { flex: 1 1 0; }
 }
 /* a player's face: their character in the style of the match (their colour until it is painted) */
