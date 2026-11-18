@@ -1,24 +1,34 @@
-// The occasions: a layer over everything that plays a short scene when
-// something that matters happens - a round is about to begin (the two sides,
-// or everyone, walk on face to face), or one has just ended (the word for it,
-// who won, what the score is and what comes next).
+// The occasions: what is shown when something that matters happens.
+//
+//   Before a round - ONE scene, over everything: the two sides (or a duel, or
+//   everyone) come on face to face with the round's billing over them; then
+//   the draw is revealed in the same picture - the stage, the art style, and
+//   who starts as the oni (a light runs along the players and stops on them;
+//   in a team game, who starts with a bomb).
+//
+//   After a round - the head of the results card: the word for it, whoever
+//   won (with what each of them did), the score and what comes next. The
+//   scoreboard sits right under it, on the same card.
 //
 // A scene is built from what the game already knows (the round message, the
-// result message), never from anything of its own: who is playing, on which
-// side, in which colour and style, which round of which tournament this is.
-// Scenes only show; nothing here decides or delays anything in the match.
-// The walk-on fits into time the server leaves before the draw (VS_MS); the
-// ending plays before the results card and can be skipped with any key or tap.
+// result message), never from anything of its own. Scenes only show; nothing
+// here decides or delays anything in the match: the opening fits into the
+// time the server leaves before the 3-2-1.
 //
-//   present.init({ sfx, portrait(slot, size, face), colorOf(slot) })
-//   present.versus(info, { me, ms })        info: what play.js hands to onStart
-//   present.outcome(res, { me })  -> Promise<boolean>   false: it was cut off by something else
-//   present.skip()  present.clear()  present.busy ('' | 'versus' | 'outcome')
+//   present.init({ sfx, portrait(slot, size, face), colorOf(slot), onCover(on) })
+//   present.versus(info, { me, ms })   info: what play.js hands to onStart; returns the ms it will take (0: not shown)
+//   present.hero(box, res, { me })     fills `box` (the head of the results card)
+//   present.clear()   present.busy ('' | 'versus')
 //
-// Everything that moves is a CSS animation with its delay set up front; the
-// script builds the scene, makes the sounds and takes it down.
+// Smoothness: everything that moves is a CSS animation of transform or
+// opacity. An opening is built while the match behind it is being set up (the
+// slow part), with its animations held; it only starts to move on a later
+// frame, when the pictures are painted and the page is quiet again. While it
+// covers the screen the match behind it is not drawn at all (onCover).
 
-import { MODES, TEAM_NAMES, TEAM_COLORS, twistById } from '/shared/config.js';
+import { MODES, THEMES, TEAM_NAMES, TEAM_COLORS, twistById } from '/shared/config.js';
+import { arenaById } from '/shared/arenas.js';
+import { scenePreview, styleStill, styleReady } from './art.js';
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -26,6 +36,7 @@ const el = (tag, cls, text) => {
   if (text != null) e.textContent = text;
   return e;
 };
+const svg = (name) => `<svg class="ic" aria-hidden="true"><use href="#i-${name}" /></svg>`;
 const calm = matchMedia('(prefers-reduced-motion: reduce)');
 const WARM = '#c8372d';
 const COOL = '#2f4f8f';
@@ -35,7 +46,6 @@ let root = null;
 let opts = {};
 let timers = [];
 let token = 0;
-let done = null; // resolves an outcome's promise
 let kind = '';
 
 const later = (ms, fn) => {
@@ -51,14 +61,13 @@ function layer() {
     root.setAttribute('aria-hidden', 'true');
     root.hidden = true;
     document.body.append(root);
-    root.addEventListener('pointerdown', () => kind === 'outcome' && present.skip());
   }
   return root;
 }
 
 // One player: their character over a slab of their colour, and a name plate.
 //   face: 1 looks right, -1 left; i: the place in the line (for the stagger); from: l | r | up
-function card(p, { face = 1, i = 0, from = 'up', me = false, size = 192, tag = '' } = {}) {
+function card(p, { face = 1, i = 0, from = 'up', me = false, size = 192, tag = '', stats = null } = {}) {
   const c = el('div', `pz-card from-${from}${me ? ' me' : ''}${p.out ? ' gone' : ''}`);
   c.style.setProperty('--i', String(i));
   c.style.setProperty('--c', p.color || '#888');
@@ -67,6 +76,7 @@ function card(p, { face = 1, i = 0, from = 'up', me = false, size = 192, tag = '
   if (url) {
     const img = el('img');
     img.alt = '';
+    img.decoding = 'sync';
     img.src = url;
     pic.append(img);
   }
@@ -76,40 +86,41 @@ function card(p, { face = 1, i = 0, from = 'up', me = false, size = 192, tag = '
   c.append(plate);
   if (me) c.append(el('b', 'pz-you', 'You'));
   if (tag) c.append(el('b', 'pz-tag', tag));
+  if (stats) {
+    const row = el('span', 'pz-stats');
+    for (const [icon, text, label, top] of stats) {
+      const s = el('span', top ? 'st top' : 'st');
+      s.innerHTML = svg(icon);
+      s.append(text);
+      s.title = label;
+      row.append(s);
+    }
+    c.append(row);
+  }
   return c;
 }
 
 // how big a card can be: `n` of them in `cols` columns inside w x h
 const fit = (w, h, n, cols, max = 200) => {
   const rows = Math.ceil(n / cols);
-  return Math.floor(Math.max(54, Math.min(max, w / cols - 12, (h / rows - 34) / 1.08)));
+  return Math.floor(Math.max(50, Math.min(max, w / cols - 12, (h / rows - 34) / 1.08)));
 };
 
-// a burst of sparks from the middle (where the two sides meet)
+// a burst of sparks from the middle of `box`
 function sparks(box, many, colors) {
   const fx = el('span', 'pz-sparks');
   for (let i = 0; i < many; i++) {
     const s = el('i');
     const a = Math.random() * Math.PI * 2;
-    const far = 90 + Math.random() * 260;
-    s.style.setProperty('--x', `${Math.cos(a) * far}px`);
-    s.style.setProperty('--y', `${Math.sin(a) * far * 0.7}px`);
-    s.style.setProperty('--d', `${Math.random() * 0.12}s`);
+    const far = 90 + Math.random() * 240;
+    s.style.setProperty('--x', `${Math.round(Math.cos(a) * far)}px`);
+    s.style.setProperty('--y', `${Math.round(Math.sin(a) * far * 0.7)}px`);
+    s.style.setProperty('--d', `${(Math.random() * 0.12).toFixed(2)}s`);
     s.style.background = colors[i % colors.length];
     fx.append(s);
   }
   box.append(fx);
-}
-
-function open(name, data = {}) {
-  present.clear();
-  const r = layer();
-  kind = name;
-  r.className = `pz pz-${name}`;
-  for (const k of Object.keys(r.dataset)) delete r.dataset[k];
-  Object.assign(r.dataset, data);
-  r.hidden = false;
-  return r;
+  setTimeout(() => fx.remove(), 1100);
 }
 
 // What a round is called, and how much of an occasion it is.
@@ -129,12 +140,22 @@ function billing(info) {
   return { kicker: 'Team Bomb tournament', title: `Round ${cup.round} of ${cup.rounds}`, grade: cup.round === cup.rounds - 1 ? 'semi' : '', note: '' };
 }
 
-function header(r, bill, extra = '') {
-  const head = el('div', 'pz-head');
-  head.append(el('span', 'pz-kicker', bill.kicker), el('b', 'pz-title', bill.title));
-  if (bill.note || extra) head.append(el('span', 'pz-note', [bill.note, extra].filter(Boolean).join(' · ')));
-  r.append(head);
-  return head;
+// a small picture with two lines under a label: the stage, the style
+function plate(label, name, url, i) {
+  const p = el('div', 'pz-plate');
+  p.style.setProperty('--i', String(i));
+  const pic = el('span', 'pz-thumb');
+  if (url) {
+    const img = el('img');
+    img.alt = '';
+    img.decoding = 'sync';
+    img.src = url;
+    pic.append(img);
+  }
+  const words = el('span', 'pz-words');
+  words.append(el('small', '', label), el('b', '', name));
+  p.append(pic, words);
+  return p;
 }
 
 export const present = {
@@ -145,87 +166,172 @@ export const present = {
     return kind;
   },
 
-  // --- before a round: who is playing whom -----------------------------------------
-  versus(info, { me = -1, ms = 2600 } = {}) {
-    if (calm.matches || ms < 1200) return 0;
+  // --- before a round: who is playing whom, where, and who starts as the oni ----------
+  versus(info, { me = -1, ms = 5000 } = {}) {
+    if (calm.matches || ms < 1500) return 0;
     const players = info.players.map((p) => ({ ...p, color: opts.colorOf?.(p.slot) }));
     if (players.length < 2) return 0;
+    this.clear();
+    const my = token;
+    const deadline = performance.now() + ms;
     const teams = info.mode === 'team' && info.teams;
     const layout = teams ? 'team' : players.length === 2 ? 'duel' : 'ffa';
     const bill = billing(info);
-    const r = open('versus', { layout, grade: bill.grade });
+    const r = layer();
+    kind = 'versus';
+    r.className = 'pz pz-versus hold';
+    for (const k of Object.keys(r.dataset)) delete r.dataset[k];
+    r.dataset.layout = layout;
+    r.dataset.grade = bill.grade;
     const W = innerWidth;
     const H = innerHeight;
     const tall = H > W * 1.05;
     r.classList.toggle('tall', tall);
-    r.style.setProperty('--ms', `${ms}ms`);
     // the ground: two slabs of colour that slide in from either side and meet on a slant
     const a = teams ? TEAM_COLORS[0] : layout === 'duel' ? players[0].color : WARM;
     const b = teams ? TEAM_COLORS[1] : layout === 'duel' ? players[1].color : COOL;
     r.style.setProperty('--a', a);
     r.style.setProperty('--b', b);
-    r.append(el('i', 'pz-half l'), el('i', 'pz-half r'), el('i', 'pz-streaks'), el('i', 'pz-flash'));
+    r.append(el('i', 'pz-half l'), el('i', 'pz-half r'), el('i', 'pz-flash'));
     const twist = info.twist && info.twist !== 'none' ? twistById(info.twist) : null;
     let tally = '';
     if (teams && info.cup?.total && info.cup.round > 1) tally = `${TEAM_NAMES[0]} ${info.cup.total[0]} – ${info.cup.total[1]} ${TEAM_NAMES[1]}`;
-    header(r, bill, [tally, twist?.name ? `Twist: ${twist.name}` : ''].filter(Boolean).join(' · '));
+    const head = el('div', 'pz-head');
+    head.append(el('span', 'pz-kicker', bill.kicker), el('b', 'pz-title', bill.title));
+    const note = [bill.note, tally, twist?.name ? `Twist: ${twist.name}` : ''].filter(Boolean).join(' · ');
+    if (note) head.append(el('span', 'pz-note', note));
+    r.append(head);
     const stage = el('div', 'pz-stage');
     r.append(stage);
     const emblem = el('b', 'pz-vs');
+    const cards = new Map(); // slot -> its card
+    const add = (line, p, o) => {
+      const c = card(p, { ...o, me: p.slot === me });
+      cards.set(p.slot, c);
+      line.append(c);
+    };
     if (layout === 'ffa') {
-      // everyone for themselves: one line of all of them, coming up from both ends towards the middle
+      // everyone for themselves: one line of all of them, coming on from both ends
       const n = players.length;
       const cols = tall ? (n <= 4 ? 2 : n <= 9 ? 3 : 4) : n <= 6 ? n : Math.ceil(n / 2);
-      const size = fit(W * 0.94, H * (tall ? 0.56 : 0.5), n, cols, 200);
+      const size = fit(W * 0.94, H * (tall ? 0.5 : 0.42), n, cols, 190);
       const line = el('div', 'pz-line');
       line.style.setProperty('--card', `${size}px`);
       line.style.maxWidth = `${cols * (size + 14)}px`;
       players.forEach((p, i) => {
         const col = i % cols;
         const left = col < cols / 2;
-        line.append(card(p, { face: left ? 1 : -1, i: left ? col : cols - 1 - col, from: left ? 'l' : 'r', me: p.slot === me }));
+        add(line, p, { face: left ? 1 : -1, i: left ? col : cols - 1 - col, from: left ? 'l' : 'r' });
       });
       emblem.innerHTML = '<i>All</i><span>VS</span><i>All</i>';
       emblem.classList.add('wide');
       stage.append(emblem, line);
     } else {
       const sides = teams ? [0, 1].map((t) => players.filter((p) => teams[p.slot] === t)) : [[players[0]], [players[1]]];
-      // (you are always among the first of your own side)
-      for (const s of sides) s.sort((x, y) => (y.slot === me) - (x.slot === me));
+      for (const s of sides) s.sort((x, y) => (y.slot === me) - (x.slot === me)); // (you are the first of your own side)
       const most = Math.max(sides[0].length, sides[1].length);
       const cols = most <= 3 ? most : most === 4 ? 2 : 3;
-      const size = layout === 'duel' ? Math.floor(Math.min(tall ? W * 0.5 : W * 0.3, H * (tall ? 0.26 : 0.46), 300)) : fit(tall ? W * 0.94 : W * 0.41, H * (tall ? 0.3 : 0.56), most, cols, 200);
+      const size = layout === 'duel' ? Math.floor(Math.min(tall ? W * 0.46 : W * 0.26, H * (tall ? 0.22 : 0.38), 270)) : fit(tall ? W * 0.94 : W * 0.41, H * (tall ? 0.25 : 0.46), most, cols, 180);
       sides.forEach((list, t) => {
         const side = el('div', `pz-side ${t ? 'r' : 'l'}`);
         side.style.setProperty('--card', `${size}px`);
         if (teams) side.append(el('b', 'pz-team', TEAM_NAMES[t]));
         const line = el('div', 'pz-line');
         line.style.maxWidth = `${cols * (size + 14)}px`;
-        list.forEach((p, i) => line.append(card(p, { face: t ? -1 : 1, i, from: t ? 'r' : 'l', me: p.slot === me, size: layout === 'duel' ? 288 : 192 })));
+        list.forEach((p, i) => add(line, p, { face: t ? -1 : 1, i, from: t ? 'r' : 'l', size: layout === 'duel' ? 288 : 192 }));
         side.append(line);
         stage.append(side);
         if (!t) stage.append(emblem);
       });
       emblem.textContent = 'VS';
     }
-    // the moment they meet
-    const hit = Math.min(820, ms * 0.34);
-    r.style.setProperty('--hit', `${hit}ms`);
-    sound(60, 'whoosh');
-    sound(hit, 'slam', bill.grade === 'final' ? 1 : 0.8);
-    if (bill.grade) sound(hit + 260, 'drum');
-    later(hit, () => sparks(stage, bill.grade === 'final' ? 26 : 16, bill.grade === 'final' ? [GOLD, '#fff', a, b] : ['#fff', a, b]));
-    later(ms - 330, () => {
-      r.classList.add('out');
-      opts.sfx?.play('whoosh', 0.6);
-    });
-    later(ms, () => this.clear());
+    // the draw, in the same picture: where, and in which style (painted now, before anything moves)
+    const foot = el('div', 'pz-foot');
+    const arena = arenaById(info.arena);
+    const theme = THEMES.find((t) => t.id === info.theme);
+    let stagePic = null;
+    let stylePic = null;
+    try {
+      if (styleReady(info.theme)) {
+        stagePic = scenePreview(info.arena, info.theme, 240, 135);
+        stylePic = styleStill(info.theme, 240, 135);
+      }
+    } catch {}
+    if (arena) foot.append(plate(info.random?.arena ? 'Stage · drawn' : 'Stage', arena.name, stagePic, 0));
+    if (theme) foot.append(plate(info.random?.theme ? 'Style · drawn' : 'Style', theme.name, stylePic, 1));
+    r.append(foot);
+    r.hidden = false;
+    opts.onCover?.(true);
+
+    // Now wait for the page to go quiet (the match is being set up behind us), then let it move.
+    const go = () => {
+      if (my !== token) return;
+      const T = deadline - performance.now();
+      if (T < 1200) return this.clear();
+      const full = T >= 3400; // time for the light to run along the players
+      r.classList.remove('hold');
+      const hit = 620;
+      sound(40, 'whoosh');
+      sound(hit, 'slam', bill.grade === 'final' ? 1 : 0.8);
+      if (bill.grade) sound(hit + 240, 'drum');
+      later(hit, () => sparks(stage, bill.grade === 'final' ? 22 : 14, bill.grade === 'final' ? [GOLD, '#fff', a, b] : ['#fff', a, b]));
+      sound(1150, 'click');
+      sound(1400, 'click');
+      // who starts as the oni: a light runs along the line and stops on them
+      const mark = (slot, text, cls) => {
+        const c = cards.get(slot);
+        if (!c) return;
+        c.classList.add('picked');
+        c.append(el('b', `pz-mark ${cls}`, text));
+      };
+      const start = full ? 1750 : Math.min(1500, T * 0.5);
+      if (teams) {
+        (info.bombs || []).forEach((slot, i) => later(start + i * 200, () => {
+          mark(slot, 'Bomb', 'bomb');
+          opts.sfx?.play('tick');
+        }));
+      } else if (info.it >= 0 && cards.has(info.it)) {
+        const order = [...cards.keys()];
+        const stop = order.indexOf(info.it);
+        if (full && order.length > 1) {
+          const steps = order.length * 2 + stop; // twice round, then on to them
+          let at = start;
+          for (let k = 0; k <= steps; k++) {
+            const slot = order[k % order.length];
+            const last = k === steps;
+            later(at, () => {
+              for (const c of cards.values()) c.classList.remove('lit');
+              cards.get(slot).classList.add('lit');
+              opts.sfx?.play('tick', 0.7);
+              if (last) {
+                mark(slot, 'Oni', 'oni');
+                opts.sfx?.play('tagged');
+              }
+            });
+            at += 55 + (k / steps) ** 3 * 240; // slower and slower
+          }
+        } else later(start, () => {
+          mark(info.it, 'Oni', 'oni');
+          opts.sfx?.play('tagged');
+        });
+      }
+      later(T - 340, () => {
+        r.classList.add('out');
+        opts.onCover?.(false);
+        opts.sfx?.play('whoosh', 0.6);
+      });
+      later(T, () => this.clear());
+    };
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(go, 0)));
     return ms;
   },
 
-  // --- after a round: the word for it, who won, the score, what comes next ---------
-  outcome(res, { me = -1 } = {}) {
-    if (calm.matches || !res?.rows?.length) return Promise.resolve(true);
+  // --- after a round: the head of the results card -------------------------------------
+  // the word for it, who won (and what each of them did), the score, what comes next
+  hero(box, res, { me = -1 } = {}) {
+    box.textContent = '';
+    box.className = 'pz-hero';
+    if (!res?.rows?.length) return '';
     const cup = res.cup;
     const team = res.team;
     const between = !!cup && !cup.final;
@@ -242,12 +348,12 @@ export const present = {
     let fallen = null; // a knockout: who went out
     let line = ''; // the score
     let next = ''; // what comes now
-    let side = -1; // a team's colour for the stage
+    let side = -1; // a team's colour for the band
     if (team) {
       const tally = cup && team.total ? team.total : team.score;
-      const lead = !between ? team.win : team.win; // (between rounds the scene is about THIS round)
+      const lead = team.win; // (between rounds the head is about THIS round)
       side = lead;
-      cast = lead >= 0 ? res.rows.filter((x) => x.team === lead).map((x) => person(x.slot)) : res.rows.map((x) => person(x.slot));
+      cast = lead >= 0 ? res.rows.filter((x) => x.team === lead).map((x) => person(x.slot)) : [];
       line = `${TEAM_NAMES[0]} ${team.score[0]} – ${team.score[1]} ${TEAM_NAMES[1]}`;
       if (between) {
         kicker = `Round ${cup.round} of ${cup.rounds} · Team Bomb`;
@@ -269,7 +375,7 @@ export const present = {
         cast = res.winners.map(person);
         mood = watching ? 'info' : iWon ? 'win' : 'lose';
         word = watching ? `${cast[0]?.name || 'Nobody'} wins` : iWon ? 'Champion' : 'Defeat';
-        line = iWon ? 'The last one standing' : cast[0] ? `${cast[0].name} wins the knockout` : '';
+        line = forfeit ? 'Everyone else left' : iWon ? 'The last one standing' : cast[0] ? `${cast[0].name} wins the knockout` : '';
       } else {
         kicker = `Knockout · round ${cup.round} of ${cup.rounds}`;
         cast = still.map((x) => person(x.slot));
@@ -294,15 +400,13 @@ export const present = {
     cast = cast.slice(0, 10);
     cast.sort((x, y) => (y.slot === me) - (x.slot === me));
     const grand = !between && (mood === 'win' || mood === 'info');
-    const r = open('outcome', { mood, grade: cup?.final ? 'final' : between ? 'round' : '' });
-    const W = innerWidth;
-    const H = innerHeight;
-    const color = side >= 0 ? TEAM_COLORS[side] : mood === 'lose' ? '#3a3340' : mood === 'draw' ? '#5b5348' : GOLD;
-    r.style.setProperty('--a', color);
-    r.classList.toggle('tall', H > W * 1.05);
-    r.append(el('i', 'pz-veil'), el('i', 'pz-rays'), el('i', 'pz-band'), el('i', 'pz-flash'));
-    const box = el('div', 'pz-result');
-    box.append(el('span', 'pz-kicker', kicker));
+    const color = side >= 0 ? TEAM_COLORS[side] : mood === 'lose' ? '#4a4250' : mood === 'draw' ? '#6a6156' : GOLD;
+    box.dataset.mood = mood;
+    box.dataset.grade = cup?.final ? 'final' : between ? 'round' : '';
+    box.style.setProperty('--a', color);
+    box.append(el('i', 'pz-band'), el('i', 'pz-rays'));
+    const inner = el('div', 'pz-result');
+    inner.append(el('span', 'pz-kicker', kicker));
     // the word, letter by letter
     const big = el('b', 'pz-word');
     big.setAttribute('aria-label', word);
@@ -317,57 +421,45 @@ export const present = {
       }
       big.append(w);
     }
-    box.append(big);
+    inner.append(big);
     if (cast.length) {
+      // what each of them did: flags taken and bombs passed on (a team game), or tags made and time as the oni
+      const rows = cast.map((p) => res.rows.find((x) => x.slot === p.slot)).filter(Boolean);
+      const best = (key) => Math.max(0, ...rows.map((x) => x[key] || 0));
+      const statsOf = (p) => {
+        const x = res.rows.find((y) => y.slot === p.slot);
+        if (!x || between || p.out) return null;
+        if (team) return [['flag', String(x.caps || 0), 'flags taken', x.caps > 0 && x.caps === best('caps')], ['swap', String(x.tags), 'bombs passed on', x.tags > 0 && x.tags === best('tags')]];
+        return [['target', String(x.tags), 'tags made', x.tags > 0 && x.tags === best('tags')], ['oni', `${(x.ms / 1000).toFixed(1)}s`, 'as the oni', false]];
+      };
       const n = cast.length + (fallen ? 1 : 0);
-      const cols = W < 560 && n > 5 ? Math.ceil(n / 2) : n;
-      const size = fit(W * 0.92, H * 0.3, n, cols, n <= 2 ? 190 : 150);
+      const W = Math.min(innerWidth, 860) * 0.92;
+      const cols = innerWidth < 560 && n > 3 ? Math.ceil(n / 2) : n;
+      const low = innerHeight < 780 || res.rows.length > 6;
+      const size = Math.floor(Math.max(46, Math.min(n <= 2 ? 124 : low ? 76 : 104, W / cols - 14)));
       const row = el('div', 'pz-line');
       row.style.setProperty('--card', `${size}px`);
-      row.style.maxWidth = `${cols * (size + 14)}px`;
-      cast.forEach((p, i) => row.append(card(p, { i, from: 'up', me: p.slot === me, tag: p.out ? 'Oni' : '' })));
-      if (fallen) row.append(card({ ...fallen, out: true }, { i: cast.length, from: 'up', me: fallen.slot === me, tag: 'Out' }));
+      row.style.maxWidth = `${cols * (size + 16)}px`;
+      cast.forEach((p, i) => row.append(card(p, { i, from: 'up', me: p.slot === me, tag: p.out ? 'Oni' : '', size: 144, stats: size >= 70 ? statsOf(p) : null })));
+      if (fallen) row.append(card({ ...fallen, out: true }, { i: cast.length, from: 'up', me: fallen.slot === me, tag: 'Out', size: 144 }));
       if (mood === 'win' || mood === 'info') row.classList.add('cheer');
-      box.append(row);
+      inner.append(row);
     }
-    if (line) box.append(el('span', 'pz-score', line));
-    if (next) box.append(el('span', 'pz-next', next));
-    r.append(box);
-    const T = between ? 2500 : grand ? 2900 : 2500;
-    sound(0, 'slam', 0.9);
-    sound(140, mood === 'win' || (mood === 'info' && !between) ? 'fanfare' : mood === 'lose' ? 'defeat' : 'drum');
-    if (mood === 'win' || grand) later(180, () => sparks(box, grand ? 30 : 18, [GOLD, '#fff', color]));
-    res.presented = true; // (the results card need not make the same noise again)
-    return new Promise((resolve) => {
-      const my = token;
-      done = (ok) => {
-        done = null;
-        resolve(ok && my === token);
-      };
-      later(T - 300, () => r.classList.add('out'));
-      later(T, () => {
-        const end = done;
-        end?.(true);
-        this.clear();
-      });
-    });
-  },
-
-  // any key or tap: enough of that (an ending only; a walk-on is over in a moment anyway)
-  skip() {
-    if (kind !== 'outcome' || !done) return;
-    const end = done;
-    end(true);
-    this.clear();
+    if (line) inner.append(el('span', 'pz-score', line));
+    if (next) inner.append(el('span', 'pz-next', next));
+    box.append(inner);
+    if (!calm.matches) {
+      opts.sfx?.play('slam', 0.8);
+      if (mood === 'win' || grand) setTimeout(() => box.isConnected && sparks(inner, grand ? 22 : 14, [GOLD, '#fff', color]), 200);
+    }
+    return mood;
   },
 
   clear() {
-    const end = done;
-    done = null;
-    end?.(false);
     token++;
     for (const t of timers) clearTimeout(t);
     timers = [];
+    if (kind) opts.onCover?.(false);
     kind = '';
     if (root) {
       root.hidden = true;

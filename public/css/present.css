@@ -1,100 +1,124 @@
-/* The occasions (see present.js): the walk-on before a round, and the word for
-   how it ended. One layer over everything; ink, paper and the two sides' colours.
-   Everything is laid out from the middle, and sized from the screen. */
-#present { position: fixed; inset: 0; z-index: 9; overflow: hidden; display: grid; place-items: center; color: #fff; font-family: var(--serif); user-select: none; -webkit-user-select: none; contain: strict; }
+/* The occasions (see present.js): the opening before a round - the sides face
+   to face, and the draw in the same picture - and the head of the results card.
+   Ink, paper and the two sides' colours. Only transforms and opacity move: no
+   filters, blends or masks in anything animated. */
+#present { position: fixed; inset: 0; z-index: 9; overflow: hidden; display: grid; place-items: center; color: #fff; font-family: var(--serif); user-select: none; -webkit-user-select: none; pointer-events: auto; background: #100d0c; }
 #present[hidden] { display: none; }
-#present.pz-versus { pointer-events: auto; background: #100d0c; animation: pz-drift var(--ms, 2600ms) linear both; }
-#present.pz-outcome { pointer-events: auto; cursor: pointer; }
+/* built, but not moving yet (the match behind it is still being set up) */
+#present.hold, #present.hold * { animation-play-state: paused !important; }
 
 /* ---- shared pieces ---- */
-.pz-kicker { font: 800 clamp(11px, 1.7vmin, 15px)/1.2 var(--serif); letter-spacing: 0.26em; text-transform: uppercase; color: #ffd9a3; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5); }
-.pz-outcome .pz-kicker { padding: 3px 14px 4px; background: #14100e; }
+.pz-kicker { font: 800 clamp(11px, 1.7vmin, 15px)/1.2 var(--serif); letter-spacing: 0.26em; text-transform: uppercase; color: #ffd9a3; }
 .pz-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
-.pz-line { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 10px 14px; margin: 0 auto; }
+.pz-line { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 8px 14px; margin: 0 auto; }
 
 /* a player: a slanted slab of their colour, the character standing out of the top of it, a name plate */
-.pz-card { --card: inherit; position: relative; width: var(--card, 140px); display: flex; flex-direction: column; align-items: center; animation: pz-in-up 0.46s cubic-bezier(0.2, 1.35, 0.4, 1) both; animation-delay: calc(var(--at, 0.16s) + var(--i, 0) * 0.07s); }
+.pz-card { position: relative; width: var(--card, 140px); display: flex; flex-direction: column; align-items: center; will-change: transform, opacity; animation: pz-in-up 0.44s cubic-bezier(0.2, 1.35, 0.4, 1) both; animation-delay: calc(var(--at, 0.14s) + var(--i, 0) * 0.06s); }
 .pz-card.from-l { animation-name: pz-in-l; }
 .pz-card.from-r { animation-name: pz-in-r; }
-.pz-slab { position: absolute; left: 6%; right: 6%; top: 22%; bottom: 20px; background: linear-gradient(180deg, color-mix(in srgb, var(--c) 92%, #fff), color-mix(in srgb, var(--c) 78%, #000)); border: 3px solid #14100e; box-shadow: 5px 6px 0 rgba(0, 0, 0, 0.42); transform: skewX(-8deg); }
+.pz-slab { position: absolute; left: 6%; right: 6%; top: calc(var(--card, 140px) * 0.22); height: calc(var(--card, 140px) * 0.74); background: var(--c); border: 3px solid #14100e; box-shadow: 5px 6px 0 rgba(0, 0, 0, 0.4); transform: skewX(-8deg); }
 .pz-side.r .pz-slab, .pz-card.from-r .pz-slab { transform: skewX(8deg); }
-.pz-pic { position: relative; width: 100%; aspect-ratio: 1; display: grid; place-items: center; filter: drop-shadow(0 5px 0 rgba(0, 0, 0, 0.35)); }
+.pz-pic { position: relative; width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
 .pz-pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.pz-name { position: relative; max-width: 112%; margin-top: -4px; padding: 3px 12px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #14100e; color: #fff; font: 400 clamp(13px, calc(var(--card, 140px) * 0.17), 26px)/1.15 var(--brush); transform: rotate(-2deg); box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35); }
-.pz-name.long { font-size: clamp(11px, calc(var(--card, 140px) * 0.13), 20px); }
+.pz-name { position: relative; max-width: 112%; margin-top: -4px; padding: 3px 12px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: #14100e; color: #fff; font: 400 clamp(12px, calc(var(--card, 140px) * 0.17), 26px)/1.15 var(--brush); transform: rotate(-2deg); }
+.pz-name.long { font-size: clamp(10.5px, calc(var(--card, 140px) * 0.13), 20px); }
 .pz-card.me .pz-name { background: #fff; color: #14100e; }
 .pz-card.me .pz-slab { border-color: #fff; }
-.pz-you, .pz-tag { position: absolute; top: 12%; right: 0; padding: 2px 7px; background: #fff; color: #14100e; font: 800 clamp(9px, calc(var(--card, 140px) * 0.085), 13px)/1.3 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; transform: rotate(6deg); box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4); }
-.pz-tag { background: var(--red, #c8372d); color: #fff; left: 0; right: auto; transform: rotate(-9deg); }
-.pz-card.gone .pz-pic { filter: grayscale(1) brightness(0.62); }
+.pz-you, .pz-tag { position: absolute; top: calc(var(--card, 140px) * 0.1); right: 0; padding: 2px 7px; background: #fff; color: #14100e; font: 800 clamp(8.5px, calc(var(--card, 140px) * 0.085), 13px)/1.3 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; transform: rotate(6deg); }
+.pz-tag { background: #c8372d; color: #fff; left: 0; right: auto; transform: rotate(-9deg); }
+.pz-card.gone .pz-pic { opacity: 0.5; }
 .pz-card.gone .pz-slab { background: #3b3634; }
+/* the draw lands on a player: the light, then the stamp */
+.pz-card.lit .pz-slab { border-color: #ffd76a; box-shadow: 0 0 0 4px #ffd76a, 5px 6px 0 rgba(0, 0, 0, 0.4); }
+.pz-card.picked .pz-slab { border-color: #ffd76a; box-shadow: 0 0 0 4px #ffd76a, 5px 6px 0 rgba(0, 0, 0, 0.4); }
+.pz-mark { position: absolute; left: 50%; top: calc(var(--card, 140px) * 0.34); z-index: 2; padding: 3px 12px 4px; background: #c8372d; color: #fff; border: 3px solid #14100e; font: 800 clamp(11px, calc(var(--card, 140px) * 0.15), 24px)/1.15 var(--serif); letter-spacing: 0.16em; text-transform: uppercase; translate: -50% 0; animation: pz-stamp 0.34s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+.pz-mark.bomb { background: #14100e; color: #ffb347; border-color: #ffb347; }
+.pz-stats { display: flex; gap: 3px; margin-top: 4px; }
+.pz-stats .st { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border: 1.5px solid #14100e; border-radius: 999px; background: #fff; color: #14100e; font: 800 11px/1.3 var(--serif); font-variant-numeric: tabular-nums; }
+.pz-stats .st .ic { font-size: 10px; }
+.pz-stats .st.top { background: #ffd76a; }
 
 .pz-sparks { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; z-index: 4; }
-.pz-sparks i { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; transform: rotate(45deg); animation: pz-spark 0.75s cubic-bezier(0.1, 0.7, 0.3, 1) var(--d, 0s) both; }
+.pz-sparks i { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; will-change: transform, opacity; animation: pz-spark 0.75s cubic-bezier(0.1, 0.7, 0.3, 1) var(--d, 0s) both; }
 
-/* ---- the walk-on ---- */
-.pz-half { position: absolute; top: -10%; bottom: -10%; width: 62%; }
-.pz-half.l { left: -6%; background: linear-gradient(120deg, color-mix(in srgb, var(--a) 70%, #000), var(--a)); clip-path: polygon(0 0, 100% 0, 84% 100%, 0 100%); animation: pz-half-l 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
-.pz-half.r { right: -6%; background: linear-gradient(300deg, color-mix(in srgb, var(--b) 70%, #000), var(--b)); clip-path: polygon(16% 0, 100% 0, 100% 100%, 0 100%); animation: pz-half-r 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
-/* (speed lines racing across both halves towards the middle) */
-.pz-streaks { position: absolute; inset: -20% -40%; opacity: 0.16; background: repeating-linear-gradient(100deg, transparent 0 46px, #fff 46px 49px, transparent 49px 120px, #fff 120px 121px); animation: pz-streak 0.9s linear infinite; mix-blend-mode: overlay; }
-.pz-versus .pz-flash { animation: pz-flash 0.5s ease-out var(--hit, 0.8s) both; }
-.pz-head { position: absolute; left: 0; right: 0; top: max(3.2vh, env(safe-area-inset-top)); z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; animation: pz-drop 0.4s cubic-bezier(0.2, 1.3, 0.4, 1) 0.2s both; }
-.pz-title { padding: 0 18px 4px; font: 400 clamp(30px, 7.2vmin, 68px)/1.05 var(--brush); text-shadow: 0 4px 0 rgba(0, 0, 0, 0.45); }
+/* ---- the opening ---- */
+.pz-half { position: absolute; top: -10%; bottom: -10%; width: 62%; will-change: transform; }
+.pz-half.l { left: -6%; background: var(--a); clip-path: polygon(0 0, 100% 0, 84% 100%, 0 100%); animation: pz-half-l 0.4s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+.pz-half.r { right: -6%; background: var(--b); clip-path: polygon(16% 0, 100% 0, 100% 100%, 0 100%); animation: pz-half-r 0.4s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+/* (faint slanted stripes, standing still: texture, not motion) */
+.pz-half::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(100deg, transparent 0 58px, rgba(255, 255, 255, 0.07) 58px 61px, transparent 61px 140px, rgba(0, 0, 0, 0.08) 140px 142px); }
+.pz-versus .pz-flash { animation: pz-flash 0.45s ease-out 0.62s both; }
+.pz-head { position: absolute; left: 0; right: 0; top: max(2.6vh, env(safe-area-inset-top)); z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; animation: pz-drop 0.4s cubic-bezier(0.2, 1.3, 0.4, 1) 0.2s both; }
+.pz-title { padding: 0 18px 4px; font: 400 clamp(28px, 6.6vmin, 62px)/1.05 var(--brush); text-shadow: 0 4px 0 rgba(0, 0, 0, 0.45); }
 .pz-note { padding: 3px 12px; background: #14100e; font: 800 clamp(10px, 1.6vmin, 14px)/1.4 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; }
-.pz-versus[data-grade='final'] .pz-title { color: #ffd76a; font-size: clamp(38px, 9.4vmin, 92px); }
+.pz-versus[data-grade='final'] .pz-title { color: #ffd76a; font-size: clamp(34px, 8.4vmin, 84px); }
 .pz-versus[data-grade='final'] .pz-note { background: #ffd76a; color: #14100e; }
 .pz-versus[data-grade='semi'] .pz-title { color: #ffe9bd; }
-.pz-stage { position: relative; z-index: 2; width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0 clamp(4px, 2vw, 26px); padding: 15vh 2vw 4vh; }
+.pz-stage { position: relative; z-index: 2; width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 0 clamp(4px, 2vw, 26px); padding: 15vh 2vw 19vh; animation: pz-shake 0.4s linear 0.62s both; }
 .pz-side { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
-.pz-team { font: 400 clamp(22px, 5vmin, 46px)/1 var(--brush); text-shadow: 0 3px 0 rgba(0, 0, 0, 0.4); animation: pz-drop 0.4s cubic-bezier(0.2, 1.3, 0.4, 1) 0.3s both; }
-.pz-vs { position: relative; z-index: 3; display: grid; place-items: center; width: clamp(64px, 15vmin, 150px); aspect-ratio: 1; background: #14100e; border: 4px solid #fff; border-radius: 50%; box-shadow: 0 0 0 5px #14100e, 0 10px 0 rgba(0, 0, 0, 0.4); font: 400 clamp(28px, 7.4vmin, 72px)/1 var(--brush); color: #fff; animation: pz-slam 0.5s cubic-bezier(0.2, 1.5, 0.35, 1) var(--hit, 0.8s) both; }
-.pz-versus[data-grade='final'] .pz-vs { background: #ffd76a; color: #14100e; border-color: #14100e; box-shadow: 0 0 0 5px #ffd76a, 0 10px 0 rgba(0, 0, 0, 0.4); }
-/* everyone for themselves: the line fills the stage, the emblem sits over its middle */
-.pz-versus[data-layout='ffa'] .pz-stage { display: flex; flex-direction: column; align-items: center; gap: clamp(10px, 3vh, 26px); }
-.pz-vs.wide { width: auto; aspect-ratio: auto; display: flex; gap: 0.3em; align-items: baseline; padding: 0.12em 0.6em 0.2em; border-radius: 999px; font-size: clamp(22px, 5.6vmin, 54px); }
+.pz-team { font: 400 clamp(20px, 4.6vmin, 42px)/1 var(--brush); text-shadow: 0 3px 0 rgba(0, 0, 0, 0.4); animation: pz-drop 0.4s cubic-bezier(0.2, 1.3, 0.4, 1) 0.3s both; }
+.pz-vs { position: relative; z-index: 3; display: grid; place-items: center; width: clamp(58px, 13vmin, 132px); aspect-ratio: 1; background: #14100e; border: 4px solid #fff; border-radius: 50%; box-shadow: 0 0 0 5px #14100e; font: 400 clamp(26px, 6.6vmin, 64px)/1 var(--brush); color: #fff; will-change: transform, opacity; animation: pz-slam 0.5s cubic-bezier(0.2, 1.5, 0.35, 1) 0.62s both; }
+.pz-versus[data-grade='final'] .pz-vs { background: #ffd76a; color: #14100e; border-color: #14100e; box-shadow: 0 0 0 5px #ffd76a; }
+/* everyone for themselves: the emblem over the line */
+.pz-versus[data-layout='ffa'] .pz-stage { display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2.4vh, 22px); }
+.pz-vs.wide { width: auto; aspect-ratio: auto; display: flex; gap: 0.3em; align-items: baseline; padding: 0.1em 0.6em 0.18em; border-radius: 999px; font-size: clamp(20px, 5vmin, 48px); }
 .pz-vs.wide i { font: 800 0.34em/1 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; font-style: normal; }
-.pz-versus .pz-stage { animation: pz-shake 0.42s linear var(--hit, 0.8s) both; }
-/* a tall screen: one side above the other */
-.pz-versus.tall .pz-stage { grid-template-columns: 1fr; grid-template-rows: auto auto auto; justify-items: center; gap: 10px 0; padding: 13vh 2vw 2vh; }
-.pz-versus.tall .pz-half { left: -10%; right: -10%; width: auto; height: 66%; }
-.pz-versus.tall .pz-half.r { height: 50%; }
+/* the draw: where, and in which style */
+.pz-foot { position: absolute; left: 0; right: 0; bottom: max(3vh, env(safe-area-inset-bottom)); z-index: 3; display: flex; justify-content: center; gap: clamp(8px, 2vw, 22px); padding: 0 2vw; }
+.pz-plate { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 5px 14px 5px 5px; background: #14100e; border: 2px solid #fff; will-change: transform, opacity; animation: pz-rise 0.4s cubic-bezier(0.2, 1.3, 0.4, 1) both; animation-delay: calc(1.12s + var(--i, 0) * 0.25s); }
+.pz-thumb { flex: none; width: clamp(64px, 12vmin, 124px); aspect-ratio: 16 / 9; background: #2a2523; overflow: hidden; }
+.pz-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pz-words { display: flex; flex-direction: column; min-width: 0; text-align: left; }
+.pz-words small { font: 800 clamp(8.5px, 1.3vmin, 11px)/1.3 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; color: #ffd9a3; white-space: nowrap; }
+.pz-words b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 clamp(15px, 2.9vmin, 26px)/1.15 var(--brush); }
+/* a tall screen: one side above the other, the halves split top and bottom */
+.pz-versus.tall .pz-stage { grid-template-columns: 1fr; grid-template-rows: auto auto auto; justify-items: center; gap: 8px 0; padding: 13vh 2vw 13vh; }
+.pz-versus.tall .pz-half { left: -10%; right: -10%; width: auto; height: 62%; }
+.pz-versus.tall .pz-half.r { height: 60%; }
 .pz-versus.tall .pz-half.l { top: -6%; bottom: auto; clip-path: polygon(0 0, 100% 0, 100% 86%, 0 100%); animation-name: pz-half-t; }
 .pz-versus.tall .pz-half.r { top: auto; bottom: -6%; clip-path: polygon(0 14%, 100% 0, 100% 100%, 0 100%); animation-name: pz-half-b; }
-.pz-versus.tall[data-layout='ffa'] .pz-stage { padding-top: 15vh; }
 /* leaving: the halves part again, everything else lifts off */
-.pz-versus.out { background: transparent; transition: background 0.2s; }
+#present.out { background: transparent; }
 .pz-versus.out .pz-half.l { animation: pz-out-l 0.32s cubic-bezier(0.6, 0, 0.9, 0.4) both; }
 .pz-versus.out .pz-half.r { animation: pz-out-r 0.32s cubic-bezier(0.6, 0, 0.9, 0.4) both; }
 .pz-versus.tall.out .pz-half.l { animation-name: pz-out-t; }
 .pz-versus.tall.out .pz-half.r { animation-name: pz-out-b; }
-.pz-versus.out .pz-stage, .pz-versus.out .pz-head { animation: pz-leave 0.26s ease-in both; }
-.pz-versus.out .pz-streaks { opacity: 0; transition: opacity 0.15s; }
+.pz-versus.out .pz-stage, .pz-versus.out .pz-head, .pz-versus.out .pz-foot { animation: pz-leave 0.24s ease-in both; }
 
-/* ---- how it ended ---- */
-.pz-veil { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 46%, rgba(20, 16, 14, 0.82), rgba(10, 8, 7, 0.96)); animation: pz-fade 0.22s ease-out both; }
-.pz-band { position: absolute; left: -10%; right: -10%; top: 50%; height: clamp(190px, 46vh, 420px); translate: 0 -50%; background: linear-gradient(90deg, color-mix(in srgb, var(--a) 62%, #000), var(--a) 50%, color-mix(in srgb, var(--a) 62%, #000)); border-block: 5px solid #14100e; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85); transform: rotate(-3deg); animation: pz-band 0.36s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
-.pz-rays { position: absolute; left: 50%; top: 50%; width: 170vmax; height: 170vmax; margin: -85vmax 0 0 -85vmax; opacity: 0; background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0.17) 0deg 7deg, rgba(255, 255, 255, 0) 7deg 18deg); -webkit-mask: radial-gradient(closest-side, #000 10%, transparent 62%); mask: radial-gradient(closest-side, #000 10%, transparent 62%); }
-.pz-outcome[data-mood='win'] .pz-rays, .pz-outcome[data-mood='info'] .pz-rays { opacity: 1; animation: pz-fade 0.5s ease-out both, rays-turn 22s linear infinite; }
-.pz-outcome .pz-flash { animation: pz-flash 0.45s ease-out 0.05s both; }
-.pz-outcome[data-mood='lose'] .pz-flash { background: #000; }
-.pz-result { position: relative; z-index: 2; width: 100%; display: flex; flex-direction: column; align-items: center; gap: clamp(4px, 1.2vh, 12px); padding: 0 3vw; text-align: center; animation: pz-shake 0.4s linear 0.08s both; }
-.pz-word { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 0.28em; font: 400 clamp(46px, 15vmin, 150px)/0.98 var(--brush); color: #fff; text-shadow: 0 5px 0 #14100e, 0 9px 0 rgba(0, 0, 0, 0.35); }
-.pz-word.long { font-size: clamp(34px, 10vmin, 104px); }
+/* ---- how it ended: the head of the results card ---- */
+.pz-hero { position: relative; overflow: hidden; padding: clamp(10px, 2vh, 18px) 10px clamp(12px, 2.2vh, 20px); background: #17130f; border: 3px solid #14100e; color: #fff; text-align: center; }
+.pz-hero:empty { display: none; }
+.pz-band { position: absolute; left: -6%; right: -6%; top: 14%; bottom: 12%; background: var(--a); border-block: 4px solid #14100e; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8); transform: rotate(-2deg); animation: pz-band 0.34s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+/* (rays standing still behind a winner) */
+.pz-rays { position: absolute; left: 50%; top: 50%; width: 1100px; height: 1100px; margin: -550px 0 0 -550px; opacity: 0; background: repeating-conic-gradient(from 4deg, rgba(255, 255, 255, 0.13) 0deg 7deg, rgba(255, 255, 255, 0) 7deg 18deg); }
+.pz-hero[data-mood='win'] .pz-rays, .pz-hero[data-mood='info'] .pz-rays { animation: pz-fade 0.5s ease-out 0.1s both; }
+.pz-result { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; gap: clamp(3px, 0.9vh, 8px); }
+.pz-hero .pz-kicker { padding: 2px 12px 3px; background: #14100e; font-size: clamp(10px, 1.5vmin, 13px); }
+.pz-word { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 0.28em; font: 400 clamp(38px, 9vmin, 84px)/1 var(--brush); color: #fff; text-shadow: 0 4px 0 #14100e; }
+.pz-word.long { font-size: clamp(28px, 6.4vmin, 60px); }
 .pz-word .w { display: inline-flex; white-space: nowrap; }
-.pz-word i { display: inline-block; font-style: normal; animation: pz-letter 0.42s cubic-bezier(0.2, 1.6, 0.4, 1) both; animation-delay: calc(0.06s + var(--k, 0) * 0.035s); }
-.pz-outcome[data-mood='win'] .pz-word { color: #ffe08a; }
-.pz-outcome[data-mood='lose'] .pz-word { color: #cfc8c4; }
-.pz-outcome[data-mood='lose'] .pz-word i { animation-name: pz-letter-fall; }
-.pz-outcome .pz-card { --at: 0.42s; }
-.pz-outcome .pz-line.cheer .pz-card:not(.gone) .pz-pic { animation: dance 0.84s ease-in-out infinite; animation-delay: calc(0.9s + var(--i, 0) * -0.21s); transform-origin: 50% 92%; }
-.pz-score { padding: 4px 16px 5px; background: #14100e; font: 800 clamp(13px, 2.5vmin, 22px)/1.3 var(--serif); letter-spacing: 0.06em; animation: pz-drop 0.36s cubic-bezier(0.2, 1.3, 0.4, 1) 0.62s both; }
-.pz-next { padding: 3px 14px 4px; background: #fff; color: #14100e; font: 800 clamp(10px, 1.8vmin, 15px)/1.4 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; animation: pz-drop 0.36s cubic-bezier(0.2, 1.3, 0.4, 1) 0.86s both; }
-.pz-outcome[data-grade='final'][data-mood='win'] .pz-band { box-shadow: 0 0 0 3px #ffd76a, 0 0 60px rgba(255, 215, 106, 0.55); }
-.pz-outcome.out { animation: pz-fade 0.3s ease-in reverse both; }
-.pz-outcome.out .pz-result { animation: pz-leave 0.28s ease-in both; }
+.pz-word i { display: inline-block; font-style: normal; will-change: transform, opacity; animation: pz-letter 0.4s cubic-bezier(0.2, 1.6, 0.4, 1) both; animation-delay: calc(0.06s + var(--k, 0) * 0.03s); }
+.pz-hero[data-mood='win'] .pz-word { color: #ffe08a; }
+.pz-hero[data-mood='lose'] .pz-word { color: #d8d1cd; }
+.pz-hero[data-mood='lose'] .pz-word i { animation-name: pz-letter-fall; }
+.pz-hero .pz-card { --at: 0.36s; }
+.pz-hero .pz-line.cheer .pz-card:not(.gone) .pz-pic img { animation: dance 0.84s ease-in-out infinite; animation-delay: calc(0.9s + var(--i, 0) * -0.21s); transform-origin: 50% 92%; }
+.pz-score { padding: 3px 14px 4px; background: #14100e; font: 800 clamp(12px, 2.1vmin, 18px)/1.3 var(--serif); letter-spacing: 0.06em; animation: pz-drop 0.34s cubic-bezier(0.2, 1.3, 0.4, 1) 0.56s both; }
+.pz-next { padding: 2px 12px 3px; background: #fff; color: #14100e; font: 800 clamp(9.5px, 1.6vmin, 13px)/1.4 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; animation: pz-drop 0.34s cubic-bezier(0.2, 1.3, 0.4, 1) 0.76s both; }
+/* the scoreboard comes up under it a moment later */
+#s-results .pz-hero ~ .scores, #s-results .pz-hero ~ .actions { animation: pz-rise 0.4s ease-out 0.5s both; }
+/* (the old head of the card: its words are still written, for screen readers and tests, but the hero says it now) */
+#s-results .verdict, #s-results .troupe { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+/* (a low screen: a lower head, so the scoreboard under it still fits) */
+@media (max-height: 820px) {
+  .pz-hero { padding-block: 8px 10px; }
+  .pz-result { gap: 3px; }
+  .pz-word { font-size: clamp(30px, 6.6vmin, 52px); }
+  .pz-word.long { font-size: clamp(24px, 5.2vmin, 40px); }
+  .pz-band { top: 16%; bottom: 10%; }
+}
+#s-results .board .state { white-space: nowrap; }
 
-@keyframes pz-drift { from { transform: scale(1); } to { transform: scale(1.035); } }
 @keyframes pz-half-l { from { transform: translateX(-105%); } to { transform: none; } }
 @keyframes pz-half-r { from { transform: translateX(105%); } to { transform: none; } }
 @keyframes pz-half-t { from { transform: translateY(-105%); } to { transform: none; } }
@@ -103,18 +127,19 @@
 @keyframes pz-out-r { to { transform: translateX(105%); } }
 @keyframes pz-out-t { to { transform: translateY(-105%); } }
 @keyframes pz-out-b { to { transform: translateY(105%); } }
-@keyframes pz-streak { to { transform: translateX(121px); } }
-@keyframes pz-in-l { from { transform: translateX(-70vw) skewX(-14deg); opacity: 0; } 70% { opacity: 1; } to { transform: none; opacity: 1; } }
-@keyframes pz-in-r { from { transform: translateX(70vw) skewX(14deg); opacity: 0; } 70% { opacity: 1; } to { transform: none; opacity: 1; } }
-@keyframes pz-in-up { from { transform: translateY(46vh) scale(0.7); opacity: 0; } 60% { opacity: 1; } to { transform: none; opacity: 1; } }
-@keyframes pz-drop { from { transform: translateY(-34px) scale(1.12); opacity: 0; } to { transform: none; opacity: 1; } }
-@keyframes pz-slam { 0% { transform: scale(4.2) rotate(-18deg); opacity: 0; } 55% { transform: scale(0.88) rotate(4deg); opacity: 1; } 78% { transform: scale(1.08) rotate(-2deg); } 100% { transform: none; opacity: 1; } }
-@keyframes pz-flash { 0% { opacity: 0; } 12% { opacity: 0.72; } 100% { opacity: 0; } }
-@keyframes pz-shake { 0%, 100% { translate: 0 0; } 15% { translate: -9px 5px; } 32% { translate: 8px -6px; } 50% { translate: -6px 3px; } 68% { translate: 4px -2px; } 84% { translate: -2px 1px; } }
+@keyframes pz-in-l { from { transform: translateX(-60vw); opacity: 0; } 60% { opacity: 1; } to { transform: none; opacity: 1; } }
+@keyframes pz-in-r { from { transform: translateX(60vw); opacity: 0; } 60% { opacity: 1; } to { transform: none; opacity: 1; } }
+@keyframes pz-in-up { from { transform: translateY(60px) scale(0.7); opacity: 0; } 60% { opacity: 1; } to { transform: none; opacity: 1; } }
+@keyframes pz-drop { from { transform: translateY(-30px) scale(1.1); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pz-rise { from { transform: translateY(26px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pz-slam { 0% { transform: scale(4) rotate(-18deg); opacity: 0; } 55% { transform: scale(0.88) rotate(4deg); opacity: 1; } 78% { transform: scale(1.08) rotate(-2deg); } 100% { transform: none; opacity: 1; } }
+@keyframes pz-stamp { 0% { transform: scale(3) rotate(-14deg); opacity: 0; } 100% { transform: rotate(-6deg); opacity: 1; } }
+@keyframes pz-flash { 0% { opacity: 0; } 12% { opacity: 0.6; } 100% { opacity: 0; } }
+@keyframes pz-shake { 0%, 100% { transform: none; } 15% { transform: translate(-8px, 5px); } 32% { transform: translate(7px, -5px); } 50% { transform: translate(-5px, 3px); } 68% { transform: translate(4px, -2px); } 84% { transform: translate(-2px, 1px); } }
 @keyframes pz-spark { 0% { transform: translate(0, 0) rotate(45deg) scale(1.3); opacity: 1; } 100% { transform: translate(var(--x), var(--y)) rotate(200deg) scale(0.2); opacity: 0; } }
-@keyframes pz-leave { to { transform: translateY(-5vh) scale(1.05); opacity: 0; } }
+@keyframes pz-leave { to { transform: translateY(-5vh); opacity: 0; } }
 @keyframes pz-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes pz-band { from { transform: rotate(-3deg) scaleY(0); } to { transform: rotate(-3deg) scaleY(1); } }
-@keyframes pz-letter { 0% { transform: translateY(-0.5em) scale(2.4) rotate(-12deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
-@keyframes pz-letter-fall { 0% { transform: translateY(-1.1em) rotate(9deg); opacity: 0; } 70% { transform: translateY(0.06em); opacity: 1; } 100% { transform: none; opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { #present * { animation: none !important; } }
+@keyframes pz-band { from { transform: rotate(-2deg) scaleY(0); } to { transform: rotate(-2deg) scaleY(1); } }
+@keyframes pz-letter { 0% { transform: translateY(-0.5em) scale(2.2) rotate(-12deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes pz-letter-fall { 0% { transform: translateY(-1em) rotate(9deg); opacity: 0; } 70% { transform: translateY(0.06em); opacity: 1; } 100% { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #present *, .pz-hero *, #s-results .pz-hero ~ * { animation: none !important; } }

@@ -352,7 +352,7 @@ export const play = {
     requestAnimationFrame((t) => this.frame(t));
     const view = this.game.update(now);
     if (!view) return;
-    this.renderer.draw(view, now);
+    if (!this.covered) this.renderer.draw(view, now); // (covered: an opening is over the whole screen)
     const h = this.hud;
     this.tick(view);
     if (now - h.at > 100 || !h.at) {

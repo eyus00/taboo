@@ -8,13 +8,12 @@
 // driven with the keyboard alone (arrows + Enter, Esc to go back, a letter or
 // number for most things).
 
-import { MODES, DURATIONS, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, FLAG_END_POINTS, BEAT_TICKS, CUP_SCORES, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, COUNTDOWN_MS, INTRO_MS, VS_MS } from '/shared/config.js';
+import { MODES, DURATIONS, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, FLAG_END_POINTS, BEAT_TICKS, CUP_SCORES, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, COUNTDOWN_MS } from '/shared/config.js';
 import { ARENAS } from '/shared/arenas.js';
 import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
 import * as art from './art.js'; // (also: playerPortrait, for the results)
 import { loadTheme, THEME_MAP } from './themes/index.js';
-import { draw } from './spinner.js';
 import { present } from './present.js';
 
 const $ = (id) => document.getElementById(id);
@@ -56,34 +55,31 @@ const socket = io({ tryAllTransports: true });
 play.init({
   socket,
   isTouch,
-  // a round is starting: show the match, and over it the draw for arena, style and who is it
-  // - but first, where the server leaves the time for it, the players walk on, face to face
+  // a round is starting: show the match, and over it - in the time the server leaves before
+  // the 3-2-1 - the opening: the players face to face, the stage, the style, who starts as the oni
   onStart(info) {
     show('game');
-    const drawOpts = { sfx, colorOf: (slot) => play.colorOf(slot), me: play.mySlot(), prefer: [cardTheme] };
-    const spare = (Number(info.countdown) || 0) - COUNTDOWN_MS - INTRO_MS - 350; // what is left before the draw has to begin
-    const walk = info.playing || spare < 1300 ? 0 : present.versus({ ...info, practice: play.kind === 'practice' }, { me: play.mySlot(), ms: Math.min(spare, VS_MS) });
-    if (!walk) return draw.show(play.el.spin, info, drawOpts);
-    // (the draw comes on as the walk-on leaves, with the time that is left by then)
-    const lead = walk - 300;
-    clearTimeout(walkTimer);
-    walkTimer = setTimeout(() => {
-      if (play.info === info && screen === 'game') draw.show(play.el.spin, { ...info, countdown: info.countdown - lead }, drawOpts);
-    }, lead);
+    const spare = (Number(info.countdown) || 0) - COUNTDOWN_MS - 250;
+    if (!info.playing) present.versus({ ...info, practice: play.kind === 'practice' }, { me: play.mySlot(), ms: spare });
   },
-  onEnd: (res) => endOfRound(res),
+  onEnd: (res) => showResults(res),
   onPause: () => openPause(),
 });
 const { renderer, input, sfx, net } = play;
 
-present.init({ sfx, colorOf: (slot) => play.colorOf(slot), portrait: (slot, size, face) => portraitOf(slot, { size, face }) });
+present.init({
+  sfx,
+  colorOf: (slot) => play.colorOf(slot),
+  portrait: (slot, size, face) => portraitOf(slot, { size, face }),
+  // (while the opening covers the screen, the match behind it is not drawn)
+  onCover: (on) => (play.covered = on),
+});
 
 let myName = cleanName(store.get('tag.name'));
 let screen = ''; // name | home | game
 let panel = ''; // what is open from the title scroll: '' | rooms (Play) | lobby (a room) | help
 let overlay = ''; // over a match: '' | results | pause | help
 let helpFrom = ''; // what How to play goes back to
-let walkTimer = 0; // the draw, waiting for the walk-on to leave
 let rig = false; // a match against bots in this browser alone, started by the test hook (__tag.practice)
 let room = null; // latest room state from the server
 let afterName = null;
@@ -208,7 +204,7 @@ function show(name, beside = '') {
   document.body.dataset.panel = panel; // (what is open beside the main menu)
   if (name !== 'game') {
     play.stop();
-    draw.clear();
+    present.clear();
   }
   // which entry of the title scroll is open
   $('btn-create').toggleAttribute('aria-current', panel === 'lobby');
@@ -831,7 +827,7 @@ const OPTIONS = [
   { id: 'sides', key: 'mode', hot: 'r', label: 'Game', type: 'modes', box: 'opt-mode', info: 'cup', values: [['potato', 'Knockout'], ['team', 'Team Bomb']], icon: (v) => (v === 'team' ? 'bomb' : 'oni'), on: (s, v) => (v === 'team') === (s.mode === 'team'), show: (s) => s.game === 'cup' },
   { id: 'rounds', key: 'rounds', hot: 'n', label: 'Rounds', box: 'opt-mode', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup' && s.mode === 'team' },
   // how a team tournament is decided: rounds won, or every point added up
-  { id: 'score', key: 'score', hot: 'w', label: 'Winner by', box: 'opt-mode', values: [['rounds', 'Rounds won'], ['points', 'Total points']], show: (s) => s.game === 'cup' && s.mode === 'team' },
+  { id: 'score', key: 'score', hot: 'w', label: 'Win by', box: 'opt-mode', tip: 'Rounds: whoever wins a round gets a point. Points: every round\'s points are added up.', values: [['rounds', 'Rounds'], ['points', 'Points']], show: (s) => s.game === 'cup' && s.mode === 'team' },
   { id: 'theme', hot: 's', label: 'Style', type: 'cards', box: 'style-cards', values: [['random', 'Random'], ...THEMES.map((t) => [t.id, t.name])], on: (s, v) => stageValue('theme') === v, set: (v) => setStage('theme', v) },
   { id: 'arena', hot: 'a', label: 'Stage', type: 'cards', box: 'arena-cards', values: [['random', 'Random'], ...ARENAS.map((a) => [a.id, a.name])], on: (s, v) => stageValue('arena') === v, set: (v) => setStage('arena', v) },
   { id: 'powerups', key: 'powerups', hot: 'p', label: 'Lucky boxes', box: 'options', info: 'boxes', values: [[true, 'On'], [false, 'Off']] },
@@ -1965,24 +1961,10 @@ function mark(glyph, word, dark) {
   return m;
 }
 
-// A round is over: first the moment itself (the word for it, who won, what comes next -
-// see present.js), then the card with everyone's numbers. Anything that happens
-// meanwhile (the next round, leaving) cuts the moment short and the card is not shown.
-function endOfRound(res) {
-  clearInterval(nextTimer);
-  draw.clear();
-  const t0 = performance.now();
-  present.outcome(res, { me: play.mySlot() }).then((ok) => {
-    if (!ok || screen !== 'game') return;
-    if (res.cup?.next) res.cup.next = Math.max(0, res.cup.next - (performance.now() - t0));
-    showResults(res);
-  });
-}
-
 function showResults(res) {
   lastResults = res;
   clearInterval(nextTimer);
-  draw.clear();
+  present.clear();
   const mySlot = play.mySlot();
   const cup = res.cup;
   const team = res.team || null;
@@ -2166,7 +2148,10 @@ function showResults(res) {
     tick();
     nextTimer = setInterval(tick, 250);
   }
-  if (!res.presented) sfx.play(iWon || (cup && !cup.final && res.loser !== mySlot) ? 'win' : 'lose');
+  // the head of the card: the word for it, the winners, the score, what comes next (see present.js)
+  present.hero($('res-hero'), res, { me: mySlot });
+  const good = iWon || (cup && !cup.final && res.loser !== mySlot);
+  sfx.play(between ? (good ? 'win' : 'lose') : good ? 'fanfare' : 'defeat');
 }
 
 // What you did, in a few small numbers that count up (gold, with a star,
@@ -2503,7 +2488,7 @@ socket.on('end', (res) => {
     show('game');
   }
   play.finish();
-  endOfRound(res);
+  showResults(res);
 });
 socket.on('toast', (text) => toast(String(text)));
 socket.on('q', (ack) => typeof ack === 'function' && ack()); // the server timing our connection
@@ -2610,11 +2595,6 @@ function shortcut(key, e) {
 
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  // (the moment after a round: any key moves on to the card)
-  if (present.busy === 'outcome') {
-    e.preventDefault();
-    return present.skip();
-  }
   // a real keyboard is here: show the key cues (matters on tablets)
   if (/^(Arrow|Escape|Tab)/.test(e.key)) document.body.classList.remove('no-kbd');
   if (e.key === 'Escape') {
@@ -2652,4 +2632,4 @@ function practiceRig(opts = {}) {
   rig = true;
   play.practice({ mode: 'potato', arena: 'hills', theme: 'ink', duration: 60, powerups: true, bots: 3, ...opts }, myName || 'You');
 }
-window.__tag = { practice: practiceRig, renderer, net, socket, input, get game() { return play.game; }, play, draw, get demos() { return demos; }, get screen() { return top(); }, get room() { return room; }, fontsReady: () => fontsIn };
+window.__tag = { practice: practiceRig, renderer, net, socket, input, get game() { return play.game; }, play, present, get demos() { return demos; }, get screen() { return top(); }, get room() { return room; }, fontsReady: () => fontsIn };

@@ -705,3 +705,15 @@ button.hub-room:active { scale: 0.99; }
   .sk, .rm .card img.pic:not([src]), .info-pic img:not([src]), .pv-art.wait, .rm-seat .face:not(:has(img)) { animation: none; }
   .rm-icon .ic.a, .rm-icon .ic.b { transition: opacity 300ms cubic-bezier(0.2, 0, 0, 1); scale: 1; }
 }
+/* A team tournament has three things on the game's line (which side game, how many rounds,
+   how it is decided): they are set a little tighter, so the line - and the room - stays the
+   size it is for every other game. */
+@media (min-width: 561px) {
+  #opt-mode:has([data-opt='score']:not([hidden])) { flex-wrap: nowrap; column-gap: 8px; }
+  #opt-mode:has([data-opt='score']:not([hidden])) .rm-modes { flex-wrap: nowrap; gap: 4px; }
+  #opt-mode:has([data-opt='score']:not([hidden])) .rm-mode span { gap: 4px; padding: 4px 7px 3px 6px; font-size: 16.5px; }
+  #opt-mode:has([data-opt='score']:not([hidden])) .rm-mode .ic { font-size: 13px; }
+  #opt-mode:has([data-opt='score']:not([hidden])) .seg span { padding: 6px 7px 5px; }
+  #opt-mode:has([data-opt='score']:not([hidden])) .lab { gap: 5px; letter-spacing: 0.1em; white-space: nowrap; }
+  #opt-mode:has([data-opt='score']:not([hidden])) .lab .info { display: none; }
+}

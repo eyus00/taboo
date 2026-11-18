@@ -72,7 +72,7 @@ export const STUN_TICKS = 18; // 0.3 s freeze for the newly tagged player
 export const BLOCK_STUN_TICKS = 36; // "it" is knocked back when a shield blocks the tag
 export const RESPAWN_TICKS = 24;
 export const COUNTDOWN_MS = 3000;
-export const VS_MS = 2600; // before that: the two sides (or everyone) walk on, face to face
+export const VS_MS = 1100; // and before that the players come on, face to face (one scene with the draw: see present.js)
 export const INTRO_MS = 4200; // before the countdown: the draw for arena, style and who is it
 
 // --- Lucky boxes and the items inside them --------------------------------------
