@@ -428,9 +428,48 @@ async function enterRoom(event, payload, errorEl, btn) {
   errorEl.textContent = '';
   room = res.room;
   net.code = room.code;
+  if (event === 'create') recallSetup();
   sfx.play('join');
   openLobby();
   return true;
+}
+
+// What a host chose last time is kept on this device and put back into the next room they
+// open: which stages and styles Random may draw (and a stage or style picked outright), which
+// items are in the lucky boxes, and whether there are boxes at all.
+const SETUP_KEY = 'tag.setup';
+let keepTimer = 0;
+function keepSetup() {
+  if (!amHost()) return;
+  const s = room.settings;
+  store.set(SETUP_KEY, JSON.stringify({ pool: s.pool, items: s.items, powerups: s.powerups, arena: s.arena, theme: s.theme }));
+}
+function recallSetup() {
+  let saved = null;
+  try {
+    saved = JSON.parse(store.get(SETUP_KEY, 'null'));
+  } catch {}
+  if (!saved || typeof saved !== 'object') return;
+  const s = room.settings;
+  const patch = {};
+  if (saved.pool && Array.isArray(saved.pool.arena) && Array.isArray(saved.pool.theme)) patch.pool = { arena: saved.pool.arena, theme: saved.pool.theme };
+  if (Array.isArray(saved.items)) patch.items = saved.items;
+  if (typeof saved.powerups === 'boolean') patch.powerups = saved.powerups;
+  if (typeof saved.theme === 'string' && (saved.theme === 'random' || THEMES.some((t) => t.id === saved.theme))) patch.theme = saved.theme;
+  if (typeof saved.arena === 'string' && (saved.arena === 'random' || ARENAS.some((a) => a.id === saved.arena))) patch.arena = saved.arena;
+  if (!Object.keys(patch).length) return;
+  // (shown at once, like any change the host makes; the server has the last word)
+  if (patch.pool) s.pool = patch.pool;
+  if (patch.items) s.items = patch.items;
+  if ('powerups' in patch) s.powerups = patch.powerups;
+  for (const what of ['theme', 'arena']) {
+    if (!(what in patch)) continue;
+    s[what] = patch[what];
+    for (const st of s.plan) st[what] = patch[what];
+  }
+  socket.emit('settings', patch);
+  touched();
+  fitStages(); // (a stage this many players cannot use goes back to Random)
 }
 
 const me = () => room?.players.find((p) => p.id === socket.id) || null;
@@ -2364,8 +2403,8 @@ function paintSides(res, mySlot) {
     head.append(el('b', 'nm', TEAM_NAMES[t]), tally);
     // (a tournament: what this round added - its points, or the round itself)
     if (cup && total) head.append(el('small', '', cup.score === 'rounds' ? `${score[t]} this round${score[t] > score[1 - t] ? ` · +${cup.double ? 2 : 1}` : ''}` : `+${score[t] * (cup.double ? 2 : 1)} this round${cup.double ? ' (double)' : ''}`));
-    if (won) head.append(mark('勝', 'wins'));
-    else if (final && win < 0) head.append(el('small', '', 'a draw'));
+    // (the winning side is the one with the rim: no tag in its head, so both boards are the same height)
+    if (final && win < 0) head.append(el('small', '', 'a draw'));
     side.append(head);
     const ul = el('ul');
     const hd = el('li', 'hd');
@@ -2440,6 +2479,9 @@ $('btn-res-back').addEventListener('click', backFromResults);
 // ---------------------------------------------------------------------------
 socket.on('room', (r) => {
   if (!room || room.code !== r.code) return; // not in (or no longer in) this room
+  // (once this news has been taken in and things are quiet, what the host has chosen is kept for next time)
+  clearTimeout(keepTimer);
+  keepTimer = setTimeout(keepSetup, SETTLE_MS + 80);
   // The host is the only one who changes settings, and the screen shows each
   // change at once. The server's echo of an EARLIER change must not undo a
   // later one that is still on its way: while changes are fresh, keep ours,

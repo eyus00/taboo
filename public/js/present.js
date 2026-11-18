@@ -224,6 +224,11 @@ export const present = {
       // (their numbers only where a card is wide enough to carry them)
       const c = card(p, { ...o, me: p.slot === me, tag: p.out ? 'Out' : '', stats: size >= 72 ? p.stats || null : null });
       if (p.won) c.classList.add('won');
+      // (the ones who lost the round: head down, and a tear or two)
+      if (p.sad) {
+        c.classList.add('sad');
+        c.querySelector('.pz-pic').append(el('i', 'pz-tear a'), el('i', 'pz-tear b'));
+      }
       cards.set(p.slot, c);
       line.append(c);
     };
@@ -425,6 +430,7 @@ export const present = {
       color: opts.colorOf?.(x.slot),
       out: cup.ko && cup.caught === x.slot,
       won: team ? team.win === x.team : cup.caught >= 0 && cup.caught !== x.slot,
+      sad: team ? team.win >= 0 && team.win !== x.team : cup.caught === x.slot,
       stats: team
         ? [['flag', String(x.caps || 0), 'flags taken', x.caps > 0 && x.caps === best('caps')], ['swap', String(x.tags), 'bombs passed on', x.tags > 0 && x.tags === best('tags')]]
         : [['target', String(x.tags), 'tags made', x.tags > 0 && x.tags === best('tags')], ['oni', `${(x.ms / 1000).toFixed(1)}s`, 'as the oni', false]],
