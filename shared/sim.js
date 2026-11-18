@@ -7,6 +7,7 @@ import {
   PW,
   PH,
   TOUCH,
+  BOT_TOUCH_TICKS,
   IMMUNE_TICKS,
   STUN_TICKS,
   BLOCK_STUN_TICKS,
@@ -235,6 +236,20 @@ export class Sim {
       if (!this.enemies(it, o) || o.bomb) continue; // a bomb only sticks to the other team, and nobody carries two
       let hit = touching(it.s.x, it.s.y, o.s.x, o.s.y);
       if (!hit && i >= 0) hit = touching(it.s.x, it.s.y, this.hx[o.slot][i], this.hy[o.slot][i]);
+      // A bot tagging a person: the person sees the bot a moment late and themselves a moment
+      // early, so a touch that is only just one on the server looks like a tag from a long way
+      // off. A bot therefore has to overlap them properly (no margin), and keep doing so for a
+      // few ticks - time for both screens to agree that they met.
+      if (hit && it.auto && !o.auto) {
+        const close = it.s.x < o.s.x + PW && it.s.x + PW > o.s.x && it.s.y < o.s.y + PH && it.s.y + PH > o.s.y;
+        if (!close) hit = false;
+        else {
+          it.near = it.nearWho === o.slot && it.nearAt === this.tick - 1 ? it.near + 1 : 1;
+          it.nearWho = o.slot;
+          it.nearAt = this.tick;
+          if (it.near < BOT_TOUCH_TICKS) hit = false;
+        }
+      }
       if (!hit) continue;
       const dx = it.s.x - o.s.x;
       const dy = it.s.y - o.s.y;

@@ -61,7 +61,8 @@ play.init({
   onStart(info) {
     show('game');
     const spare = (Number(info.countdown) || 0) - 60; // (the time until GO; the scene itself leaves three seconds before it)
-    if (!info.playing) present.versus({ ...info, practice: play.kind === 'practice' }, { me: play.mySlot(), ms: spare });
+    if (info.playing) present.clear();
+    else present.versus({ ...info, practice: play.kind === 'practice' }, { me: play.mySlot(), ms: spare });
   },
   onEnd: (res) => showResults(res),
   onPause: () => openPause(),
@@ -2473,7 +2474,7 @@ socket.on('kicked', () => {
 socket.on('round', (msg) => {
   if (!room) return;
   clearInterval(nextTimer);
-  present.clear();
+  // (whatever is on the players' screen stays: the opening takes over from it)
   const mine = me();
   // (a bot filling in may hold the same place as someone who arrived after the round began: they are only watching)
   const mySlot = mine && msg.players.some((p) => p.slot === mine.slot && !p.bot) ? mine.slot : -1;
@@ -2490,6 +2491,10 @@ socket.on('end', (res) => {
   }
   play.finish();
   showResults(res);
+  // Between the rounds of a tournament the result is shown on the players' screen itself (the
+  // one the next round's draw is made on), over the card: who won, everyone's numbers, where
+  // the tournament stands, and the wait for the next round.
+  if (res.cup && !res.cup.final) present.interval(res, { me: play.mySlot(), back: { label: amHost() ? 'End tournament' : 'Leave', run: () => backFromResults() } });
 });
 socket.on('toast', (text) => toast(String(text)));
 socket.on('q', (ack) => typeof ack === 'function' && ack()); // the server timing our connection

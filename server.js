@@ -474,14 +474,15 @@ function startRound(room) {
   const half = [order.filter((i) => arena.spawns[i][0] < arena.w / 2), order.filter((i) => arena.spawns[i][0] >= arena.w / 2)];
   const net = new Array(MAX_PLAYERS).fill(null);
   let i = 0;
-  const place = (slot) => {
+  const place = (slot, auto) => {
     const spot = teams && half[teams[slot]].length ? half[teams[slot]].shift() : order[i];
     i++;
     sim.add(slot, spot);
+    if (auto) sim.players[slot].auto = true; // (a bot: see tagFrom in sim.js)
   };
   for (const p of everyone) {
     p.playing = true;
-    place(p.slot);
+    place(p.slot, !!p.bot);
     if (!p.bot) net[p.slot] = { q: [], recv: 0, lastSeq: 0, budget: 0, idle: 0, win: 0, spare: Infinity, late: 0, trimmed: 0, skipped: 0, id: p.id };
   }
   if (bots.size) prepareBots(arena); // their route map, worked out now rather than on the first tick of the round

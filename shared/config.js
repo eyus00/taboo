@@ -66,6 +66,7 @@ export const EPS = 0.5; // collision tolerance in px
 // (bodies are drawn BODY_SCALE times their hitbox: 4 px wider on each side and 10 px taller.
 // So two players LOOK as if they touch with their hitboxes 8 px apart side by side, or
 // 10 px apart one above the other - and a touch you can see has to count.)
+export const BOT_TOUCH_TICKS = 5; // a bot tags a person only after really overlapping them for this long (see tagFrom in sim.js)
 export const TOUCH = 12; // "it" tags anyone whose hitbox is within this many px
 export const IMMUNE_TICKS = 42; // 0.7 s no-tag-back protection for the old "it"
 export const STUN_TICKS = 18; // 0.3 s freeze for the newly tagged player

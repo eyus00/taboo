@@ -47,6 +47,7 @@ export class LocalGame {
       const spot = this.teams && half[this.teams[slot]].length ? half[this.teams[slot]].shift() : order[slot];
       this.sim.add(slot, spot);
       if (slot > 0) {
+        this.sim.players[slot].auto = true; // (a bot: see tagFrom in sim.js)
         this.names[slot] = pool[slot - 1];
         this.bots[slot] = makeBot(Math.floor(Math.random() * 1e6) + slot);
       }

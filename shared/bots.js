@@ -5,7 +5,7 @@
 // stealing a flag - and then follows the route there one move at a time,
 // pressing the same buttons a person would.
 
-import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, FLAG_HALF, FLAG_UP, FLAG_CAP_TICKS, BLAST_RADIUS, GHOST_NEAR } from './config.js';
+import { PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, FLAG_HALF, FLAG_UP, FLAG_CAP_TICKS, FLAG_CROWD, BLAST_RADIUS, GHOST_NEAR } from './config.js';
 import { buildNav, surfaceAt, surfaceNear, drive, walk } from './nav.js';
 
 function rng(seed) {
@@ -364,6 +364,11 @@ function decideTeam(sim, me, mem, nav) {
     mem.offFlag = stuck;
     mem.offUntil = sim.tick + 300 + Math.floor(mem.rnd() * 300);
   }
+  // Standing in a ring that is going our way: see it through. A flag that has only just
+  // gone back to nobody's is half the job - walking off then hands it straight back. (Only
+  // when enough of us are in it already to fill it at full speed is one more of no use.)
+  const spot = (f) => [f.x + (((me.slot * 37) % 100) / 100 - 0.5) * FLAG_HALF * 1.2, f.y];
+  if (here && foes.filter((o) => inRing(o, here)).length < mates(here) && mates(here) <= FLAG_CROWD) return headFor(mem, nav, spot(here));
   // which flag? the nearest one that is not safely ours; a flag a team mate is
   // already standing on (with nobody arguing) can be left to them
   let best = null;
@@ -385,8 +390,7 @@ function decideTeam(sim, me, mem, nav) {
   }
   if (best) {
     // stand a little off the pole, each bot on its own spot
-    const side = ((me.slot * 37) % 100) / 100 - 0.5;
-    return headFor(mem, nav, [best.x + side * FLAG_HALF * 1.2, best.y]);
+    return headFor(mem, nav, spot(best));
   }
   // every flag is ours: boxes, and a wander
   wander(sim, me, mem, nav, threat);
