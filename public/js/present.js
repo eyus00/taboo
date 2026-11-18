@@ -285,15 +285,18 @@ export const present = {
       if (my !== token) return;
       const T = deadline - performance.now(); // until GO
       if (T < 1500) return this.clear();
-      const counted = T >= 4200; // the 3-2-1 is shown in here too
-      const free = T - (counted ? 3100 : 400); // what there is before the count
+      // The scene parts before the 3-2-1: for those three seconds the stage and where everyone
+      // stands are in plain view, so there is time to choose where to run.
+      const view = T >= 5200 ? 3000 : 0;
+      const end = T - view; // when it is gone
+      const free = end - 450; // what there is for the draw
       const long = free >= 4300;
       r.classList.remove('hold');
       const hit = 620;
-      sound(40, 'whoosh');
-      sound(hit, 'slam', bill.grade === 'final' ? 1 : 0.8);
+      sound(40, 'whoosh', 0.6);
+      sound(hit, 'slam', bill.grade === 'final' ? 0.6 : 0.42);
       if (bill.grade) sound(hit + 240, 'drum');
-      later(hit, () => sparks(stage, bill.grade === 'final' ? 22 : 14, bill.grade === 'final' ? [GOLD, '#fff', a, b] : ['#fff', a, b]));
+      later(hit, () => sparks(stage, bill.grade === 'final' ? 14 : 8, bill.grade === 'final' ? [GOLD, '#fff', a, b] : ['#fff', a, b]));
       // a plate runs through names, then lands on the one that was drawn
       const land = (pl, isDrawn, names, final, at, dur, done) => {
         if (!pl) return at;
@@ -356,23 +359,12 @@ export const present = {
           opts.sfx?.play('tagged');
         });
       }
-      // 3 - 2 - 1, big, where VS stood (the match makes the sounds for it)
-      if (counted) {
-        for (const n of [3, 2, 1]) later(T - n * 1000, () => {
-          emblem.className = layout === 'ffa' ? 'pz-vs wide count' : 'pz-vs count'; // (the same box VS had: nothing shifts)
-          emblem.textContent = String(n);
-          emblem.style.animation = 'none';
-          void emblem.offsetWidth;
-          emblem.style.animation = '';
-        });
-      }
-      const leave = counted ? 240 : 340;
-      later(T - leave, () => {
+      later(end - 380, () => {
         r.classList.add('out');
         opts.onCover?.(false);
-        if (!counted) opts.sfx?.play('whoosh', 0.6);
+        opts.sfx?.play('whoosh', 0.4);
       });
-      later(T, () => this.clear());
+      later(end, () => this.clear());
     };
     requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(go, 0)));
     return ms;

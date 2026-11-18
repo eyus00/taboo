@@ -55,11 +55,12 @@ const socket = io({ tryAllTransports: true });
 play.init({
   socket,
   isTouch,
-  // a round is starting: show the match, and over it - until GO - the opening: the players
-  // face to face, the draw (style, stage, who starts as the oni) and the 3-2-1
+  // a round is starting: show the match, and over it the opening: the players face to face
+  // and the draw (style, stage, who starts as the oni). It parts for the 3-2-1, which is
+  // counted over the stage itself - three seconds to see where everyone stands
   onStart(info) {
     show('game');
-    const spare = (Number(info.countdown) || 0) - 60; // (all the way to GO: the 3-2-1 is counted in the scene)
+    const spare = (Number(info.countdown) || 0) - 60; // (the time until GO; the scene itself leaves three seconds before it)
     if (!info.playing) present.versus({ ...info, practice: play.kind === 'practice' }, { me: play.mySlot(), ms: spare });
   },
   onEnd: (res) => showResults(res),

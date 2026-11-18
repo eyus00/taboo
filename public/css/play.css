@@ -239,9 +239,10 @@ body:not(.no-kbd) #hud #itemdraw.land .tag kbd { display: inline-grid; }
 #banner.red { color: #ffd9d2; }
 @keyframes hud-banner { 0% { opacity: 0; transform: scale(0.8) rotate(-2deg); } 12% { opacity: 1; transform: scale(1.06) rotate(-2deg); } 20%, 75% { opacity: 1; transform: rotate(-2deg); } 100% { opacity: 0; transform: rotate(-2deg); } }
 /* GO! (the 3-2-1 before it is the seal on the card) */
-#count { position: absolute; inset: 0; display: grid; place-items: center; font: 400 clamp(100px, 34vmin, 240px)/1 var(--f-brush); text-shadow: 0 4px 0 rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 0, 0, 0.4); }
+#count { position: absolute; inset: 0; display: grid; place-items: center; font: 400 clamp(72px, 21vmin, 150px)/1 var(--f-brush); text-shadow: 0 4px 0 rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 0, 0, 0.4); }
 #count.pop { animation: hud-count 0.9s ease-out; }
-@keyframes hud-count { 0% { transform: scale(1.5); opacity: 0; } 20% { transform: none; opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0.2; } }
+/* (a number that settles in, small enough to see the stage round it) */
+@keyframes hud-count { 0% { transform: scale(1.14); opacity: 0; } 25% { transform: none; opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0.2; } }
 
 /* --- the card before GO: shown for the 3-2-1 and gone at GO. Two things and
    nothing else: the game's name, and what YOU are this round. It sits in the
