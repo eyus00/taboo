@@ -708,11 +708,36 @@ export class Renderer {
     return best;
   }
 
-  // a flag changed hands, or paid at the buzzer: a burst in its colour
-  flagFx(i, team) {
+  // a number that rises and fades where a point was made or lost ("+1" over a flag, "-1" over a bomb's carrier)
+  pointFx(x, y, text, color, big = false) {
+    const size = big ? 44 : 30;
+    this.emit({ x, y, vy: -64, drag: 1.2, life: big ? 1.5 : 1.15, size, color, draw: (g, p, k) => {
+      const pop = 1 + 0.5 * Math.max(0, 1 - p.age / 0.16); // lands big, settles
+      g.save();
+      g.translate(p.x, p.y);
+      g.scale(pop, pop);
+      g.font = `900 ${size}px system-ui, sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.lineJoin = 'round';
+      g.lineWidth = size * 0.24;
+      g.strokeStyle = '#14100e';
+      g.strokeText(text, 0, 0);
+      g.fillStyle = color;
+      g.fillText(text, 0, 0);
+      g.restore();
+    } });
+  }
+
+  // a flag changed hands (a burst in its colour), or paid its side a point (a few sparks)
+  flagFx(i, team, pay) {
     const b = this.arena?.bases[i];
     if (!b) return;
     const color = TEAM_COLORS[team];
+    if (pay) {
+      for (let k = 0; k < 6; k++) this.emit({ x: b[0] + (Math.random() - 0.5) * 30, y: b[1] - 66, vx: (Math.random() - 0.5) * 60, vy: -80 - Math.random() * 80, g: -30, life: 0.7 + Math.random() * 0.3, size: 3 + Math.random() * 2, color });
+      return;
+    }
     for (let k = 0; k < 2; k++) this.emit({ x: b[0], y: b[1] - 40, life: 0.5 + k * 0.12, size: 14, grow: 300 - k * 90, shape: 'ring', width: 7 - k * 3, color: k ? '#ffffff' : color });
     for (let k = 0; k < 16; k++) this.emit({ x: b[0] + (Math.random() - 0.5) * FLAG_HALF * 2, y: b[1] - 6, vx: (Math.random() - 0.5) * 120, vy: -160 - Math.random() * 260, g: 500, life: 0.6 + Math.random() * 0.4, size: 3 + Math.random() * 3, color });
   }

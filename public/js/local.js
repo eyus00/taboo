@@ -1,7 +1,7 @@
 // A match that runs entirely in the browser: practice against bots.
 // Same rules code as the server, so it plays exactly like an online match.
 
-import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, MAX_PLAYERS, TEAM_SLOTS, BOMB_END_TICKS, FLAG_CAP_TICKS, twistById } from '/shared/config.js';
+import { TICK_MS, TICK_RATE, COUNTDOWN_MS, INTRO_MS, VS_MS, MAX_PLAYERS, TEAM_SLOTS, BOMB_END_TICKS, FLAG_CAP_TICKS, twistById } from '/shared/config.js';
 import { Sim, standings, makeTeams } from '/shared/sim.js';
 import { makeBot, botThink, prepareBots, BOT_NAMES } from '/shared/bots.js';
 
@@ -57,7 +57,7 @@ export class LocalGame {
     this.startIt = slots[Math.floor(Math.random() * slots.length)]; // drawn now, so the draw can be shown
 
     this.phase = 'countdown';
-    this.countdownMs = (opts.intro ?? INTRO_MS) + COUNTDOWN_MS;
+    this.countdownMs = (opts.intro ?? VS_MS + INTRO_MS) + COUNTDOWN_MS;
     this.goTime = null;
     this.endTick = 0;
     this.acc = 0;

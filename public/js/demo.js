@@ -10,7 +10,7 @@
 //   demos.start()       run the ones that are on screen (about 30 frames a second)
 //   demos.stop()        stop everything
 
-import { PW, PH, TICK_MS, MAX_PLAYERS, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_END_POINTS, FLAG_CAP_TICKS, TICK_RATE } from '/shared/config.js';
+import { PW, PH, TICK_MS, MAX_PLAYERS, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_POINTS, BEAT_TICKS, FLAG_CAP_TICKS, TICK_RATE } from '/shared/config.js';
 import { Sim } from '/shared/sim.js';
 import { makeBot, botThink } from '/shared/bots.js';
 import { Renderer } from './renderer.js';
@@ -533,8 +533,10 @@ const SCENES = {
       d.say('Stay there, and the flag fills with your colour...');
       d.clock = 9;
       yield* until(0, () => sim.flags[0].owner === 0, FLAG_CAP_TICKS + 60);
-      d.say(`...then it is yours. Keep it until the buzzer: it is worth ${FLAG_END_POINTS} points then`);
-      yield* hold(0, 110);
+      sim.beat = BEAT_TICKS - 70; // (the next beat is not far off)
+      d.say(`...then it is yours: every ${Math.round(BEAT_TICKS / TICK_RATE)} seconds it gives ${TEAM_NAMES[0]} a point, and a bomb costs its side one`);
+      yield* until(0, () => sim.score[0] > 0, 120);
+      yield* hold(0, 60);
       d.clock = 3;
       yield* hold(0, 50);
       d.clock = 2;
@@ -544,7 +546,7 @@ const SCENES = {
       d.clock = 0;
       d.ai[1] = null;
       sim.finish(); // the buzzer
-      d.say(`Time! Your flag is worth ${FLAG_END_POINTS} more, and the bomb costs ${TEAM_NAMES[1]} ${BOMB_POINTS}`);
+      d.say(`Time! The bomb goes off on ${TEAM_NAMES[1]}, and costs them ${BOMB_POINTS}`);
       yield* hold(0, 190);
     },
   },
@@ -907,7 +909,7 @@ class Demo {
         else if (e.type === 'pick') R0.pickFx(e.slot, e.kind);
         else if (e.type === 'use') R0.itemFx(e, ITEM_KINDS[e.kind]);
         else if (e.type === 'boom') R0.boomFx(e);
-        else if (e.type === 'flag' && e.what !== 'lose') R0.flagFx(e.i, e.team);
+        else if (e.type === 'flag' && e.what !== 'lose') R0.flagFx(e.i, e.team, e.what === 'pay');
       }
       run.fx.length = 0;
       R0.draw(run.view(Math.min(1, this.acc / TICK_MS)), now);

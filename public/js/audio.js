@@ -101,6 +101,32 @@ export class Sfx {
         this.tone(900, 220, 0.2, 0.12 * vol, 'sine');
         this.tone(240, 1100, 0.22, 0.1 * vol, 'sine', 0.08);
         break;
+      case 'point': // a flag paid
+        this.tone(880, 1320, 0.09, 0.07 * vol, 'triangle');
+        break;
+      case 'minus': // your bomb cost your side a point
+        this.tone(300, 170, 0.16, 0.12 * vol, 'square');
+        break;
+      case 'whoosh': // something big slides on
+        this.noise(0.26, 0.2 * vol, 1700);
+        this.tone(240, 90, 0.24, 0.08 * vol, 'sine');
+        break;
+      case 'slam': // VS: two sides meet
+        this.noise(0.3, 0.55 * vol, 420);
+        this.tone(150, 38, 0.45, 0.34 * vol, 'sine');
+        this.tone(880, 440, 0.2, 0.09 * vol, 'square', 0.02);
+        break;
+      case 'fanfare': // victory
+        [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, f, i === 4 ? 0.5 : 0.14, 0.15 * vol, 'triangle', i * 0.11));
+        this.tone(262, 262, 0.7, 0.1 * vol, 'sine', 0.44);
+        break;
+      case 'defeat':
+        [392, 349, 311, 233].forEach((f, i) => this.tone(f, f * 0.97, i === 3 ? 0.6 : 0.2, 0.13 * vol, 'triangle', i * 0.19));
+        break;
+      case 'drum': // a round is called
+        this.noise(0.12, 0.4 * vol, 300);
+        this.tone(110, 60, 0.2, 0.25 * vol, 'sine');
+        break;
       case 'pick':
         [660, 880, 1320].forEach((f, i) => this.tone(f, f, 0.12, 0.14 * vol, 'triangle', i * 0.05));
         break;

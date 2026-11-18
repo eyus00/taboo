@@ -430,3 +430,10 @@ body.touch-on #brief.lo { bottom: max(13%, 122px); }
   .h-score { font-size: 15.5px; padding: 5px 5px 3px; gap: 2px; clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%); }
   .h-score .held { padding: 2px 3px 2px 1px; gap: 1px; }
 }
+
+/* a team's plate jumps as its score changes: up for a point made, down (and red) for one lost */
+#team-a.gain, #team-b.gain { animation: plate-gain 0.42s cubic-bezier(0.2, 1.5, 0.4, 1); }
+#team-a.drop, #team-b.drop { animation: plate-drop 0.42s ease-out; }
+@keyframes plate-gain { 0% { transform: none; filter: none; } 35% { transform: translateY(-5px) scale(1.12); filter: brightness(1.5); } 100% { transform: none; filter: none; } }
+@keyframes plate-drop { 0% { transform: none; filter: none; } 30% { transform: translateY(4px) scale(0.93); filter: brightness(0.6) saturate(0.5); } 60% { transform: translateX(-3px); } 80% { transform: translateX(3px); } 100% { transform: none; filter: none; } }
+@media (prefers-reduced-motion: reduce) { #team-a.gain, #team-b.gain, #team-a.drop, #team-b.drop { animation: none; } }

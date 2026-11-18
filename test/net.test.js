@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { io } from 'socket.io-client';
-import { IN_LEFT, IN_RIGHT, IN_JUMP, TICK_RATE, BOMB_POINTS, FLAG_END_POINTS } from '../shared/config.js';
+import { IN_LEFT, IN_RIGHT, IN_JUMP, TICK_RATE, BEAT_TICKS } from '../shared/config.js';
 import { STATE_LEN, stepPlayer, unpackState, packState } from '../shared/physics.js';
 import * as Arenas from '../shared/arenas.js';
 const { arenaById } = Arenas;
@@ -111,7 +111,7 @@ try {
     assert.equal(res.room.players[0].name, 'Anascript');
     const { plan, pool, items, ...rest } = res.room.settings;
     assert.deepEqual(items, [], 'every item is in the boxes');
-    assert.deepEqual(rest, { game: 'quick', rounds: 5, mode: 'potato', size: 6, bots: true, arena: 'random', theme: 'random', duration: 60, powerups: true, open: false });
+    assert.deepEqual(rest, { game: 'quick', rounds: 5, mode: 'potato', size: 6, bots: true, arena: 'random', theme: 'random', duration: 60, score: 'rounds', powerups: true, open: false });
     assert.deepEqual(pool, { arena: [], theme: [] }, 'Random draws from everything');
     assert.equal(plan.length, 9, 'a stage for every round a tournament can have (a knockout of ten is nine rounds)');
     assert.ok(plan.every((st) => st.arena === 'random' && st.theme === 'random'));
@@ -266,7 +266,7 @@ try {
     a.socket.emit('settings', { arena: 'nope', theme: 'nope', mode: 'nope', duration: 5, powerups: 'yes', game: 'nope', rounds: 4, bots: 'yes', size: 'six' });
     await sleep(150);
     const { plan, pool, items, ...rest } = b.room.settings;
-    assert.deepEqual(rest, { game: 'quick', rounds: 3, mode: 'time', size: 6, bots: false, arena: 'dojo', theme: 'shadow', duration: 90, powerups: false, open: false });
+    assert.deepEqual(rest, { game: 'quick', rounds: 3, mode: 'time', size: 6, bots: false, arena: 'dojo', theme: 'shadow', duration: 90, score: 'rounds', powerups: false, open: false });
     assert.ok(plan.every((st) => st.arena === 'dojo' && st.theme === 'shadow'), 'an arena or a style set like this goes for every round');
     // one round of a tournament can have its own; junk is ignored
     a.socket.emit('settings', { stage: { i: 2, arena: 'hills', theme: 'neon' } });
@@ -557,10 +557,10 @@ try {
     assert.equal(e.team.score.length, 2);
     assert.equal(e.rows.length, 4);
     assert.deepEqual(e.rows.filter((r) => r.bot).map((r) => [r.slot, r.name]), [[bot.slot, bot.name]], 'the bot is on the scoreboard, marked as one');
-    // the bombs went off on whoever held them when the clock stopped, and cost their own side (flags can only add to that)
+    // the bombs went off on whoever held them when the clock stopped; a score is never below nothing, and three flags can only pay so much
     const blown = e.rows.filter((r) => r.boom);
     assert.equal(blown.length, 2, 'two bombs, two explosions');
-    for (const t of [0, 1]) assert.ok(e.team.score[t] >= -BOMB_POINTS * blown.filter((r) => r.team === t).length && e.team.score[t] <= 3 * FLAG_END_POINTS + SHORT, `score ${e.team.score}`);
+    for (const t of [0, 1]) assert.ok(e.team.score[t] >= 0 && e.team.score[t] <= 3 * Math.ceil((SHORT * TICK_RATE) / BEAT_TICKS), `score ${e.team.score}`);
     assert.ok(e.rows.every((r) => typeof r.caps === 'number'));
     const win = e.team.score[0] === e.team.score[1] ? -1 : e.team.score[0] > e.team.score[1] ? 0 : 1;
     assert.equal(e.team.win, win);
@@ -607,11 +607,11 @@ try {
     assert.equal(a.round.players.filter((p) => p.bot).length, 1, 'the bot plays every round');
     // the host ends the tournament between rounds
     await until(() => a.ends.length === 4, 'round 2 over', (SHORT + 12) * 1000);
-    // a team tournament adds up what the sides score, round after round
+    // a team tournament counts rounds won unless the host says otherwise: one for whoever took the round, nothing for a draw
     const won = [0, 0];
     for (const e of a.ends.slice(2)) {
-      assert.ok(e.cup && !e.cup.final && !e.cup.double, 'not the last round: not doubled');
-      for (const t of [0, 1]) won[t] += e.team.score[t];
+      assert.ok(e.cup && !e.cup.final && !e.cup.double && e.cup.score === 'rounds', 'not the last round: worth one');
+      if (e.team.win >= 0) won[e.team.win]++;
       assert.deepEqual(e.team.total, won, `after round ${e.cup.round}: ${e.team.total} (this round ${e.team.score}, to ${e.team.win})`);
     }
     a.socket.emit('lobby');

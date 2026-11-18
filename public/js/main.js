@@ -8,13 +8,14 @@
 // driven with the keyboard alone (arrows + Enter, Esc to go back, a letter or
 // number for most things).
 
-import { MODES, DURATIONS, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_END_POINTS, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO } from '/shared/config.js';
+import { MODES, DURATIONS, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, BEAT_TICKS, CUP_SCORES, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, COUNTDOWN_MS, INTRO_MS, VS_MS } from '/shared/config.js';
 import { ARENAS } from '/shared/arenas.js';
 import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
 import * as art from './art.js'; // (also: playerPortrait, for the results)
 import { loadTheme, THEME_MAP } from './themes/index.js';
 import { draw } from './spinner.js';
+import { present } from './present.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -56,20 +57,33 @@ play.init({
   socket,
   isTouch,
   // a round is starting: show the match, and over it the draw for arena, style and who is it
+  // - but first, where the server leaves the time for it, the players walk on, face to face
   onStart(info) {
     show('game');
-    draw.show(play.el.spin, info, { sfx, colorOf: (slot) => play.colorOf(slot), me: play.mySlot(), prefer: [cardTheme] });
+    const drawOpts = { sfx, colorOf: (slot) => play.colorOf(slot), me: play.mySlot(), prefer: [cardTheme] };
+    const spare = (Number(info.countdown) || 0) - COUNTDOWN_MS - INTRO_MS - 350; // what is left before the draw has to begin
+    const walk = info.playing || spare < 1300 ? 0 : present.versus({ ...info, practice: play.kind === 'practice' }, { me: play.mySlot(), ms: Math.min(spare, VS_MS) });
+    if (!walk) return draw.show(play.el.spin, info, drawOpts);
+    // (the draw comes on as the walk-on leaves, with the time that is left by then)
+    const lead = walk - 300;
+    clearTimeout(walkTimer);
+    walkTimer = setTimeout(() => {
+      if (play.info === info && screen === 'game') draw.show(play.el.spin, { ...info, countdown: info.countdown - lead }, drawOpts);
+    }, lead);
   },
-  onEnd: (res) => showResults(res),
+  onEnd: (res) => endOfRound(res),
   onPause: () => openPause(),
 });
 const { renderer, input, sfx, net } = play;
+
+present.init({ sfx, colorOf: (slot) => play.colorOf(slot), portrait: (slot, size, face) => portraitOf(slot, { size, face }) });
 
 let myName = cleanName(store.get('tag.name'));
 let screen = ''; // name | home | game
 let panel = ''; // what is open from the title scroll: '' | rooms (Play) | lobby (a room) | help
 let overlay = ''; // over a match: '' | results | pause | help
 let helpFrom = ''; // what How to play goes back to
+let walkTimer = 0; // the draw, waiting for the walk-on to leave
 let rig = false; // a match against bots in this browser alone, started by the test hook (__tag.practice)
 let room = null; // latest room state from the server
 let afterName = null;
@@ -497,7 +511,7 @@ $('btn-help-back').addEventListener('click', closeHelp);
 // numbers in the rules come from the game's own settings
 const orList = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}` : String(items[0]));
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-for (const [key, value] of Object.entries({ bomb: plural(BOMB_POINTS, 'point'), flagend: plural(FLAG_END_POINTS, 'point'), flagtime: (FLAG_CAP_TICKS / TICK_RATE).toFixed(1).replace('.0', ''), rounds: orList(CUP_ROUNDS), teams: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}` })) {
+for (const [key, value] of Object.entries({ bomb: plural(BOMB_POINTS, 'point'), beat: String(Math.round(BEAT_TICKS / TICK_RATE)), flagpay: plural(FLAG_POINTS, 'point'), bombcost: plural(BOMB_COST, 'point'), flagtime: (FLAG_CAP_TICKS / TICK_RATE).toFixed(1).replace('.0', ''), rounds: orList(CUP_ROUNDS), teams: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}` })) {
   for (const e of document.querySelectorAll(`[data-n="${key}"]`)) e.textContent = value;
 }
 for (const k of ITEM_KINDS) {
@@ -816,6 +830,8 @@ const OPTIONS = [
   // a tournament is a knockout (the oni at the buzzer is out, round after round), or a team battle over a number of rounds
   { id: 'sides', key: 'mode', hot: 'r', label: 'Game', type: 'modes', box: 'opt-mode', info: 'cup', values: [['potato', 'Knockout'], ['team', 'Team Bomb']], icon: (v) => (v === 'team' ? 'bomb' : 'oni'), on: (s, v) => (v === 'team') === (s.mode === 'team'), show: (s) => s.game === 'cup' },
   { id: 'rounds', key: 'rounds', hot: 'n', label: 'Rounds', box: 'opt-mode', values: CUP_ROUNDS.map((n) => [n, String(n)]), show: (s) => s.game === 'cup' && s.mode === 'team' },
+  // how a team tournament is decided: rounds won, or every point added up
+  { id: 'score', key: 'score', hot: 'w', label: 'Winner by', box: 'opt-mode', values: [['rounds', 'Rounds won'], ['points', 'Total points']], show: (s) => s.game === 'cup' && s.mode === 'team' },
   { id: 'theme', hot: 's', label: 'Style', type: 'cards', box: 'style-cards', values: [['random', 'Random'], ...THEMES.map((t) => [t.id, t.name])], on: (s, v) => stageValue('theme') === v, set: (v) => setStage('theme', v) },
   { id: 'arena', hot: 'a', label: 'Stage', type: 'cards', box: 'arena-cards', values: [['random', 'Random'], ...ARENAS.map((a) => [a.id, a.name])], on: (s, v) => stageValue('arena') === v, set: (v) => setStage('arena', v) },
   { id: 'powerups', key: 'powerups', hot: 'p', label: 'Lucky boxes', box: 'options', info: 'boxes', values: [[true, 'On'], [false, 'Off']] },
@@ -1322,7 +1338,7 @@ const GAME_LINE = { potato: "Don't be the oni when the clock runs out", time: 'S
 const HOW_TO_WIN = {
   potato: ['Touch someone to pass the oni on', "Don't be the oni when the clock stops"],
   time: ['Touch someone to pass the oni on', 'Every second you are the oni is counted', 'The least time wins'],
-  team: ["Stand in a flag's ring to turn it your colour", 'Stick your bomb on an enemy by touching them', `At the buzzer: +${FLAG_END_POINTS} for each flag, -${BOMB_POINTS} for each bomb in hand`],
+  team: ["Stand in a flag's ring to turn it your colour", 'Stick your bomb on an enemy by touching them', `Every ${Math.round(BEAT_TICKS / TICK_RATE)} s: +${FLAG_POINTS} for each flag, \u2212${BOMB_COST} for each bomb in hand`],
   ko: ['Whoever is the oni at the buzzer is out', 'Everyone else plays the next round', 'The last one standing wins'],
 };
 function paintGuestCard() {
@@ -1550,7 +1566,7 @@ function paintCards() {
 const ABOUT_MODE = {
   potato: 'One player is the oni. Touch someone and it passes to them. Whoever is the oni when the clock runs out loses; everyone else wins.',
   time: 'The oni changes hands the same way, but every second you spend as the oni is counted. When time is up, the least time wins.',
-  team: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}. Three flags stand on every stage, one at each end and one high in the middle: stand in a flag's ring to turn it your colour. Bombs are dealt out at the start; stick yours on an enemy by touching them. Nothing scores while the round runs: at the buzzer every flag gives the side that holds it ${FLAG_END_POINTS}, and every bomb goes off and takes ${BOMB_POINTS} off its own side.`,
+  team: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}. Three flags stand on every stage, one at each end and one high in the middle: stand in a flag's ring to turn it your colour. Bombs are dealt out at the start; stick yours on an enemy by touching them. Every ${Math.round(BEAT_TICKS / TICK_RATE)} seconds each flag gives the side whose colour it is ${plural(FLAG_POINTS, 'point')}, and each bomb takes ${plural(BOMB_COST, 'point')} off the side holding it. At the buzzer every bomb goes off and costs its side ${BOMB_POINTS} more. A score never goes below nothing.`,
 };
 function aboutRow(icon, name, text) {
   const row = el('div', 'info-row');
@@ -1574,7 +1590,7 @@ const ABOUT = {
   game: () => ['The games', MODES.map((m) => aboutRow(MODE_ICON[m.id], m.name, ABOUT_MODE[m.id]))],
   cup: () => ['Tournaments', [
     aboutRow('oni', 'Knockout', 'Hot Potato, round after round. Whoever is the oni at the buzzer is out and watches the rest; the others play on, on smaller stages as the field thins, until one is left standing.'),
-    aboutRow('bomb', 'Team Bomb', `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]} over three, five or seven rounds. The sides stay as they are, what they score adds up, and the last round counts double. Level at the end? A tie-break round is played, until one side is ahead.`),
+    aboutRow('bomb', 'Team Bomb', `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]} over three, five or seven rounds, the sides staying as they are. The host chooses how it is decided. Rounds won: whoever wins a round gets a point (a drawn round: nobody does), and the last round is worth two. Total points: everything the sides score is added up, the last round double. Level at the end? A tie-break round is played, until one side is ahead.`),
     aboutRow('storm', 'Twists', 'Every second round has one: Moon Gravity, Turbo or Item Frenzy.'),
   ]],
   style: () => ['Styles', [el('p', 'info-lead', 'A style changes how everything looks, never how it plays.'), el('div', 'info-grid')], (grid) => THEMES.forEach((t) => grid.append(aboutPic(t.name, t.blurb, { still: t.id })))],
@@ -1949,6 +1965,20 @@ function mark(glyph, word, dark) {
   return m;
 }
 
+// A round is over: first the moment itself (the word for it, who won, what comes next -
+// see present.js), then the card with everyone's numbers. Anything that happens
+// meanwhile (the next round, leaving) cuts the moment short and the card is not shown.
+function endOfRound(res) {
+  clearInterval(nextTimer);
+  draw.clear();
+  const t0 = performance.now();
+  present.outcome(res, { me: play.mySlot() }).then((ok) => {
+    if (!ok || screen !== 'game') return;
+    if (res.cup?.next) res.cup.next = Math.max(0, res.cup.next - (performance.now() - t0));
+    showResults(res);
+  });
+}
+
 function showResults(res) {
   lastResults = res;
   clearInterval(nextTimer);
@@ -1982,11 +2012,11 @@ function showResults(res) {
     const lead = final ? team.win : tally[0] === tally[1] ? -1 : tally[0] > tally[1] ? 0 : 1;
     if (cup && !cup.final) {
       kicker = cup.tie ? `Level after ${cup.round} rounds · Team Bomb` : `Round ${cup.round} of ${cup.rounds} · Team Bomb`;
-      // (a score can be below nothing: then it is written out, "0 to −4")
-      const n = (v) => (v < 0 ? `−${-v}` : String(v));
-      const vs = (x, y) => (x < 0 || y < 0 ? `${n(x)} to ${n(y)}` : `${x}–${y}`);
-      title = lead < 0 ? `Level at ${n(tally[0])} all` : watching ? `${TEAM_NAMES[lead]} lead ${vs(tally[lead], tally[1 - lead])}` : lead === mine ? `You lead ${vs(tally[lead], tally[1 - lead])}` : `You trail ${vs(tally[1 - lead], tally[lead])}`;
-      sub = cup.tie ? 'A tie-break round decides it.' : '';
+      const vs = (x, y) => `${x}–${y}`;
+      title = lead < 0 ? `Level at ${tally[0]} all` : watching ? `${TEAM_NAMES[lead]} lead ${vs(tally[lead], tally[1 - lead])}` : lead === mine ? `You lead ${vs(tally[lead], tally[1 - lead])}` : `You trail ${vs(tally[1 - lead], tally[lead])}`;
+      // (counted in rounds won: say who took this one)
+      const took = cup.score !== 'rounds' ? '' : team.win < 0 ? 'A drawn round: no point for anyone.' : `${TEAM_NAMES[team.win]} take the round, ${team.score[team.win]}–${team.score[1 - team.win]}.`;
+      sub = `${took}${cup.tie ? ' A tie-break round decides it.' : ''}`.trim();
     } else {
       kicker = cup ? 'Tournament over · Team Bomb' : forfeit ? 'Match over' : 'Team Bomb';
       title = watching && lead >= 0 ? `${TEAM_NAMES[lead]} win!` : verdict(lead === mine, lead < 0);
@@ -2136,7 +2166,7 @@ function showResults(res) {
     tick();
     nextTimer = setInterval(tick, 250);
   }
-  sfx.play(iWon || (cup && !cup.final && res.loser !== mySlot) ? 'win' : 'lose');
+  if (!res.presented) sfx.play(iWon || (cup && !cup.final && res.loser !== mySlot) ? 'win' : 'lose');
 }
 
 // What you did, in a few small numbers that count up (gold, with a star,
@@ -2253,9 +2283,19 @@ function face(slot, size = 'sm') {
   return box;
 }
 function portraitOf(slot, size) {
+  if (size && typeof size === 'object') {
+    // ({ size, face }: as art.js takes them)
+    try {
+      const cols = play.info?.cols;
+      const theme = art.styleReady(play.info?.theme) ? play.info.theme : play.renderer.theme?.id;
+      return theme ? art.playerPortrait(theme, cols ? cols[slot] ?? slot : slot, size) || '' : '';
+    } catch {
+      return '';
+    }
+  }
   try {
     const cols = play.info?.cols;
-    const theme = play.renderer.theme?.id;
+    const theme = art.styleReady(play.info?.theme) ? play.info.theme : play.renderer.theme?.id;
     return theme && typeof art.playerPortrait === 'function' ? art.playerPortrait(theme, cols ? cols[slot] ?? slot : slot, size ? { size } : undefined) || '' : '';
   } catch {
     return '';
@@ -2335,7 +2375,8 @@ function paintSides(res, mySlot) {
     const head = el('header');
     const tally = el('span', 'tally', String(cup && total ? total[t] : score[t]));
     head.append(el('b', 'nm', TEAM_NAMES[t]), tally);
-    if (cup && total) head.append(el('small', '', `${score[t] * (cup.double ? 2 : 1) < 0 ? '−' : '+'}${Math.abs(score[t] * (cup.double ? 2 : 1))} this round${cup.double ? ' (double)' : ''}`));
+    // (a tournament: what this round added - its points, or the round itself)
+    if (cup && total) head.append(el('small', '', cup.score === 'rounds' ? `${score[t]} this round${score[t] > score[1 - t] ? ` · +${cup.double ? 2 : 1}` : ''}` : `+${score[t] * (cup.double ? 2 : 1)} this round${cup.double ? ' (double)' : ''}`));
     if (won) head.append(mark('勝', 'wins'));
     else if (final && win < 0) head.append(el('small', '', 'a draw'));
     side.append(head);
@@ -2446,6 +2487,7 @@ socket.on('kicked', () => {
 socket.on('round', (msg) => {
   if (!room) return;
   clearInterval(nextTimer);
+  present.clear();
   const mine = me();
   // (a bot filling in may hold the same place as someone who arrived after the round began: they are only watching)
   const mySlot = mine && msg.players.some((p) => p.slot === mine.slot && !p.bot) ? mine.slot : -1;
@@ -2461,7 +2503,7 @@ socket.on('end', (res) => {
     show('game');
   }
   play.finish();
-  showResults(res);
+  endOfRound(res);
 });
 socket.on('toast', (text) => toast(String(text)));
 socket.on('q', (ack) => typeof ack === 'function' && ack()); // the server timing our connection
@@ -2568,6 +2610,11 @@ function shortcut(key, e) {
 
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  // (the moment after a round: any key moves on to the card)
+  if (present.busy === 'outcome') {
+    e.preventDefault();
+    return present.skip();
+  }
   // a real keyboard is here: show the key cues (matters on tablets)
   if (/^(Arrow|Escape|Tab)/.test(e.key)) document.body.classList.remove('no-kbd');
   if (e.key === 'Escape') {

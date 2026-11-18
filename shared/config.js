@@ -72,6 +72,7 @@ export const STUN_TICKS = 18; // 0.3 s freeze for the newly tagged player
 export const BLOCK_STUN_TICKS = 36; // "it" is knocked back when a shield blocks the tag
 export const RESPAWN_TICKS = 24;
 export const COUNTDOWN_MS = 3000;
+export const VS_MS = 2600; // before that: the two sides (or everyone) walk on, face to face
 export const INTRO_MS = 4200; // before the countdown: the draw for arena, style and who is it
 
 // --- Lucky boxes and the items inside them --------------------------------------
@@ -131,18 +132,23 @@ export const DASH_SPEED = 1200; // ...at this speed, dead straight the way you f
 // Bombs: one for every two players, dealt out at GO starting with a random
 // player of each team. A carrier gets rid of theirs by touching an ENEMY whose
 // hands are free (nobody carries two). The bombs burn for the whole round and
-// go off at the buzzer: every bomb scores for the team that is NOT holding it.
+// go off at the buzzer.
 // Flags: a flag is a spot on the map. Stand in its ring and it fills with your
-// colour; full, it is yours, and it pays your team at the buzzer
-// until the other side stands there long enough to turn it.
-export const BOMB_POINTS = 5; // off its own team's score, for each bomb that goes off at the buzzer
+// colour; full, it is yours until the other side stands there long enough to turn it.
+// Points: the round has a beat. On every beat each flag gives the team whose colour
+// it is a point, and each bomb takes one off the team holding it - so sitting on a
+// bomb until the last second costs as much as passing it late saves. A score never
+// goes below nothing.
+export const BEAT_TICKS = 240; // a beat every 4 s
+export const FLAG_POINTS = 1; // per flag in your colour, per beat
+export const BOMB_COST = 1; // per bomb in your hands, per beat
+export const BOMB_POINTS = 3; // and off its own team's score for each bomb that goes off at the buzzer
 export const BOMB_STUN_TICKS = 80;
 export const BOMB_END_TICKS = 84; // the moment after the buzzer in which the bombs go off, before the result
 export const FLAG_HALF = 96; // half the width of a flag's ring
 export const FLAG_UP = 120; // and how far above the ground it reaches (a hop on the spot still counts)
 export const FLAG_CAP_TICKS = 150; // standing there alone: 2.5 s to take a free flag (twice that to turn an enemy one)
 export const FLAG_CROWD = 2; // more of you fill it faster, up to this many times as fast
-export const FLAG_END_POINTS = 5; // a flag in your colour at the buzzer is worth this (it pays nothing while the round runs)
 export const TEAM_NAMES = ['Tigers', 'Dragons']; // (the warm side, the cool side; plural: "Tigers hold...", "Dragons win")
 export const FLAG_LETTERS = 'ABC'; // the flags by name, in the order they stand on the map: A at the warm side's end, B high in the middle, C at the cool side's end
 export const TEAM_COLORS = ['#e2543f', '#3f7fe2'];
@@ -172,6 +178,7 @@ export const MODE_IDS = MODES.map((m) => m.id);
 //  * Ties in the final table are broken by total time as it (less is better).
 export const CUP_ROUNDS = [3, 5, 7];
 export const DEFAULT_CUP_ROUNDS = 5;
+export const CUP_SCORES = ['rounds', 'points']; // how a team tournament is decided: rounds won (one each, two for the last), or every point added up (the last round double)
 export const CUP_BREAK_MS = 9000; // scoreboard shown between rounds
 export const SAFE_BONUS = 1;
 

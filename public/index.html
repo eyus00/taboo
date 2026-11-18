@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="/css/rooms.css" />
     <link rel="stylesheet" href="/css/play.css" />
     <link rel="stylesheet" href="/css/spin.css" />
+    <link rel="stylesheet" href="/css/present.css" />
   </head>
   <body>
     <!-- icons, drawn once and reused -->
@@ -332,7 +333,7 @@
             <article class="lesson">
               <div data-demo="team"></div>
               <h3><i>9</i>Team Bomb</h3>
-              <p><span data-n="teams">Two sides</span>. <b>Flags:</b> there are three &ndash; A at one end, C at the other and B high in the middle. Stand in a flag's ring for <span data-n="flagtime"></span> seconds and it turns your colour; it stays yours until the other side stands there long enough to turn it. Nothing scores while the round runs. <b>Bombs:</b> one for every two players. Touch an enemy whose hands are free to stick yours on them. <b>At the buzzer</b> every flag gives the team that holds it <span data-n="flagend"></span>, and every bomb goes off and takes <span data-n="bomb"></span> <i>off</i> the team holding it.</p>
+              <p><span data-n="teams">Two sides</span>. <b>Flags:</b> there are three &ndash; A at one end, C at the other and B high in the middle. Stand in a flag's ring for <span data-n="flagtime"></span> seconds and it turns your colour; it stays yours until the other side stands there long enough to turn it. <b>Bombs:</b> one for every two players. Touch an enemy whose hands are free to stick yours on them. <b>Points:</b> every <span data-n="beat"></span> seconds each flag gives the team whose colour it is <span data-n="flagpay"></span>, and each bomb takes <span data-n="bombcost"></span> <i>off</i> the team holding it &ndash; a number pops up where it happens. At the buzzer every bomb goes off and costs its team <span data-n="bomb"></span> more. A score never goes below nothing.</p>
             </article>
           </div>
 
@@ -388,7 +389,7 @@
               <h3>Tournament</h3>
               <ul class="plain">
                 <li><b>Knockout:</b> Hot Potato, round after round. Whoever is the oni at the buzzer is out and watches the rest; the others play on, until one is left standing. The stages get smaller as the field thins.</li>
-                <li><b>Team Bomb tournament:</b> <span data-n="rounds">3, 5 or 7</span> rounds. The teams stay together, their points add up, and the last round counts double. Level at the end? A tie-break round is played, until one side is ahead.</li>
+                <li><b>Team Bomb tournament:</b> <span data-n="rounds">3, 5 or 7</span> rounds, the teams staying together. The host chooses how it is decided: <i>Rounds won</i> (whoever wins a round gets a point, a drawn round gives nobody one, and the last round is worth two) or <i>Total points</i> (everything adds up, the last round double). Level at the end? A tie-break round is played, until one side is ahead.</li>
                 <li>Every second round has a twist.</li>
                 <li>With the stage or the style on Random, a new one is picked before each round.</li>
               </ul>

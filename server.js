@@ -19,6 +19,8 @@ import {
   SNAP_EVERY,
   COUNTDOWN_MS,
   INTRO_MS,
+  VS_MS,
+  CUP_SCORES,
   TEAM_SLOTS,
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -50,6 +52,8 @@ const PORT = process.env.PORT || 3000;
 const TEST_DURATION = Number(process.env.TAG_TEST_DURATION) || 0;
 const BREAK_MS = Number(process.env.TAG_TEST_BREAK) || CUP_BREAK_MS;
 const DRAW_MS = Number(process.env.TAG_TEST_INTRO) || INTRO_MS;
+// (the walk-on before the draw: none in the tests' short rounds, unless asked for)
+const WALK_MS = process.env.TAG_TEST_VS != null ? Number(process.env.TAG_TEST_VS) || 0 : process.env.TAG_TEST_INTRO ? 0 : VS_MS;
 
 // Other players are drawn this many ticks in the past on every screen
 // (see INTERP_TICKS in public/js/net.js). Used for lag-compensated tagging.
@@ -373,7 +377,7 @@ function leaveRoom(socket) {
 function startCup(room) {
   const ko = isKnockout(room.settings);
   const all = members(room);
-  room.cup = { round: 0, rounds: ko ? all.length - 1 : room.settings.rounds, arenas: [], lastTwist: '', teamPts: [0, 0], ko, gone: [] };
+  room.cup = { round: 0, rounds: ko ? all.length - 1 : room.settings.rounds, arenas: [], lastTwist: '', teamPts: [0, 0], ko, gone: [], score: room.settings.score };
   for (const p of all) {
     p.pts = 0;
     p.itMs = 0;
@@ -434,7 +438,8 @@ function startRound(room) {
       cup.lastTwist = twist;
     }
     // ko: a knockout (the oni at the buzzer is out); left: how many are still in it this round
-    info = { round: cup.round, rounds: cup.rounds, double: last && !cup.ko && !cup.tie, tie: !!cup.tie, leader: -1, ko: cup.ko, left: everyone.length };
+    // score: how a team tournament is decided ('rounds' won, or 'points' added up); total: where the sides stand
+    info = { round: cup.round, rounds: cup.rounds, double: last && !cup.ko && !cup.tie, tie: !!cup.tie, leader: -1, ko: cup.ko, left: everyone.length, score: cup.ko ? null : cup.score, total: cup.ko ? null : cup.teamPts.slice() };
   }
   sim.twist = twistById(twist);
 
@@ -501,7 +506,7 @@ function startRound(room) {
     bots, // slot -> memory of each bot playing this round
     names, // slot -> name of everyone who started this round (bots too)
     state: 'countdown',
-    goAt: Date.now() + DRAW_MS + COUNTDOWN_MS + 500, // the draw, then 3-2-1
+    goAt: Date.now() + WALK_MS + DRAW_MS + COUNTDOWN_MS + 500, // the walk-on, the draw, then 3-2-1
     endTick: 0,
   };
   room.phase = 'countdown';
@@ -561,11 +566,14 @@ function finishRound(room, reason) {
     let final = cup.ko ? forfeit || stillIn(room).length < MIN_PLAYERS : cup.round >= cup.rounds || forfeit || members(room).length < MIN_PLAYERS;
     let table = [];
     if (team) {
-      // Points add up over the rounds, and the last round counts double. Level after the
-      // last round: one more round, a tie-break, and another if that leaves them level too.
+      // As the host chose: rounds won (one for whoever takes a round, two for the last; a
+      // drawn round gives nobody anything) - or every point added up (the last round double).
+      // Level after the last round: one more round, a tie-break, and another if need be.
       const k = g.cup.double ? 2 : 1;
-      cup.teamPts[0] += score[0] * k;
-      cup.teamPts[1] += score[1] * k;
+      if (cup.score === 'points') {
+        cup.teamPts[0] += score[0] * k;
+        cup.teamPts[1] += score[1] * k;
+      } else if (win >= 0) cup.teamPts[win] += k;
       out.team.total = cup.teamPts.slice();
       if (final && !forfeit && members(room).length >= MIN_PLAYERS && cup.teamPts[0] === cup.teamPts[1]) {
         final = false;
@@ -589,7 +597,7 @@ function finishRound(room, reason) {
       ];
       if (final) out.winners = table.filter((r) => !r.out).map((r) => r.slot); // the last one standing
     }
-    out.cup = { round: cup.round, rounds: cup.rounds, double: g.cup.double, tie: !!cup.tie && !final, final, next: final ? 0 : BREAK_MS, table, ko: cup.ko, caught: caught ? caught.slot : -1 };
+    out.cup = { round: cup.round, rounds: cup.rounds, score: cup.ko ? null : cup.score, double: g.cup.double, tie: !!cup.tie && !final, final, next: final ? 0 : BREAK_MS, table, ko: cup.ko, caught: caught ? caught.slot : -1 };
     if (final) {
       for (const slot of out.winners) if (bySlot.has(slot)) bySlot.get(slot).wins++;
       room.cup = null;
@@ -844,7 +852,7 @@ io.on('connection', (socket) => {
       // pool: what Random draws from, for the stage and for the style ([] is all of them)
       // items: which items are in the lucky boxes ([] is all of them)
       // arena / theme: what round 1 (and a quick match) is played on; plan: the same for every round of a tournament
-      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], size: DEFAULT_SIZE, bots: true, arena: 'random', theme: 'random', duration: DEFAULT_DURATION, powerups: true, open: msg?.open === true, plan: newPlan('random', 'random'), pool: { arena: [], theme: [] }, items: [] },
+      settings: { game: 'quick', rounds: DEFAULT_CUP_ROUNDS, mode: MODE_IDS[0], size: DEFAULT_SIZE, bots: true, arena: 'random', theme: 'random', duration: DEFAULT_DURATION, score: CUP_SCORES[0], powerups: true, open: msg?.open === true, plan: newPlan('random', 'random'), pool: { arena: [], theme: [] }, items: [] },
       game: null,
       cup: null,
       nextTimer: null,
@@ -915,6 +923,7 @@ io.on('connection', (socket) => {
     s.arena = s.plan[0].arena;
     s.theme = s.plan[0].theme;
     if (DURATIONS.includes(msg?.duration) || (TEST_DURATION && msg?.duration === TEST_DURATION)) s.duration = msg.duration;
+    if (CUP_SCORES.includes(msg?.score)) s.score = msg.score;
     if (typeof msg?.powerups === 'boolean') s.powerups = msg.powerups;
     if (typeof msg?.open === 'boolean') s.open = msg.open;
     // which items are in the boxes: items = [kinds] (all of them, or none that exist, is [])

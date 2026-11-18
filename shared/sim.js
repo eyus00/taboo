@@ -42,7 +42,9 @@ import {
   FLAG_UP,
   FLAG_CAP_TICKS,
   FLAG_CROWD,
-  FLAG_END_POINTS,
+  FLAG_POINTS,
+  BOMB_COST,
+  BEAT_TICKS,
   SAFE_BONUS,
 } from './config.js';
 import { makeState, stepPlayer, isFree, portalAt } from './physics.js';
@@ -68,6 +70,7 @@ export class Sim {
     // team battle (null teams = everyone for themselves)
     this.teams = null; // team (0 or 1) of each slot
     this.score = [0, 0];
+    this.beat = 0; // ticks since the last beat (see payBeat)
     // flags: spots on the map. m is how far the flag is filled, from -FLAG_CAP_TICKS
     // (all team 0) to +FLAG_CAP_TICKS (all team 1); owner is -1 until one side has filled it
     this.flags = null; // [{ x, y, owner, m, pay }]
@@ -189,7 +192,11 @@ export class Sim {
     this.updateBoxes();
     if (!this.over) {
       this.checkTag();
-      if (this.teams && this.live) this.updateFlags(); // nothing counts before GO
+      if (this.teams && this.live) {
+        // nothing counts before GO
+        this.updateFlags();
+        if (++this.beat >= BEAT_TICKS) this.payBeat();
+      }
     }
     const i = this.tick % HIST;
     for (const o of this.players) {
@@ -523,28 +530,40 @@ export class Sim {
     });
   }
 
-  // The buzzer. In a team battle every flag pays the side that holds it, and every bomb
-  // goes off on whoever holds it and costs their own team points (a score can go
-  // below nothing). After this nothing counts: no tags, no flags.
+  // The beat: every flag gives the team whose colour it is a point, then every bomb
+  // takes one off the team holding it (never below nothing).
+  payBeat() {
+    this.beat = 0;
+    this.flags.forEach((f, i) => {
+      if (f.owner < 0) return;
+      this.score[f.owner] += FLAG_POINTS;
+      this.events.push({ type: 'flag', what: 'pay', team: f.owner, i, n: FLAG_POINTS });
+    });
+    for (const p of this.players) {
+      if (!p || !p.bomb) continue;
+      const n = Math.min(BOMB_COST, this.score[p.team]);
+      this.score[p.team] -= n;
+      this.events.push({ type: 'cost', slot: p.slot, team: p.team, n });
+    }
+  }
+
+  // The buzzer. In a team battle every bomb goes off on whoever holds it and costs
+  // their own team points (never below nothing). After this nothing counts: no tags, no flags.
   finish() {
     if (this.over) return;
     this.over = true;
     if (!this.teams) return;
-    this.flags.forEach((f, i) => {
-      if (f.owner < 0) return;
-      this.score[f.owner] += FLAG_END_POINTS;
-      this.events.push({ type: 'flag', what: 'end', team: f.owner, i });
-    });
     for (const p of this.players) {
       if (!p || !p.bomb) continue;
-      this.score[p.team] -= BOMB_POINTS;
+      const n = Math.min(BOMB_POINTS, this.score[p.team]);
+      this.score[p.team] -= n;
       p.bomb = false;
       p.boom = true;
       p.s.stun = BOMB_STUN_TICKS;
       p.s.vy = -640;
       p.s.ground = false;
       // team: the side that pays for it
-      this.events.push({ type: 'boom', slot: p.slot, team: p.team, x: p.s.x + PW / 2, y: p.s.y + PH / 2 });
+      this.events.push({ type: 'boom', slot: p.slot, team: p.team, n, x: p.s.x + PW / 2, y: p.s.y + PH / 2 });
     }
   }
 
