@@ -231,6 +231,8 @@
           <!-- one card: the moment (you under the seal - or the first three on a
                podium - with the word for it and a line of praise), everyone's
                numbers under it, and at the foot what happens next -->
+          <!-- everyone who won, side by side and dancing, with what each of them did -->
+          <div class="troupe" id="res-troupe" hidden></div>
           <header class="verdict" id="res-verdict">
             <div class="stage">
               <span class="rays" aria-hidden="true"></span>
@@ -246,8 +248,6 @@
               <ul class="feats" id="res-feats"></ul>
             </div>
           </header>
-          <!-- everyone who won, side by side and dancing -->
-          <div class="troupe" id="res-troupe" hidden></div>
           <section class="scores" id="res-scores" aria-label="Scoreboard">
             <div class="sides" id="res-teams" hidden></div>
             <ol class="board" id="res-table"></ol>
@@ -332,7 +332,7 @@
             <article class="lesson">
               <div data-demo="team"></div>
               <h3><i>9</i>Team Bomb</h3>
-              <p><span data-n="teams">Two sides</span>. <b>Flags:</b> there are three &ndash; A at one end, C at the other and B high in the middle. Stand in a flag's ring for <span data-n="flagtime"></span> seconds and it turns your colour; it then pays your team <span data-n="flagpay"></span> until the other side stands there long enough to turn it. <b>Bombs:</b> one for every two players. Touch an enemy whose hands are free to stick yours on them. Every bomb goes off when the clock stops – and scores <span data-n="bomb"></span> for the team that is <i>not</i> holding it.</p>
+              <p><span data-n="teams">Two sides</span>. <b>Flags:</b> there are three &ndash; A at one end, C at the other and B high in the middle. Stand in a flag's ring for <span data-n="flagtime"></span> seconds and it turns your colour; it then pays your team <span data-n="flagpay"></span> until the other side stands there long enough to turn it. <b>Bombs:</b> one for every two players. Touch an enemy whose hands are free to stick yours on them. <b>At the buzzer</b> every flag gives the team that holds it <span data-n="flagend"></span> more, and every bomb goes off and takes <span data-n="bomb"></span> <i>off</i> the team holding it.</p>
             </article>
           </div>
 
@@ -388,7 +388,7 @@
               <h3>Tournament</h3>
               <ul class="plain">
                 <li><b>Knockout:</b> Hot Potato, round after round. Whoever is the oni at the buzzer is out and watches the rest; the others play on, until one is left standing. The stages get smaller as the field thins.</li>
-                <li><b>Team Bomb tournament:</b> <span data-n="rounds">3, 5 or 7</span> rounds. The teams stay together. Whoever wins a round gets a point (a drawn round: nobody does), and the last round is worth two. Level at the end? A tie-break round is played, until one side is ahead.</li>
+                <li><b>Team Bomb tournament:</b> <span data-n="rounds">3, 5 or 7</span> rounds. The teams stay together, their points add up, and the last round counts double. Level at the end? A tie-break round is played, until one side is ahead.</li>
                 <li>Every second round has a twist.</li>
                 <li>With the stage or the style on Random, a new one is picked before each round.</li>
               </ul>

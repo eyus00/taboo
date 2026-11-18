@@ -561,11 +561,11 @@ function finishRound(room, reason) {
     let final = cup.ko ? forfeit || stillIn(room).length < MIN_PLAYERS : cup.round >= cup.rounds || forfeit || members(room).length < MIN_PLAYERS;
     let table = [];
     if (team) {
-      // Rounds won, not points made: whoever wins a round gets one (two for the last round;
-      // a drawn round gives nobody anything). Level after the last round: one more round, a
-      // tie-break worth one, and another if that is drawn too - there is always a winner.
+      // Points add up over the rounds, and the last round counts double. Level after the
+      // last round: one more round, a tie-break, and another if that leaves them level too.
       const k = g.cup.double ? 2 : 1;
-      if (win >= 0) cup.teamPts[win] += k;
+      cup.teamPts[0] += score[0] * k;
+      cup.teamPts[1] += score[1] * k;
       out.team.total = cup.teamPts.slice();
       if (final && !forfeit && members(room).length >= MIN_PLAYERS && cup.teamPts[0] === cup.teamPts[1]) {
         final = false;

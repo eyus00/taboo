@@ -10,7 +10,7 @@
 //   demos.start()       run the ones that are on screen (about 30 frames a second)
 //   demos.stop()        stop everything
 
-import { PW, PH, TICK_MS, MAX_PLAYERS, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_POINTS, FLAG_PAY_TICKS, FLAG_CAP_TICKS, TICK_RATE } from '/shared/config.js';
+import { PW, PH, TICK_MS, MAX_PLAYERS, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_POINTS, FLAG_END_POINTS, FLAG_PAY_TICKS, FLAG_CAP_TICKS, TICK_RATE } from '/shared/config.js';
 import { Sim } from '/shared/sim.js';
 import { makeBot, botThink } from '/shared/bots.js';
 import { Renderer } from './renderer.js';
@@ -545,7 +545,7 @@ const SCENES = {
       d.clock = 0;
       d.ai[1] = null;
       sim.finish(); // the buzzer
-      d.say(`Time! The bomb goes off on ${TEAM_NAMES[1]}: ${BOMB_POINTS} points for ${TEAM_NAMES[0]}`);
+      d.say(`Time! Your flag is worth ${FLAG_END_POINTS} more, and the bomb costs ${TEAM_NAMES[1]} ${BOMB_POINTS}`);
       yield* hold(0, 190);
     },
   },

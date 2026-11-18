@@ -44,6 +44,7 @@ import {
   FLAG_CROWD,
   FLAG_PAY_TICKS,
   FLAG_POINTS,
+  FLAG_END_POINTS,
   SAFE_BONUS,
 } from './config.js';
 import { makeState, stepPlayer, isFree, portalAt } from './physics.js';
@@ -530,22 +531,28 @@ export class Sim {
     });
   }
 
-  // The buzzer. In a team battle every bomb goes off on whoever holds it, and
-  // the other team scores. After this nothing counts: no tags, no flags.
+  // The buzzer. In a team battle every flag pays its side once more, and every bomb
+  // goes off on whoever holds it and costs their own team points (a score can go
+  // below nothing). After this nothing counts: no tags, no flags.
   finish() {
     if (this.over) return;
     this.over = true;
     if (!this.teams) return;
+    this.flags.forEach((f, i) => {
+      if (f.owner < 0) return;
+      this.score[f.owner] += FLAG_END_POINTS;
+      this.events.push({ type: 'flag', what: 'end', team: f.owner, i });
+    });
     for (const p of this.players) {
       if (!p || !p.bomb) continue;
-      const scorer = 1 - p.team;
-      this.score[scorer] += BOMB_POINTS;
+      this.score[p.team] -= BOMB_POINTS;
       p.bomb = false;
       p.boom = true;
       p.s.stun = BOMB_STUN_TICKS;
       p.s.vy = -640;
       p.s.ground = false;
-      this.events.push({ type: 'boom', slot: p.slot, team: scorer, x: p.s.x + PW / 2, y: p.s.y + PH / 2 });
+      // team: the side that pays for it
+      this.events.push({ type: 'boom', slot: p.slot, team: p.team, x: p.s.x + PW / 2, y: p.s.y + PH / 2 });
     }
   }
 

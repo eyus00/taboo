@@ -30,7 +30,7 @@
 //   play.finish() / play.stop() / play.hold(true|false)
 //   play.nameOf(slot), play.colorOf(slot), play.portraitOf(slot), play.mySlot(), play.el.spin
 
-import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, ITEM_ARM_TICKS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, FLAG_LETTERS, PW, PH, THEMES } from '/shared/config.js';
+import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, ITEM_ARM_TICKS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, FLAG_END_POINTS, FLAG_LETTERS, PW, PH, THEMES } from '/shared/config.js';
 import { arenasFor, arenaById } from '/shared/arenas.js';
 import { Renderer } from './renderer.js';
 import { Input } from './input.js';
@@ -298,12 +298,12 @@ export const play = {
     const tags = [];
     const twist = info.twist && info.twist !== 'none' ? g.twist : null;
     if (team) tags.push(['mode', '', label, label, label]);
-    if (info.cup?.tie) tags.push(['x2', '', 'Tie-break', 'Tie-break', 'Level on rounds won: whoever wins this round wins the tournament']);
+    if (info.cup?.tie) tags.push(['x2', '', 'Tie-break', 'Tie-break', 'Level on points: whoever wins this round wins the tournament']);
     else if (info.cup) tags.push(['round', '', `Round ${info.cup.round}/${info.cup.rounds}`, `${info.cup.round}/${info.cup.rounds}`, `Round ${info.cup.round} of ${info.cup.rounds} in this tournament`]);
     // a knockout: how many are still in it (whoever is the oni at the buzzer goes out)
     if (ko) tags.push(['left', 'it', info.cup.left === 2 ? 'The final' : `${info.cup.left} left`, info.cup.left === 2 ? 'Final' : `${info.cup.left} left`, info.cup.left === 2 ? 'The final: whoever is the oni at the buzzer loses the tournament' : `${info.cup.left} players are still in: the oni at the buzzer is out`]);
     if (twist?.name) tags.push(['twist', TWIST_ICONS[twist.id] || 'twist', twist.name, twist.name.split(' ')[0], `Twist: ${twist.name} - ${twist.blurb.toLowerCase()}`]);
-    if (info.cup?.double) tags.push(['x2', '', '\u00d72 points', '\u00d72', 'The last round is worth two']);
+    if (info.cup?.double) tags.push(['x2', '', '\u00d72 points', '\u00d72', 'The last round counts double']);
     E.tags.textContent = '';
     for (const [kind, ic, long, short, tip] of tags) {
       const tag = el('span', `tag ${kind}`);
@@ -579,8 +579,8 @@ export const play = {
       list.append(li);
     };
     if (team) {
-      line('flag', '<b>Stand in a flag ring</b> to score');
-      line('bomb', '<b>Pass your bomb</b> to an enemy before the buzzer');
+      line('flag', `<b>Hold the flags</b>: points all round, +${FLAG_END_POINTS} each at the buzzer`);
+      line('bomb', `<b>Pass your bomb</b> on: at the buzzer it costs ${BOMB_POINTS}`);
     } else if (info.mode === 'time') line('clock', '<b>Least time as the oni</b> wins');
     else if (info.cup?.ko) {
       line('it', info.cup.left === 2 ? '<b>The oni at the buzzer loses</b> the final' : '<b>The oni at the buzzer is out</b> of the tournament');
@@ -1103,11 +1103,11 @@ export const play = {
     } else if (type === 'boom') {
       R.boomFx(a);
       sfx.play('boom');
-      this.banner(a.slot === me ? `BOOM! Your bomb gives ${TEAM_NAMES[a.team]} ${BOMB_POINTS} points` : `BOOM! ${this.nameOf(a.slot)} blows up: ${BOMB_POINTS} points to ${TEAM_NAMES[a.team]}`, this.game?.teamOf?.(me) !== a.team);
+      this.banner(a.slot === me ? `BOOM! Your bomb costs ${TEAM_NAMES[a.team]} ${BOMB_POINTS} points` : `BOOM! ${this.nameOf(a.slot)} blows up: ${TEAM_NAMES[a.team]} lose ${BOMB_POINTS} points`, this.game?.teamOf?.(me) === a.team);
     } else if (type === 'it') {
       if (team) this.banner(a.to === me ? 'A bomb has been handed to you!' : `${this.nameOf(a.to)} has a bomb now`, a.to === me);
     } else if (type === 'flag') {
-      // a = { what: take | lose | pay, team, i }
+      // a = { what: take | lose | pay | end (held at the buzzer), team, i }
       const mine = this.game?.teamOf?.(me) === a.team;
       const letter = FLAG_LETTERS[a.i];
       if (a.what === 'take') {
@@ -1116,6 +1116,10 @@ export const play = {
         R.flagFx?.(a.i, a.team);
       } else if (a.what === 'lose') this.banner(`Flag ${letter} is up for grabs`);
       else if (a.what === 'pay') R.flagFx?.(a.i, a.team, `+${FLAG_POINTS}`);
+      else if (a.what === 'end') {
+        R.flagFx?.(a.i, a.team);
+        this.banner(`Flag ${letter} is ${TEAM_NAMES[a.team]}' at the buzzer: +${FLAG_END_POINTS}`, !mine && me >= 0);
+      }
     }
   },
 };

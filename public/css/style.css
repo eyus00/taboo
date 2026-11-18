@@ -516,25 +516,46 @@ body:not(.no-kbd) .touch-only { display: none; }
 /* you, in a brush circle, with the seal stamped on its corner */
 .medal { position: relative; z-index: 1; width: 116px; height: 116px; flex: none; display: grid; place-items: center; background: var(--enso) center / 100% 100% no-repeat; }
 .medal[hidden] { display: none; }
-/* everyone who won, in a row under the headline, dancing: a hop and a sway, each a beat after the one before */
-.troupe { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 14px 6px; border-top: 1.5px solid var(--faint); }
+/* Everyone who won, at the top of the card: a lit stage in the winners' colour, a row of
+   dancers on it (a hop and a sway, each a beat after the one before), under each a name
+   and what they did. */
+.troupe { --side: var(--gold); position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 14px 10px; border: 2px solid var(--ink); border-radius: 14px; background: linear-gradient(180deg, color-mix(in srgb, var(--side) 26%, #fffaf0), #fffaf0 78%); box-shadow: inset 0 -5px 0 color-mix(in srgb, var(--side) 55%, transparent), 0 3px 0 var(--ink); }
 .troupe[hidden] { display: none; }
-.troupe .who { font: 800 11px/1.2 var(--serif); letter-spacing: 0.18em; text-transform: uppercase; color: var(--red-deep); }
-.troupe .line { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
-.dancer { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; }
-.dancer .pic { width: 58px; height: 58px; display: grid; place-items: center; transform-origin: 50% 92%; animation: dance 0.84s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.21s); }
+.troupe .glow { position: absolute; left: 50%; top: 58%; width: 620px; height: 620px; margin: -310px 0 0 -310px; pointer-events: none; background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0.55) 0deg 8deg, rgba(255, 255, 255, 0) 8deg 20deg); -webkit-mask: radial-gradient(closest-side, #000 20%, transparent 78%); mask: radial-gradient(closest-side, #000 20%, transparent 78%); animation: rays-turn 26s linear infinite; }
+.troupe .who { position: relative; display: flex; align-items: center; gap: 7px; font: 800 14px/1.2 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink); }
+.troupe .who .ic { font-size: 18px; color: var(--gold); }
+.troupe .line { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; }
+.dancer { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.dancer .pic { width: 84px; height: 84px; display: grid; place-items: center; transform-origin: 50% 92%; animation: dance 0.84s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.21s); filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.16)); }
 .dancer .pic img { width: 100%; height: 100%; display: block; object-fit: contain; }
-.dancer small { max-width: 9ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 15px/1.1 var(--brush); }
+.dancer small { max-width: 10ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 17px/1.1 var(--brush); }
 .dancer.me small { color: var(--red-deep); }
-/* (a full room, or a low screen: one tight line - the faces alone, beside the words) */
-#s-results.crowd .troupe { flex-direction: row; justify-content: center; gap: 12px; padding: 5px 14px 3px; }
-#s-results.crowd .troupe .line { gap: 2px 8px; }
-#s-results.crowd .dancer .pic { width: 38px; height: 38px; }
-#s-results.crowd .dancer small { display: none; }
+.dancer .stats { display: flex; gap: 4px; }
+.dancer .st { display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; font: 800 11.5px/1.2 var(--serif); font-variant-numeric: tabular-nums; }
+.dancer .st .ic { font-size: 11px; }
+.dancer .st.top { background: var(--gold); }
+/* with the winners up there, the words stand alone in the middle */
+#s-results.has-troupe .verdict { justify-content: center; min-height: 0; text-align: center; }
+#s-results.has-troupe .verdict .stage { display: none; }
+#s-results.has-troupe .verdict .words { align-items: center; flex: none; }
+#s-results.has-troupe .feats { justify-content: center; }
+/* (a full room, or a low screen: smaller, and tighter) */
+#s-results.crowd .troupe { gap: 4px; padding: 7px 10px 6px; }
+#s-results.crowd .troupe .line { gap: 3px 10px; }
+#s-results.crowd .dancer .pic { width: 60px; height: 60px; }
+#s-results.crowd .dancer small { font-size: 13px; }
+#s-results.crowd .dancer .st { padding: 1px 4px; font-size: 10px; }
 @media (max-height: 760px) {
-  .troupe { flex-direction: row; justify-content: center; gap: 12px; padding: 5px 14px 3px; }
-  .dancer .pic { width: 42px; height: 42px; }
-  .dancer small { display: none; }
+  .troupe { gap: 4px; padding: 7px 10px 6px; }
+  .dancer .pic { width: 62px; height: 62px; }
+  .dancer small { font-size: 13px; }
+  .dancer .st { padding: 1px 4px; font-size: 10px; }
+}
+@media (max-width: 480px) {
+  .troupe .line { gap: 4px 8px; }
+  .dancer .pic { width: 54px; height: 54px; }
+  .dancer small { font-size: 13px; }
+  .dancer .st { padding: 1px 4px; font-size: 10px; }
 }
 @keyframes dance {
   0%, 100% { transform: translateY(0) rotate(-9deg) scale(1.04, 0.94); }
@@ -542,7 +563,7 @@ body:not(.no-kbd) .touch-only { display: none; }
   50% { transform: translateY(0) rotate(9deg) scale(1.04, 0.94); }
   75% { transform: translateY(-14%) rotate(0deg) scale(0.97, 1.04); }
 }
-@media (prefers-reduced-motion: reduce) { .dancer .pic { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dancer .pic, .troupe .glow { animation: none; } }
 .medal .face.xl { width: 80px; height: 80px; margin: 0; }
 .medal .seal.big { position: absolute; right: -12px; bottom: -4px; margin: 0; font-size: 30px; transform: rotate(-8deg); }
 /* rays behind a winner, turning slowly */

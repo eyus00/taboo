@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { io } from 'socket.io-client';
-import { IN_LEFT, IN_RIGHT, IN_JUMP, TICK_RATE, BOMB_POINTS } from '../shared/config.js';
+import { IN_LEFT, IN_RIGHT, IN_JUMP, TICK_RATE, BOMB_POINTS, FLAG_END_POINTS } from '../shared/config.js';
 import { STATE_LEN, stepPlayer, unpackState, packState } from '../shared/physics.js';
 import * as Arenas from '../shared/arenas.js';
 const { arenaById } = Arenas;
@@ -557,10 +557,10 @@ try {
     assert.equal(e.team.score.length, 2);
     assert.equal(e.rows.length, 4);
     assert.deepEqual(e.rows.filter((r) => r.bot).map((r) => [r.slot, r.name]), [[bot.slot, bot.name]], 'the bot is on the scoreboard, marked as one');
-    // the bombs went off on whoever held them when the clock stopped, and the other side scored
+    // the bombs went off on whoever held them when the clock stopped, and cost their own side (flags can only add to that)
     const blown = e.rows.filter((r) => r.boom);
     assert.equal(blown.length, 2, 'two bombs, two explosions');
-    for (const t of [0, 1]) assert.ok(e.team.score[t] >= BOMB_POINTS * blown.filter((r) => r.team === 1 - t).length, `score ${e.team.score}`);
+    for (const t of [0, 1]) assert.ok(e.team.score[t] >= -BOMB_POINTS * blown.filter((r) => r.team === t).length && e.team.score[t] <= 3 * FLAG_END_POINTS + SHORT, `score ${e.team.score}`);
     assert.ok(e.rows.every((r) => typeof r.caps === 'number'));
     const win = e.team.score[0] === e.team.score[1] ? -1 : e.team.score[0] > e.team.score[1] ? 0 : 1;
     assert.equal(e.team.win, win);
@@ -607,11 +607,11 @@ try {
     assert.equal(a.round.players.filter((p) => p.bot).length, 1, 'the bot plays every round');
     // the host ends the tournament between rounds
     await until(() => a.ends.length === 4, 'round 2 over', (SHORT + 12) * 1000);
-    // a team tournament counts rounds won, not points made: one for whoever took the round, nothing for a draw
+    // a team tournament adds up what the sides score, round after round
     const won = [0, 0];
     for (const e of a.ends.slice(2)) {
-      assert.ok(e.cup && !e.cup.final && !e.cup.double, 'not the last round: worth one');
-      if (e.team.win >= 0) won[e.team.win]++;
+      assert.ok(e.cup && !e.cup.final && !e.cup.double, 'not the last round: not doubled');
+      for (const t of [0, 1]) won[t] += e.team.score[t];
       assert.deepEqual(e.team.total, won, `after round ${e.cup.round}: ${e.team.total} (this round ${e.team.score}, to ${e.team.win})`);
     }
     a.socket.emit('lobby');
