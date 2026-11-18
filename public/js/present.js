@@ -28,9 +28,9 @@
 // frame, when the pictures are painted and the page is quiet again. While it
 // covers the screen the match behind it is not drawn at all (onCover).
 
-import { MODES, THEMES, TEAM_NAMES, TEAM_COLORS, twistById } from '/shared/config.js';
+import { MODES, THEMES, TEAM_NAMES, TEAM_COLORS, FLAG_END_POINTS, BOMB_POINTS, twistById } from '/shared/config.js';
 import { arenaById, ARENAS } from '/shared/arenas.js';
-import { scenePreview, styleStill, styleReady } from './art.js';
+import { scenePreview, styleStill, styleReady, styleThumb, arenaThumb } from './art.js';
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -142,22 +142,44 @@ function billing(info) {
   return { kicker: 'Team Bomb tournament', title: `Round ${cup.round} of ${cup.rounds}`, grade: cup.round === cup.rounds - 1 ? 'semi' : '', note: '' };
 }
 
-// a small picture with two lines under a label: the stage, the style
-function plate(label, name, url, i) {
+// A reel of the draw: a paper card with what it is and the name over a window, and in the
+// window a strip of pictures - "?" first, then some it might have been, last the one it is.
+// Spun, the strip runs up through the window and stops on the last (see `land` in versus).
+//   cells: [{ name, url }]  the last is the one drawn; one cell: nothing to spin
+function plate(label, name, cells, i) {
   const p = el('div', 'pz-plate');
   p.style.setProperty('--i', String(i));
-  const pic = el('span', 'pz-thumb');
-  if (url) {
-    const img = el('img');
-    img.alt = '';
-    img.decoding = 'sync';
-    img.src = url;
-    pic.append(img);
-  }
   const words = el('span', 'pz-words');
   words.append(el('small', '', label), el('b', '', name));
-  p.append(pic, words);
+  const win = el('span', 'pz-thumb');
+  const strip = el('span', 'pz-strip');
+  const list = Array.isArray(cells) ? cells : [];
+  strip.style.setProperty('--n', String(Math.max(1, list.length)));
+  for (const c of list) {
+    const cell = el('span', c.url ? 'pz-cell' : 'pz-cell blank', c.url ? null : c.name);
+    if (c.url) {
+      const img = el('img');
+      img.alt = '';
+      img.decoding = 'sync';
+      img.src = c.url;
+      cell.append(img);
+    }
+    strip.append(cell);
+  }
+  win.append(strip);
+  p.append(words, win);
   return p;
+}
+// a line of facts: what decided the round
+function facts(list) {
+  const row = el('div', 'pz-facts');
+  for (const [icon, label, value, tone] of list) {
+    const f = el('span', tone ? `pz-fact ${tone}` : 'pz-fact');
+    f.innerHTML = svg(icon);
+    f.append(el('small', '', label), el('b', '', value));
+    row.append(f);
+  }
+  return row;
 }
 
 // where a team tournament stands: the two sides and their tally, large
@@ -227,7 +249,11 @@ export const present = {
       // (the ones who lost the round: head down, and a tear or two)
       if (p.sad) {
         c.classList.add('sad');
-        c.querySelector('.pz-pic').append(el('i', 'pz-tear a'), el('i', 'pz-tear b'));
+        for (const k of ['a', 'b']) {
+          const cry = el('i', `pz-cry ${k}`);
+          cry.append(el('i'));
+          c.querySelector('.pz-pic').append(cry);
+        }
       }
       cards.set(p.slot, c);
       line.append(c);
@@ -236,7 +262,7 @@ export const present = {
       // everyone for themselves: one line of all of them, coming on from both ends
       const n = players.length;
       const cols = tall ? (n <= 4 ? 2 : n <= 9 ? 3 : 4) : n <= 6 ? n : Math.ceil(n / 2);
-      const size = fit(W * 0.94, H * (tall ? 0.42 : 0.36), n, cols, 180);
+      const size = fit(W * 0.94, H * (tall ? 0.4 : 0.31), n, cols, 190);
       const line = el('div', 'pz-line');
       line.style.setProperty('--card', `${size}px`);
       line.style.maxWidth = `${cols * (size + 14)}px`;
@@ -253,7 +279,7 @@ export const present = {
       for (const s of sides) s.sort((x, y) => (y.slot === me) - (x.slot === me)); // (you are the first of your own side)
       const most = Math.max(sides[0].length, sides[1].length, 1);
       const cols = most <= 3 ? most : most === 4 ? 2 : 3;
-      const size = layout === 'duel' ? Math.floor(Math.min(tall ? W * 0.42 : W * 0.24, H * (tall ? 0.19 : 0.32), 250)) : fit(tall ? W * 0.94 : W * 0.41, H * (tall ? 0.21 : 0.4), most, cols, 170);
+      const size = layout === 'duel' ? Math.floor(Math.min(tall ? W * 0.42 : W * 0.24, H * (tall ? 0.18 : 0.33), 250)) : fit(tall ? W * 0.94 : W * 0.41, H * (tall ? 0.2 : 0.4), most, cols, 180);
       sides.forEach((list, t) => {
         const side = el('div', `pz-side ${t ? 'r' : 'l'}`);
         side.style.setProperty('--card', `${size}px`);
@@ -305,8 +331,17 @@ export const present = {
       }
     } catch {}
     const drawn = { theme: !!info.random?.theme && !!theme, arena: !!info.random?.arena && !!arena };
-    const stylePlate = theme ? plate('Style', drawn.theme ? '?' : theme.name, stylePic, 0) : null;
-    const stagePlate = arena ? plate('Stage', drawn.arena ? '?' : arena.name, stagePic, 1) : null;
+    // (a reel: "?", a handful of the others - whatever pictures of them are already painted - and the one drawn)
+    const others = (all, own, pic) => {
+      const rest = all.filter((x) => x.id !== own.id);
+      const pick = [];
+      for (let k = 0; k < Math.min(6, rest.length); k++) pick.push(rest[(k * 5 + (info.cup?.round || 0) * 3 + own.name.length) % rest.length]);
+      return [{ name: '?' }, ...pick.map((x) => ({ name: x.name, url: pic(x.id) })), { name: own.name, url: pic(own.id, true) }];
+    };
+    const styleCells = !theme ? [] : drawn.theme ? others(THEMES, theme, (id, mine) => (mine ? stylePic : styleThumb(id))) : [{ name: theme.name, url: stylePic }];
+    const stageCells = !arena ? [] : drawn.arena ? others(ARENAS, arena, (id, mine) => (mine ? stagePic : arenaThumb(id, [info.theme]))) : [{ name: arena.name, url: stagePic }];
+    const stylePlate = theme ? plate('Style', drawn.theme ? '?' : theme.name, styleCells, 0) : null;
+    const stagePlate = arena ? plate('Stage', drawn.arena ? '?' : arena.name, stageCells, 1) : null;
     if (drawn.theme) stylePlate.classList.add('unknown');
     if (drawn.arena) stagePlate.classList.add('unknown');
     const f = this.frame({ name: 'versus', players, teams, me, bill, note: [bill.note, twist?.name ? `Twist: ${twist.name}` : ''].filter(Boolean).join(' · '), plates: [stylePlate, stagePlate], keep });
@@ -341,6 +376,11 @@ export const present = {
       const land = (pl, isDrawn, names, final, at, dur, done) => {
         if (!pl || !isDrawn) return at;
         const name = pl.querySelector('.pz-words b');
+        // the reel spins for exactly as long as the names run
+        later(at, () => {
+          pl.style.setProperty('--spin', `${dur}ms`);
+          pl.classList.add('spin');
+        });
         const pool = names.filter((n) => n !== final);
         for (let t = at, k = 0; t < at + dur && pool.length; t += 75, k++) {
           const n = pool[(k * 7 + 3) % pool.length];
@@ -358,8 +398,8 @@ export const present = {
         });
         return at + dur;
       };
-      const styleAt = land(stylePlate, drawn.theme, THEMES.map((t) => t.name), theme?.name, t0, long ? 800 : 250, () => r.classList.remove('masked'));
-      const stageAt = land(stagePlate, drawn.arena, ARENAS.map((x) => x.name), arena?.name, Math.max(t0, styleAt + 150), long ? 900 : 250, () => r.classList.add('staged'));
+      const styleAt = land(stylePlate, drawn.theme, THEMES.map((t) => t.name), theme?.name, t0, long ? 1000 : 300, () => r.classList.remove('masked'));
+      const stageAt = land(stagePlate, drawn.arena, ARENAS.map((x) => x.name), arena?.name, Math.max(t0, styleAt + 150), long ? 1100 : 300, () => r.classList.add('staged'));
       // who starts as the oni: a light runs along the line and stops on them
       const mark = (slot, text, cls) => {
         const c = cards.get(slot);
@@ -445,19 +485,37 @@ export const present = {
       kicker = `Round ${cup.round} of ${cup.rounds} · Team Bomb`;
       mood = team.win < 0 ? 'draw' : !mine ? 'info' : mine.team === team.win ? 'win' : 'lose';
       title = team.win < 0 ? 'Round drawn' : !mine ? `${TEAM_NAMES[team.win]} take it` : mine.team === team.win ? 'Round won' : 'Round lost';
-      board.push(tallyStrip(team.total || team.score, `This round ${team.score[0]} – ${team.score[1]}`));
+      // how it was won: the flags each side held at the buzzer, the bombs that went off on each, the rest
+      const held = team.held || [0, 0];
+      const blown = team.blown || [0, 0];
+      const during = [0, 1].map((t) => Math.max(0, team.score[t] - held[t] * FLAG_END_POINTS - blown[1 - t] * BOMB_POINTS));
+      const vs = (x) => `${x[0]} – ${x[1]}`;
+      board.push(facts([
+        ['flag', 'Flags held', vs(held), held[0] === held[1] ? '' : held[0] > held[1] ? 't0' : 't1'],
+        ['bomb', 'Bombs blown on', vs(blown), blown[0] === blown[1] ? '' : blown[0] < blown[1] ? 't0' : 't1'],
+        ['clock', 'In play', vs(during), during[0] === during[1] ? '' : during[0] > during[1] ? 't0' : 't1'],
+        ['star', 'Round', vs(team.score), team.win < 0 ? '' : `t${team.win}`],
+      ]));
+      board.push(tallyStrip(team.total || team.score, cup.score === 'rounds' ? 'Rounds won' : 'Points so far'));
     } else {
       const out = res.rows.find((x) => x.slot === cup.caught);
       kicker = `Knockout · round ${cup.round} of ${cup.rounds}`;
       mood = cup.caught === me ? 'lose' : through ? 'win' : 'info';
       title = cup.caught === me ? 'Knocked out' : through ? 'Through' : out ? `${out.name} is out` : 'Next round';
+      // how it went: who was caught, who was the oni longest, who made the most tags
+      const longest = res.rows.reduce((x, y) => (y.ms > x.ms ? y : x));
+      const tagger = res.rows.reduce((x, y) => (y.tags > x.tags ? y : x));
+      const list = [];
+      if (out) list.push(['oni', 'Oni at the buzzer', out.name, 'bad']);
+      if (longest.ms > 0) list.push(['clock', 'Longest as the oni', `${longest.name} · ${(longest.ms / 1000).toFixed(1)}s`, '']);
+      if (tagger.tags > 0) list.push(['target', 'Most tags', `${tagger.name} · ${tagger.tags}`, '']);
+      if (list.length) board.push(facts(list));
       const strip = el('div', 'pz-tally');
       strip.append(el('b', 'n', String(stillIn.length)), el('span', 'what', stillIn.length === 2 ? 'left: the Final is next' : stillIn.length === 3 ? 'left: the semi-final is next' : 'left'));
-      if (out) strip.append(el('small', '', `${out.name} was the oni at the buzzer`));
       board.push(strip);
     }
     const unknown = (label, i) => {
-      const p = plate(label, '?', null, i);
+      const p = plate(label, '?', [{ name: '?' }], i);
       p.classList.add('unknown');
       return p;
     };

@@ -560,7 +560,8 @@ function finishRound(room, reason) {
     loser, // slot of whoever was "it" at the end, or -1
     // ms: time as it (team battle: with a bomb in hand); tags: tags made (bombs passed); boom: a bomb went off on them; caps: flags taken
     rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: gained[r.slot] || 0, team: r.team, boom: !!r.boom, caps: r.caps || 0, bot: g.bots.has(r.slot) })),
-    team: team ? { score, win, total: null } : null, // team battle: this round's score, who won it (-1: a draw)
+    // team battle: this round's score, who won it (-1: a draw) - and how: flags each side held at the buzzer, bombs that went off on each side
+    team: team ? { score, win, total: null, held: [0, 1].map((t) => g.sim.flags.filter((f) => f.owner === t).length), blown: [0, 1].map((t) => rows.filter((r) => r.team === t && r.boom).length) } : null,
     cup: null,
   };
   if (cup) {
