@@ -10,7 +10,7 @@
 //   demos.start()       run the ones that are on screen (about 30 frames a second)
 //   demos.stop()        stop everything
 
-import { PW, PH, TICK_MS, MAX_PLAYERS, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_POINTS, BEAT_TICKS, FLAG_CAP_TICKS, TICK_RATE } from '/shared/config.js';
+import { PW, PH, TICK_MS, MAX_PLAYERS, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, IN_USE, ITEM_KINDS, ITEM_INFO, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_POINTS, FLAG_END_POINTS, BEAT_TICKS, FLAG_CAP_TICKS, TICK_RATE } from '/shared/config.js';
 import { Sim } from '/shared/sim.js';
 import { makeBot, botThink } from '/shared/bots.js';
 import { Renderer } from './renderer.js';
@@ -534,7 +534,7 @@ const SCENES = {
       d.clock = 9;
       yield* until(0, () => sim.flags[0].owner === 0, FLAG_CAP_TICKS + 60);
       sim.beat = BEAT_TICKS - 70; // (the next beat is not far off)
-      d.say(`...then it is yours: every ${Math.round(BEAT_TICKS / TICK_RATE)} seconds it gives ${TEAM_NAMES[0]} a point, and a bomb costs its side one`);
+      d.say(`...then it is yours. Keep it: at the buzzer it is worth ${FLAG_END_POINTS}. (Until then, a point every ${Math.round(BEAT_TICKS / TICK_RATE)} seconds)`);
       yield* until(0, () => sim.score[0] > 0, 120);
       yield* hold(0, 60);
       d.clock = 3;
@@ -546,7 +546,7 @@ const SCENES = {
       d.clock = 0;
       d.ai[1] = null;
       sim.finish(); // the buzzer
-      d.say(`Time! The bomb goes off on ${TEAM_NAMES[1]}, and costs them ${BOMB_POINTS}`);
+      d.say(`Time! ${FLAG_END_POINTS} for your flag - and their bomb goes off: ${BOMB_POINTS} more for ${TEAM_NAMES[0]}`);
       yield* hold(0, 190);
     },
   },

@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { io } from 'socket.io-client';
-import { IN_LEFT, IN_RIGHT, IN_JUMP, TICK_RATE, BEAT_TICKS } from '../shared/config.js';
+import { IN_LEFT, IN_RIGHT, IN_JUMP, TICK_RATE, BEAT_TICKS, BOMB_POINTS, FLAG_END_POINTS } from '../shared/config.js';
 import { STATE_LEN, stepPlayer, unpackState, packState } from '../shared/physics.js';
 import * as Arenas from '../shared/arenas.js';
 const { arenaById } = Arenas;
@@ -560,7 +560,7 @@ try {
     // the bombs went off on whoever held them when the clock stopped; a score is never below nothing, and three flags can only pay so much
     const blown = e.rows.filter((r) => r.boom);
     assert.equal(blown.length, 2, 'two bombs, two explosions');
-    for (const t of [0, 1]) assert.ok(e.team.score[t] >= 0 && e.team.score[t] <= 3 * Math.ceil((SHORT * TICK_RATE) / BEAT_TICKS), `score ${e.team.score}`);
+    for (const t of [0, 1]) assert.ok(e.team.score[t] >= BOMB_POINTS * blown.filter((r) => r.team === 1 - t).length && e.team.score[t] <= 3 * (FLAG_END_POINTS + Math.ceil((SHORT * TICK_RATE) / BEAT_TICKS)) + 2 * BOMB_POINTS, `score ${e.team.score}`);
     assert.ok(e.rows.every((r) => typeof r.caps === 'number'));
     const win = e.team.score[0] === e.team.score[1] ? -1 : e.team.score[0] > e.team.score[1] ? 0 : 1;
     assert.equal(e.team.win, win);

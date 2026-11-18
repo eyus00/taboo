@@ -43,6 +43,7 @@ import {
   FLAG_CAP_TICKS,
   FLAG_CROWD,
   FLAG_POINTS,
+  FLAG_END_POINTS,
   BOMB_COST,
   BEAT_TICKS,
   SAFE_BONUS,
@@ -547,23 +548,29 @@ export class Sim {
     }
   }
 
-  // The buzzer. In a team battle every bomb goes off on whoever holds it and costs
-  // their own team points (never below nothing). After this nothing counts: no tags, no flags.
+  // The buzzer, and what the round is really about: every flag pays the team whose
+  // colour it is, and every bomb goes off on whoever holds it and scores for the OTHER
+  // team. After this nothing counts: no tags, no flags.
   finish() {
     if (this.over) return;
     this.over = true;
     if (!this.teams) return;
+    this.flags.forEach((f, i) => {
+      if (f.owner < 0) return;
+      this.score[f.owner] += FLAG_END_POINTS;
+      this.events.push({ type: 'flag', what: 'end', team: f.owner, i, n: FLAG_END_POINTS });
+    });
     for (const p of this.players) {
       if (!p || !p.bomb) continue;
-      const n = Math.min(BOMB_POINTS, this.score[p.team]);
-      this.score[p.team] -= n;
+      const to = 1 - p.team;
+      this.score[to] += BOMB_POINTS;
       p.bomb = false;
       p.boom = true;
       p.s.stun = BOMB_STUN_TICKS;
       p.s.vy = -640;
       p.s.ground = false;
-      // team: the side that pays for it
-      this.events.push({ type: 'boom', slot: p.slot, team: p.team, n, x: p.s.x + PW / 2, y: p.s.y + PH / 2 });
+      // team: whose bomb it was; to: the side that scores; n: how much
+      this.events.push({ type: 'boom', slot: p.slot, team: p.team, to, n: BOMB_POINTS, x: p.s.x + PW / 2, y: p.s.y + PH / 2 });
     }
   }
 

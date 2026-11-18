@@ -30,7 +30,7 @@
 //   play.finish() / play.stop() / play.hold(true|false)
 //   play.nameOf(slot), play.colorOf(slot), play.portraitOf(slot), play.mySlot(), play.el.spin
 
-import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, ITEM_ARM_TICKS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, BEAT_TICKS, FLAG_LETTERS, PW, PH, THEMES } from '/shared/config.js';
+import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, ITEM_ARM_TICKS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, FLAG_END_POINTS, BEAT_TICKS, FLAG_LETTERS, PW, PH, THEMES } from '/shared/config.js';
 import { arenasFor, arenaById } from '/shared/arenas.js';
 import { Renderer } from './renderer.js';
 import { Input } from './input.js';
@@ -579,8 +579,9 @@ export const play = {
       list.append(li);
     };
     if (team) {
-      line('flag', `<b>Hold the flags</b>: +${FLAG_POINTS} each, every ${Math.round(BEAT_TICKS / TICK_RATE)} s`);
-      line('bomb', `<b>Pass your bomb</b> on: it costs ${BOMB_COST} every ${Math.round(BEAT_TICKS / TICK_RATE)} s, and ${BOMB_POINTS} at the buzzer`);
+      line('flag', `<b>Hold the flags at the buzzer</b>: +${FLAG_END_POINTS} each`);
+      line('bomb', `<b>A bomb at the buzzer</b> gives the others ${BOMB_POINTS}`);
+      line('clock', `Meanwhile, every ${Math.round(BEAT_TICKS / TICK_RATE)} s: +${FLAG_POINTS} a flag, \u2212${BOMB_COST} a bomb`);
     } else if (info.mode === 'time') line('clock', '<b>Least time as the oni</b> wins');
     else if (info.cup?.ko) {
       line('it', info.cup.left === 2 ? '<b>The oni at the buzzer loses</b> the final' : '<b>The oni at the buzzer is out</b> of the tournament');
@@ -1111,9 +1112,10 @@ export const play = {
     } else if (type === 'boom') {
       R.boomFx(a);
       sfx.play('boom');
-      this.banner(a.slot === me ? `BOOM! Your bomb costs ${TEAM_NAMES[a.team]} ${BOMB_POINTS} points` : `BOOM! ${this.nameOf(a.slot)} blows up: ${TEAM_NAMES[a.team]} lose ${BOMB_POINTS} points`, this.game?.teamOf?.(me) === a.team);
-      if (a.n) R.pointFx?.(a.x, a.y - 50, `\u2212${a.n}`, '#ff5a3c', true);
-      this.scorePulse(a.team, false);
+      const to = a.to ?? 1 - a.team;
+      this.banner(a.slot === me ? `BOOM! Your bomb gives ${TEAM_NAMES[to]} ${a.n} points` : `BOOM! ${this.nameOf(a.slot)} blows up: ${a.n} points to ${TEAM_NAMES[to]}`, this.game?.teamOf?.(me) === a.team);
+      if (a.n) R.pointFx?.(a.x, a.y - 50, `+${a.n}`, TEAM_COLORS[to], true);
+      this.scorePulse(to, true);
     } else if (type === 'cost') {
       // the beat: a bomb in hand takes a point off its side (a = { slot, team, n })
       const at = R.last?.[a.slot];
@@ -1123,7 +1125,7 @@ export const play = {
     } else if (type === 'it') {
       if (team) this.banner(a.to === me ? 'A bomb has been handed to you!' : `${this.nameOf(a.to)} has a bomb now`, a.to === me);
     } else if (type === 'flag') {
-      // a = { what: take | lose | pay (the beat: a point for the side whose colour it is), team, i }
+      // a = { what: take | lose | pay (the beat: a point for the side whose colour it is) | end (the buzzer: the big one), team, i }
       const mine = this.game?.teamOf?.(me) === a.team;
       const letter = FLAG_LETTERS[a.i];
       if (a.what === 'take') {
@@ -1131,7 +1133,13 @@ export const play = {
         sfx.play(mine ? 'pick' : 'block', 0.9);
         R.flagFx?.(a.i, a.team);
       } else if (a.what === 'lose') this.banner(`Flag ${letter} is up for grabs`);
-      else if (a.what === 'pay') {
+      else if (a.what === 'end') {
+        // the buzzer: the flag pays the side that holds it, in full
+        const b = R.arena?.bases[a.i];
+        if (b) R.pointFx?.(b[0], b[1] - 130, `+${a.n}`, TEAM_COLORS[a.team], true);
+        R.flagFx?.(a.i, a.team);
+        this.scorePulse(a.team, true);
+      } else if (a.what === 'pay') {
         const b = R.arena?.bases[a.i];
         if (b) R.pointFx?.(b[0], b[1] - 130, `+${a.n || FLAG_POINTS}`, TEAM_COLORS[a.team]);
         R.flagFx?.(a.i, a.team, true);

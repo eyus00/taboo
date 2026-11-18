@@ -135,14 +135,16 @@ export const DASH_SPEED = 1200; // ...at this speed, dead straight the way you f
 // go off at the buzzer.
 // Flags: a flag is a spot on the map. Stand in its ring and it fills with your
 // colour; full, it is yours until the other side stands there long enough to turn it.
-// Points: the round has a beat. On every beat each flag gives the team whose colour
-// it is a point, and each bomb takes one off the team holding it - so sitting on a
-// bomb until the last second costs as much as passing it late saves. A score never
-// goes below nothing.
-export const BEAT_TICKS = 240; // a beat every 4 s
+// Points: what counts is the buzzer. A flag in your colour when the clock stops is
+// worth FLAG_END_POINTS to your team, and every bomb that goes off gives the OTHER
+// team BOMB_POINTS. While the round runs there is only a small beat, to keep everyone
+// at it: on every beat each flag gives its team a point and each bomb takes one off
+// the team holding it (never below nothing).
+export const BEAT_TICKS = 360; // a beat every 6 s
 export const FLAG_POINTS = 1; // per flag in your colour, per beat
 export const BOMB_COST = 1; // per bomb in your hands, per beat
-export const BOMB_POINTS = 3; // and off its own team's score for each bomb that goes off at the buzzer
+export const FLAG_END_POINTS = 20; // per flag in your colour at the buzzer
+export const BOMB_POINTS = 20; // to the other team, for each bomb that goes off at the buzzer
 export const BOMB_STUN_TICKS = 80;
 export const BOMB_END_TICKS = 84; // the moment after the buzzer in which the bombs go off, before the result
 export const FLAG_HALF = 96; // half the width of a flag's ring

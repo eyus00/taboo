@@ -8,7 +8,7 @@
 // driven with the keyboard alone (arrows + Enter, Esc to go back, a letter or
 // number for most things).
 
-import { MODES, DURATIONS, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, BEAT_TICKS, CUP_SCORES, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, COUNTDOWN_MS, INTRO_MS, VS_MS } from '/shared/config.js';
+import { MODES, DURATIONS, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, FLAG_END_POINTS, BEAT_TICKS, CUP_SCORES, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, COUNTDOWN_MS, INTRO_MS, VS_MS } from '/shared/config.js';
 import { ARENAS } from '/shared/arenas.js';
 import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
@@ -511,7 +511,7 @@ $('btn-help-back').addEventListener('click', closeHelp);
 // numbers in the rules come from the game's own settings
 const orList = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}` : String(items[0]));
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-for (const [key, value] of Object.entries({ bomb: plural(BOMB_POINTS, 'point'), beat: String(Math.round(BEAT_TICKS / TICK_RATE)), flagpay: plural(FLAG_POINTS, 'point'), bombcost: plural(BOMB_COST, 'point'), flagtime: (FLAG_CAP_TICKS / TICK_RATE).toFixed(1).replace('.0', ''), rounds: orList(CUP_ROUNDS), teams: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}` })) {
+for (const [key, value] of Object.entries({ bomb: plural(BOMB_POINTS, 'point'), flagend: plural(FLAG_END_POINTS, 'point'), beat: String(Math.round(BEAT_TICKS / TICK_RATE)), flagpay: plural(FLAG_POINTS, 'point'), bombcost: plural(BOMB_COST, 'point'), flagtime: (FLAG_CAP_TICKS / TICK_RATE).toFixed(1).replace('.0', ''), rounds: orList(CUP_ROUNDS), teams: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}` })) {
   for (const e of document.querySelectorAll(`[data-n="${key}"]`)) e.textContent = value;
 }
 for (const k of ITEM_KINDS) {
@@ -1338,7 +1338,7 @@ const GAME_LINE = { potato: "Don't be the oni when the clock runs out", time: 'S
 const HOW_TO_WIN = {
   potato: ['Touch someone to pass the oni on', "Don't be the oni when the clock stops"],
   time: ['Touch someone to pass the oni on', 'Every second you are the oni is counted', 'The least time wins'],
-  team: ["Stand in a flag's ring to turn it your colour", 'Stick your bomb on an enemy by touching them', `Every ${Math.round(BEAT_TICKS / TICK_RATE)} s: +${FLAG_POINTS} for each flag, \u2212${BOMB_COST} for each bomb in hand`],
+  team: ["Stand in a flag's ring to turn it your colour", 'Stick your bomb on an enemy by touching them', `At the buzzer: +${FLAG_END_POINTS} for each flag, and each bomb gives the others ${BOMB_POINTS}`],
   ko: ['Whoever is the oni at the buzzer is out', 'Everyone else plays the next round', 'The last one standing wins'],
 };
 function paintGuestCard() {
@@ -1566,7 +1566,7 @@ function paintCards() {
 const ABOUT_MODE = {
   potato: 'One player is the oni. Touch someone and it passes to them. Whoever is the oni when the clock runs out loses; everyone else wins.',
   time: 'The oni changes hands the same way, but every second you spend as the oni is counted. When time is up, the least time wins.',
-  team: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}. Three flags stand on every stage, one at each end and one high in the middle: stand in a flag's ring to turn it your colour. Bombs are dealt out at the start; stick yours on an enemy by touching them. Every ${Math.round(BEAT_TICKS / TICK_RATE)} seconds each flag gives the side whose colour it is ${plural(FLAG_POINTS, 'point')}, and each bomb takes ${plural(BOMB_COST, 'point')} off the side holding it. At the buzzer every bomb goes off and costs its side ${BOMB_POINTS} more. A score never goes below nothing.`,
+  team: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}. Three flags stand on every stage, one at each end and one high in the middle: stand in a flag's ring to turn it your colour. Bombs are dealt out at the start; stick yours on an enemy by touching them. What counts is the buzzer: every flag gives the side whose colour it is ${FLAG_END_POINTS}, and every bomb goes off and gives the other side ${BOMB_POINTS}. Until then only a little moves, to keep everyone at it: every ${Math.round(BEAT_TICKS / TICK_RATE)} seconds a flag gives its side ${plural(FLAG_POINTS, 'point')} and a bomb takes ${plural(BOMB_COST, 'point')} off the side holding it.`,
 };
 function aboutRow(icon, name, text) {
   const row = el('div', 'info-row');

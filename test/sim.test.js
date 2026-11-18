@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   FLAG_LETTERS, PW, PH, IN_LEFT, IN_RIGHT, IN_JUMP, IN_DOWN, MOVE_SPEED, IMMUNE_TICKS, STUN_TICKS, RESPAWN_TICKS,
   SPEED_BUFF_MUL, TOUCH, AIR_JUMPS, twistById, IN_USE, ITEM_KINDS, BOX_FIRST_TICKS, ITEM_ARM_TICKS, STORM_SPEED, IT_SPEED_MUL,
-  BLAST_RADIUS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, BEAT_TICKS, FLAG_CAP_TICKS, FLAG_HALF, FLAG_UP, LAUNCH_VX, LAUNCH_VY,
+  BLAST_RADIUS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, FLAG_END_POINTS, BEAT_TICKS, FLAG_CAP_TICKS, FLAG_HALF, FLAG_UP, LAUNCH_VX, LAUNCH_VY,
   MAX_PLAYERS, PLAYER_COLORS, TEAM_SLOTS, ITEM_INFO, BODY_SCALE, BOX_EVERY_TICKS, QUAKE_STUN_TICKS, WARP_GAP, WARP_DROP, ECLIPSE_TICKS, DASH_TICKS, DASH_SPEED, JUMP_V, AIR_JUMP_V, JUMP_BUFFER_TICKS,
   GHOST_TICKS, GHOST_NEAR, STAR_TICKS, PORTAL_SETTLE_TICKS, TEAM_NAMES, THEMES,
 } from '../shared/config.js';
@@ -893,22 +893,23 @@ test('team battle: a bomb for every two players, passed only to enemies with fre
   assert.ok(fast.x > slow.x + 10);
   // nothing goes off during the round, however long it lasts; time with a bomb is counted
   sim.events.length = 0;
-  for (let i = 0; i < 1200; i++) sim.step([]);
+  for (let i = 0; i < 4 * BEAT_TICKS + 10; i++) sim.step([]);
   assert.ok(!sim.events.some((e) => e.type === 'boom'));
   assert.deepEqual(sim.score, [0, 0], 'a bomb costs its side a point on every beat, but there is nothing to take');
   assert.ok(sim.events.filter((e) => e.type === 'cost').length >= 8);
+  sim.flags.forEach((f) => (f.owner = -1));
   assert.ok(p[2].itTicks > 1200 && p[3].itTicks >= 1200 && p[1].itTicks === 0);
-  // the buzzer: both bombs are on team 1, and each takes points off its own side
+  // the buzzer: both bombs are on team 1, and each scores for the other side
   sim.score[0] = 7;
   sim.score[1] = 10;
   sim.finish();
   assert.ok(sim.over);
-  assert.deepEqual(sim.score, [7, 10 - 2 * BOMB_POINTS]);
+  assert.deepEqual(sim.score, [7 + 2 * BOMB_POINTS, 10]);
   assert.deepEqual(sim.events.filter((e) => e.type === 'boom').map((e) => [e.slot, e.team]), [[2, 1], [3, 1]]);
   assert.ok(p[2].boom && p[3].boom && !p[0].boom && p[2].s.stun > 0);
   assert.deepEqual(sim.bombs(), []);
   sim.finish();
-  assert.deepEqual(sim.score, [7, 10 - 2 * BOMB_POINTS], 'only once');
+  assert.deepEqual(sim.score, [7 + 2 * BOMB_POINTS, 10], 'only once');
   const res = standings(sim, ['A', 'B', 'C', 'D'], 'team');
   assert.equal(res.win, 0);
   assert.deepEqual(res.winners.sort(), [0, 1]);
@@ -1001,7 +1002,7 @@ test('team battle: a flag fills with the colour of whoever stands in its ring, p
     assert.deepEqual(end.events.map((e) => [e.type, e.n]), [['flag', FLAG_POINTS], ['cost', BOMB_COST]]);
     end.score[0] = 1;
     end.finish();
-    assert.deepEqual(end.score, [0, 0], 'the bomb at the buzzer: never below nothing');
+    assert.deepEqual(end.score, [1 + FLAG_END_POINTS, BOMB_POINTS], 'the buzzer: the flag pays its side in full, the bomb scores for the others');
   }
   // two together fill a flag twice as fast
   stand(p[0], fb, -30);
