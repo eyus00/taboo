@@ -8,7 +8,7 @@
 // driven with the keyboard alone (arrows + Enter, Esc to go back, a letter or
 // number for most things).
 
-import { MODES, DURATIONS, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, FLAG_END_POINTS, BEAT_TICKS, CUP_SCORES, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO, COUNTDOWN_MS } from '/shared/config.js';
+import { MODES, DURATIONS, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, BOMB_COST, FLAG_POINTS, FLAG_END_POINTS, BEAT_TICKS, CUP_SCORES, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO } from '/shared/config.js';
 import { ARENAS } from '/shared/arenas.js';
 import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
@@ -55,11 +55,11 @@ const socket = io({ tryAllTransports: true });
 play.init({
   socket,
   isTouch,
-  // a round is starting: show the match, and over it - in the time the server leaves before
-  // the 3-2-1 - the opening: the players face to face, the stage, the style, who starts as the oni
+  // a round is starting: show the match, and over it - until GO - the opening: the players
+  // face to face, the draw (style, stage, who starts as the oni) and the 3-2-1
   onStart(info) {
     show('game');
-    const spare = (Number(info.countdown) || 0) - COUNTDOWN_MS - 250;
+    const spare = (Number(info.countdown) || 0) - 60; // (all the way to GO: the 3-2-1 is counted in the scene)
     if (!info.playing) present.versus({ ...info, practice: play.kind === 'practice' }, { me: play.mySlot(), ms: spare });
   },
   onEnd: (res) => showResults(res),

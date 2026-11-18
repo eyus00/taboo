@@ -27,7 +27,7 @@
 // covers the screen the match behind it is not drawn at all (onCover).
 
 import { MODES, THEMES, TEAM_NAMES, TEAM_COLORS, twistById } from '/shared/config.js';
-import { arenaById } from '/shared/arenas.js';
+import { arenaById, ARENAS } from '/shared/arenas.js';
 import { scenePreview, styleStill, styleReady } from './art.js';
 
 const el = (tag, cls, text) => {
@@ -245,20 +245,37 @@ export const present = {
       });
       emblem.textContent = 'VS';
     }
-    // the draw, in the same picture: where, and in which style (painted now, before anything moves)
+    // The draw, in the same picture. Until it lands nothing is known: a plate says "?", the
+    // players are blank tokens in their colours, the ground is plain. Then the style is drawn
+    // (the players turn into that style's characters) and the stage (it shows through the
+    // ground). What the host fixed beforehand is simply there from the start.
     const foot = el('div', 'pz-foot');
     const arena = arenaById(info.arena);
     const theme = THEMES.find((t) => t.id === info.theme);
     let stagePic = null;
     let stylePic = null;
+    let groundPic = null;
     try {
       if (styleReady(info.theme)) {
         stagePic = scenePreview(info.arena, info.theme, 240, 135);
         stylePic = styleStill(info.theme, 240, 135);
+        groundPic = scenePreview(info.arena, info.theme, 480, 270);
       }
     } catch {}
-    if (arena) foot.append(plate(info.random?.arena ? 'Stage · drawn' : 'Stage', arena.name, stagePic, 0));
-    if (theme) foot.append(plate(info.random?.theme ? 'Style · drawn' : 'Style', theme.name, stylePic, 1));
+    const drawn = { theme: !!info.random?.theme && !!theme, arena: !!info.random?.arena && !!arena };
+    const stylePlate = theme ? plate('Style', drawn.theme ? '?' : theme.name, stylePic, 0) : null;
+    const stagePlate = arena ? plate('Stage', drawn.arena ? '?' : arena.name, stagePic, 1) : null;
+    if (stylePlate) foot.append(stylePlate);
+    if (stagePlate) foot.append(stagePlate);
+    if (drawn.theme) {
+      stylePlate.classList.add('unknown');
+      r.classList.add('masked');
+    }
+    if (drawn.arena) stagePlate.classList.add('unknown');
+    const ground = el('i', 'pz-ground');
+    if (groundPic) ground.style.backgroundImage = `url("${groundPic}")`;
+    r.insertBefore(ground, head);
+    if (!drawn.arena) r.classList.add('staged');
     r.append(foot);
     r.hidden = false;
     opts.onCover?.(true);
@@ -266,17 +283,41 @@ export const present = {
     // Now wait for the page to go quiet (the match is being set up behind us), then let it move.
     const go = () => {
       if (my !== token) return;
-      const T = deadline - performance.now();
-      if (T < 1200) return this.clear();
-      const full = T >= 3400; // time for the light to run along the players
+      const T = deadline - performance.now(); // until GO
+      if (T < 1500) return this.clear();
+      const counted = T >= 4200; // the 3-2-1 is shown in here too
+      const free = T - (counted ? 3100 : 400); // what there is before the count
+      const long = free >= 4300;
       r.classList.remove('hold');
       const hit = 620;
       sound(40, 'whoosh');
       sound(hit, 'slam', bill.grade === 'final' ? 1 : 0.8);
       if (bill.grade) sound(hit + 240, 'drum');
       later(hit, () => sparks(stage, bill.grade === 'final' ? 22 : 14, bill.grade === 'final' ? [GOLD, '#fff', a, b] : ['#fff', a, b]));
-      sound(1150, 'click');
-      sound(1400, 'click');
+      // a plate runs through names, then lands on the one that was drawn
+      const land = (pl, isDrawn, names, final, at, dur, done) => {
+        if (!pl) return at;
+        if (!isDrawn) return at;
+        const name = pl.querySelector('.pz-words b');
+        const pool = names.filter((n) => n !== final);
+        for (let t = at, k = 0; t < at + dur && pool.length; t += 75, k++) {
+          const n = pool[(k * 7 + 3) % pool.length];
+          later(t, () => {
+            name.textContent = n;
+            if (k % 2 === 0) opts.sfx?.play('tick', 0.5);
+          });
+        }
+        later(at + dur, () => {
+          name.textContent = final;
+          pl.classList.remove('unknown');
+          pl.classList.add('landed');
+          opts.sfx?.play('pick', 0.8);
+          done();
+        });
+        return at + dur;
+      };
+      const styleAt = land(stylePlate, drawn.theme, THEMES.map((t) => t.name), theme?.name, 1100, long ? 800 : 250, () => r.classList.remove('masked'));
+      const stageAt = land(stagePlate, drawn.arena, ARENAS.map((x) => x.name), arena?.name, Math.max(1100, styleAt + 150), long ? 900 : 250, () => r.classList.add('staged'));
       // who starts as the oni: a light runs along the line and stops on them
       const mark = (slot, text, cls) => {
         const c = cards.get(slot);
@@ -284,17 +325,17 @@ export const present = {
         c.classList.add('picked');
         c.append(el('b', `pz-mark ${cls}`, text));
       };
-      const start = full ? 1750 : Math.min(1500, T * 0.5);
+      const start = Math.min(Math.max(1500, stageAt + 350), free - 300);
       if (teams) {
-        (info.bombs || []).forEach((slot, i) => later(start + i * 200, () => {
+        (info.bombs || []).forEach((slot, i) => later(start + i * 180, () => {
           mark(slot, 'Bomb', 'bomb');
           opts.sfx?.play('tick');
         }));
       } else if (info.it >= 0 && cards.has(info.it)) {
         const order = [...cards.keys()];
         const stop = order.indexOf(info.it);
-        if (full && order.length > 1) {
-          const steps = order.length * 2 + stop; // twice round, then on to them
+        const steps = order.length * (order.length > 5 ? 1 : 2) + stop; // round the line, then on to them
+        if (order.length > 1 && free - start >= steps * 120 + 200) {
           let at = start;
           for (let k = 0; k <= steps; k++) {
             const slot = order[k % order.length];
@@ -315,10 +356,21 @@ export const present = {
           opts.sfx?.play('tagged');
         });
       }
-      later(T - 340, () => {
+      // 3 - 2 - 1, big, where VS stood (the match makes the sounds for it)
+      if (counted) {
+        for (const n of [3, 2, 1]) later(T - n * 1000, () => {
+          emblem.className = layout === 'ffa' ? 'pz-vs wide count' : 'pz-vs count'; // (the same box VS had: nothing shifts)
+          emblem.textContent = String(n);
+          emblem.style.animation = 'none';
+          void emblem.offsetWidth;
+          emblem.style.animation = '';
+        });
+      }
+      const leave = counted ? 240 : 340;
+      later(T - leave, () => {
         r.classList.add('out');
         opts.onCover?.(false);
-        opts.sfx?.play('whoosh', 0.6);
+        if (!counted) opts.sfx?.play('whoosh', 0.6);
       });
       later(T, () => this.clear());
     };
