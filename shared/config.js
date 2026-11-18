@@ -133,7 +133,7 @@ export const DASH_SPEED = 1200; // ...at this speed, dead straight the way you f
 // hands are free (nobody carries two). The bombs burn for the whole round and
 // go off at the buzzer: every bomb scores for the team that is NOT holding it.
 // Flags: a flag is a spot on the map. Stand in its ring and it fills with your
-// colour; full, it is yours, and it pays your team a point every few seconds
+// colour; full, it is yours, and it pays your team at the buzzer
 // until the other side stands there long enough to turn it.
 export const BOMB_POINTS = 5; // off its own team's score, for each bomb that goes off at the buzzer
 export const BOMB_STUN_TICKS = 80;
@@ -142,9 +142,7 @@ export const FLAG_HALF = 96; // half the width of a flag's ring
 export const FLAG_UP = 120; // and how far above the ground it reaches (a hop on the spot still counts)
 export const FLAG_CAP_TICKS = 150; // standing there alone: 2.5 s to take a free flag (twice that to turn an enemy one)
 export const FLAG_CROWD = 2; // more of you fill it faster, up to this many times as fast
-export const FLAG_PAY_TICKS = 300; // a flag in your colour pays every 5 s...
-export const FLAG_POINTS = 1; // ...this much
-export const FLAG_END_POINTS = 5; // and a flag in your colour at the buzzer is worth this on top
+export const FLAG_END_POINTS = 5; // a flag in your colour at the buzzer is worth this (it pays nothing while the round runs)
 export const TEAM_NAMES = ['Tigers', 'Dragons']; // (the warm side, the cool side; plural: "Tigers hold...", "Dragons win")
 export const FLAG_LETTERS = 'ABC'; // the flags by name, in the order they stand on the map: A at the warm side's end, B high in the middle, C at the cool side's end
 export const TEAM_COLORS = ['#e2543f', '#3f7fe2'];

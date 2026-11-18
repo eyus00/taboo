@@ -42,8 +42,6 @@ import {
   FLAG_UP,
   FLAG_CAP_TICKS,
   FLAG_CROWD,
-  FLAG_PAY_TICKS,
-  FLAG_POINTS,
   FLAG_END_POINTS,
   SAFE_BONUS,
 } from './config.js';
@@ -492,7 +490,7 @@ export class Sim {
   // --- team battle -----------------------------------------------------------------
   // Flags: whichever side has more players standing in a flag's ring fills it
   // with its colour (equal numbers: nothing moves). Full, the flag is theirs
-  // and pays them a point every few seconds. Emptied back to nothing by the
+  // and is worth points to them if they still hold it at the buzzer. Emptied back to nothing by the
   // other side, it is nobody's again.
   updateFlags() {
     const CAP = FLAG_CAP_TICKS;
@@ -516,22 +514,16 @@ export class Sim {
       const full = f.m <= -CAP ? 0 : f.m >= CAP ? 1 : -1;
       if (full >= 0 && full !== f.owner) {
         f.owner = full;
-        f.pay = FLAG_PAY_TICKS;
         for (const o of there) if (o.team === full) o.caps++;
         this.events.push({ type: 'flag', what: 'take', team: full, i });
       } else if (f.owner >= 0 && (f.owner === 0 ? f.m >= 0 : f.m <= 0)) {
         this.events.push({ type: 'flag', what: 'lose', team: f.owner, i });
         f.owner = -1;
       }
-      if (f.owner >= 0 && --f.pay <= 0) {
-        f.pay = FLAG_PAY_TICKS;
-        this.score[f.owner] += FLAG_POINTS;
-        this.events.push({ type: 'flag', what: 'pay', team: f.owner, i });
-      }
     });
   }
 
-  // The buzzer. In a team battle every flag pays its side once more, and every bomb
+  // The buzzer. In a team battle every flag pays the side that holds it, and every bomb
   // goes off on whoever holds it and costs their own team points (a score can go
   // below nothing). After this nothing counts: no tags, no flags.
   finish() {

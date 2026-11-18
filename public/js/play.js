@@ -30,7 +30,7 @@
 //   play.finish() / play.stop() / play.hold(true|false)
 //   play.nameOf(slot), play.colorOf(slot), play.portraitOf(slot), play.mySlot(), play.el.spin
 
-import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, ITEM_ARM_TICKS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_POINTS, FLAG_END_POINTS, FLAG_LETTERS, PW, PH, THEMES } from '/shared/config.js';
+import { MODES, TICK_RATE, COUNTDOWN_MS, ITEM_KINDS, ITEM_INFO, ITEM_ARM_TICKS, TEAM_NAMES, TEAM_COLORS, BOMB_POINTS, FLAG_END_POINTS, FLAG_LETTERS, PW, PH, THEMES } from '/shared/config.js';
 import { arenasFor, arenaById } from '/shared/arenas.js';
 import { Renderer } from './renderer.js';
 import { Input } from './input.js';
@@ -579,7 +579,7 @@ export const play = {
       list.append(li);
     };
     if (team) {
-      line('flag', `<b>Hold the flags</b>: points all round, +${FLAG_END_POINTS} each at the buzzer`);
+      line('flag', `<b>Hold the flags</b>: +${FLAG_END_POINTS} each at the buzzer`);
       line('bomb', `<b>Pass your bomb</b> on: at the buzzer it costs ${BOMB_POINTS}`);
     } else if (info.mode === 'time') line('clock', '<b>Least time as the oni</b> wins');
     else if (info.cup?.ko) {
@@ -1107,7 +1107,7 @@ export const play = {
     } else if (type === 'it') {
       if (team) this.banner(a.to === me ? 'A bomb has been handed to you!' : `${this.nameOf(a.to)} has a bomb now`, a.to === me);
     } else if (type === 'flag') {
-      // a = { what: take | lose | pay | end (held at the buzzer), team, i }
+      // a = { what: take | lose | end (held at the buzzer), team, i }
       const mine = this.game?.teamOf?.(me) === a.team;
       const letter = FLAG_LETTERS[a.i];
       if (a.what === 'take') {
@@ -1115,7 +1115,6 @@ export const play = {
         sfx.play(mine ? 'pick' : 'block', 0.9);
         R.flagFx?.(a.i, a.team);
       } else if (a.what === 'lose') this.banner(`Flag ${letter} is up for grabs`);
-      else if (a.what === 'pay') R.flagFx?.(a.i, a.team, `+${FLAG_POINTS}`);
       else if (a.what === 'end') {
         R.flagFx?.(a.i, a.team);
         this.banner(`Flag ${letter} is ${TEAM_NAMES[a.team]}' at the buzzer: +${FLAG_END_POINTS}`, !mine && me >= 0);

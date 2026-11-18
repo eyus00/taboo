@@ -708,15 +708,11 @@ export class Renderer {
     return best;
   }
 
-  // a flag changed hands (a burst in the new colour), or paid its team a point (a few sparks)
-  flagFx(i, team, pay) {
+  // a flag changed hands, or paid at the buzzer: a burst in its colour
+  flagFx(i, team) {
     const b = this.arena?.bases[i];
     if (!b) return;
     const color = TEAM_COLORS[team];
-    if (pay) {
-      for (let k = 0; k < 5; k++) this.emit({ x: b[0] + (Math.random() - 0.5) * 30, y: b[1] - 66, vx: (Math.random() - 0.5) * 50, vy: -70 - Math.random() * 70, g: -30, life: 0.7 + Math.random() * 0.3, size: 3 + Math.random() * 2, color });
-      return;
-    }
     for (let k = 0; k < 2; k++) this.emit({ x: b[0], y: b[1] - 40, life: 0.5 + k * 0.12, size: 14, grow: 300 - k * 90, shape: 'ring', width: 7 - k * 3, color: k ? '#ffffff' : color });
     for (let k = 0; k < 16; k++) this.emit({ x: b[0] + (Math.random() - 0.5) * FLAG_HALF * 2, y: b[1] - 6, vx: (Math.random() - 0.5) * 120, vy: -160 - Math.random() * 260, g: 500, life: 0.6 + Math.random() * 0.4, size: 3 + Math.random() * 3, color });
   }

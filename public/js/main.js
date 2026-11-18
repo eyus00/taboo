@@ -8,7 +8,7 @@
 // driven with the keyboard alone (arrows + Enter, Esc to go back, a letter or
 // number for most things).
 
-import { MODES, DURATIONS, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_POINTS, FLAG_END_POINTS, FLAG_PAY_TICKS, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO } from '/shared/config.js';
+import { MODES, DURATIONS, DEFAULT_THEME, THEMES, CUP_ROUNDS, NAME_MAX, CODE_LEN, MIN_PLAYERS, MAX_PLAYERS, TEAM_NAMES, TEAM_COLORS, TEAM_SLOTS, BOMB_POINTS, FLAG_END_POINTS, FLAG_CAP_TICKS, TICK_RATE, ITEM_KINDS, ITEM_INFO } from '/shared/config.js';
 import { ARENAS } from '/shared/arenas.js';
 import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
@@ -497,8 +497,7 @@ $('btn-help-back').addEventListener('click', closeHelp);
 // numbers in the rules come from the game's own settings
 const orList = (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}` : String(items[0]));
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-const flagPay = `${plural(FLAG_POINTS, 'point')} every ${Math.round(FLAG_PAY_TICKS / TICK_RATE)} seconds`;
-for (const [key, value] of Object.entries({ bomb: plural(BOMB_POINTS, 'point'), flagend: plural(FLAG_END_POINTS, 'point'), flagpay: flagPay, flagtime: (FLAG_CAP_TICKS / TICK_RATE).toFixed(1).replace('.0', ''), rounds: orList(CUP_ROUNDS), teams: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}` })) {
+for (const [key, value] of Object.entries({ bomb: plural(BOMB_POINTS, 'point'), flagend: plural(FLAG_END_POINTS, 'point'), flagtime: (FLAG_CAP_TICKS / TICK_RATE).toFixed(1).replace('.0', ''), rounds: orList(CUP_ROUNDS), teams: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}` })) {
   for (const e of document.querySelectorAll(`[data-n="${key}"]`)) e.textContent = value;
 }
 for (const k of ITEM_KINDS) {
@@ -1323,7 +1322,7 @@ const GAME_LINE = { potato: "Don't be the oni when the clock runs out", time: 'S
 const HOW_TO_WIN = {
   potato: ['Touch someone to pass the oni on', "Don't be the oni when the clock stops"],
   time: ['Touch someone to pass the oni on', 'Every second you are the oni is counted', 'The least time wins'],
-  team: ["Stand in a flag's ring: it pays your side", 'Stick your bomb on an enemy by touching them', `At the buzzer: +${FLAG_END_POINTS} for each flag, -${BOMB_POINTS} for each bomb in hand`],
+  team: ["Stand in a flag's ring to turn it your colour", 'Stick your bomb on an enemy by touching them', `At the buzzer: +${FLAG_END_POINTS} for each flag, -${BOMB_POINTS} for each bomb in hand`],
   ko: ['Whoever is the oni at the buzzer is out', 'Everyone else plays the next round', 'The last one standing wins'],
 };
 function paintGuestCard() {
@@ -1551,7 +1550,7 @@ function paintCards() {
 const ABOUT_MODE = {
   potato: 'One player is the oni. Touch someone and it passes to them. Whoever is the oni when the clock runs out loses; everyone else wins.',
   time: 'The oni changes hands the same way, but every second you spend as the oni is counted. When time is up, the least time wins.',
-  team: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}. Three flags stand on every stage, one at each end and one high in the middle: stand in a flag's ring to turn it your colour, and it pays your side. Bombs are dealt out at the start; stick yours on an enemy by touching them. At the buzzer every flag gives the side that holds it ${FLAG_END_POINTS} more, and every bomb goes off and takes ${BOMB_POINTS} off its own side.`,
+  team: `${TEAM_NAMES[0]} against ${TEAM_NAMES[1]}. Three flags stand on every stage, one at each end and one high in the middle: stand in a flag's ring to turn it your colour. Bombs are dealt out at the start; stick yours on an enemy by touching them. Nothing scores while the round runs: at the buzzer every flag gives the side that holds it ${FLAG_END_POINTS}, and every bomb goes off and takes ${BOMB_POINTS} off its own side.`,
 };
 function aboutRow(icon, name, text) {
   const row = el('div', 'info-row');
