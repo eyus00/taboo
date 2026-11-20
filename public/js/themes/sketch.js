@@ -7,6 +7,7 @@ import { ART_W as W, ART_H as H, PW } from '/shared/config.js';
 import { hash1, lighten, rgba, squashAt, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
 
 const INK = '#2b2b30';
+const CRAYON_BLUE = '#6fb6f2'; // the crayon tears are coloured in with
 const PAPER = '#fbf7e9';
 const CARD = '#fffdf5'; // a touch whiter than the page, so shapes lift off it
 const RED = '#e23b3b';
@@ -833,6 +834,12 @@ export default {
       g.lineTo(x - 6 + j(40), ay - 12 + j(41));
       g.moveTo(x + PW - 2, ay);
       g.lineTo(x + PW + 6 + j(42), ay - 12 + j(43));
+    } else if (pv.sad) {
+      // (lost: both arms hang straight down)
+      g.moveTo(x + 2, ay);
+      g.lineTo(x - 1 + j(40) * 0.3, ay + 13);
+      g.moveTo(x + PW - 2, ay);
+      g.lineTo(x + PW + 1 + j(42) * 0.3, ay + 13);
     } else {
       g.moveTo(x + 2, ay);
       g.lineTo(x - 5 - sw * 4, ay + 8 + sw * 3);
@@ -859,7 +866,34 @@ export default {
     const ey = by + 11;
     g.lineWidth = 1.6;
     g.beginPath();
-    if (open) {
+    if (pv.sad) {
+      // Lost, as a child would draw it: the pupils at the bottom of the eyes, the brows
+      // pushed up in the middle, a frown - and big tears coloured in with the blue crayon.
+      g.fillStyle = INK;
+      g.arc(ex - 4.6, ey + 2, 2.1, 0, 6.283);
+      g.arc(ex + 6.4, ey + 2, 2.1, 0, 6.283);
+      g.fill();
+      g.lineWidth = 1.9;
+      g.beginPath();
+      g.moveTo(ex - 10.5, ey - 5.2);
+      g.lineTo(ex - 2.6, ey - 8.2);
+      g.moveTo(ex + 2.6, ey - 8.2);
+      g.lineTo(ex + 10.5, ey - 5.2);
+      g.stroke();
+      for (const [ox, oy, r] of [[ex - 7.5, ey + 8.5, 2.9], [ex + 8.2, ey + 6.2, 2.4], [ex - 8.6, ey + 16.5, 2]]) {
+        g.beginPath();
+        g.moveTo(ox, oy - r * 2.1);
+        g.quadraticCurveTo(ox + r * 1.5, oy, ox, oy + r);
+        g.quadraticCurveTo(ox - r * 1.5, oy, ox, oy - r * 2.1);
+        g.closePath();
+        g.fillStyle = CRAYON_BLUE;
+        g.fill();
+        g.lineWidth = 1.2;
+        g.stroke();
+      }
+      g.lineWidth = 1.6;
+      g.beginPath();
+    } else if (open) {
       const py = air ? (pv.vy < 0 ? -1.2 : 1.4) : 0.4;
       g.fillStyle = INK;
       g.arc(ex - 3.7, ey + py, 2.2, 0, 6.283);
@@ -901,6 +935,10 @@ export default {
         g.moveTo(ex + k * 4, ey + 9);
         g.lineTo(ex + k * 4, ey + 14);
       }
+      g.stroke();
+    } else if (pv.sad) {
+      g.lineWidth = 1.8;
+      g.arc(ex + 0.5, ey + 13.6, 5, Math.PI * 1.2, Math.PI * 1.8);
       g.stroke();
     } else {
       g.lineWidth = 1.8;

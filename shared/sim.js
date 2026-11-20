@@ -88,8 +88,9 @@ export class Sim {
   add(slot, spawnIndex = slot) {
     const sp = this.arena.spawns[spawnIndex % this.arena.spawns.length];
     // item: 0 or 1 + index into ITEM_KINDS; arm: ticks until it can be used; ub: was USE held last tick
-    // bomb: carrying one (team battle); boom: it went off on them; caps: flags they helped to take
-    this.players[slot] = { slot, s: makeState(sp[0], sp[1]), immune: 0, itTicks: 0, tags: 0, item: 0, arm: 0, ub: 0, team: -1, bomb: false, boom: false, caps: 0 };
+    // bomb: carrying one (team battle); boom: it went off on them; caps: flags they helped to take;
+    // plus: points their flags made for their side; minus: points their bombs cost it (or gave the others)
+    this.players[slot] = { slot, s: makeState(sp[0], sp[1]), immune: 0, itTicks: 0, tags: 0, item: 0, arm: 0, ub: 0, team: -1, bomb: false, boom: false, caps: 0, plus: 0, minus: 0 };
     this.hx[slot].fill(sp[0]);
     this.hy[slot].fill(sp[1]);
     return this.players[slot];
@@ -99,7 +100,7 @@ export class Sim {
   setTeams(teams) {
     this.teams = teams;
     for (const p of this.players) if (p) p.team = teams[p.slot] ?? 0;
-    this.flags = this.arena.bases.map(([x, y]) => ({ x, y, owner: -1, m: 0, pay: 0 }));
+    this.flags = this.arena.bases.map(([x, y]) => ({ x, y, owner: -1, m: 0, pay: 0, by: [] }));
     this.bombPlan = this.pickBombs();
   }
 
@@ -537,13 +538,24 @@ export class Sim {
       const full = f.m <= -CAP ? 0 : f.m >= CAP ? 1 : -1;
       if (full >= 0 && full !== f.owner) {
         f.owner = full;
-        for (const o of there) if (o.team === full) o.caps++;
+        f.by = []; // who took it: what it pays from now on is to their credit, in equal shares
+        for (const o of there) {
+          if (o.team !== full) continue;
+          o.caps++;
+          f.by.push(o.slot);
+        }
         this.events.push({ type: 'flag', what: 'take', team: full, i });
       } else if (f.owner >= 0 && (f.owner === 0 ? f.m >= 0 : f.m <= 0)) {
         this.events.push({ type: 'flag', what: 'lose', team: f.owner, i });
         f.owner = -1;
       }
     });
+  }
+
+  // what a flag pays goes to the credit of whoever took it (those of them still playing)
+  credit(f, points) {
+    const by = (f.by || []).filter((slot) => this.players[slot] && this.players[slot].team === f.owner);
+    for (const slot of by) this.players[slot].plus += points / by.length;
   }
 
   // The beat: every flag gives the team whose colour it is a point, then every bomb
@@ -553,12 +565,14 @@ export class Sim {
     this.flags.forEach((f, i) => {
       if (f.owner < 0) return;
       this.score[f.owner] += FLAG_POINTS;
+      this.credit(f, FLAG_POINTS);
       this.events.push({ type: 'flag', what: 'pay', team: f.owner, i, n: FLAG_POINTS });
     });
     for (const p of this.players) {
       if (!p || !p.bomb) continue;
       const n = Math.min(BOMB_COST, this.score[p.team]);
       this.score[p.team] -= n;
+      p.minus += n;
       this.events.push({ type: 'cost', slot: p.slot, team: p.team, n });
     }
   }
@@ -573,12 +587,14 @@ export class Sim {
     this.flags.forEach((f, i) => {
       if (f.owner < 0) return;
       this.score[f.owner] += FLAG_END_POINTS;
+      this.credit(f, FLAG_END_POINTS);
       this.events.push({ type: 'flag', what: 'end', team: f.owner, i, n: FLAG_END_POINTS });
     });
     for (const p of this.players) {
       if (!p || !p.bomb) continue;
       const to = 1 - p.team;
       this.score[to] += BOMB_POINTS;
+      p.minus += BOMB_POINTS;
       p.bomb = false;
       p.boom = true;
       p.s.stun = BOMB_STUN_TICKS;
@@ -653,6 +669,8 @@ export function standings(sim, names = [], mode = 'potato') {
     team: p.team,
     boom: p.boom, // team battle: a bomb went off on them
     caps: p.caps, // and how many flags they helped to take
+    plus: Math.round(p.plus), // what their flags made for their side
+    minus: Math.round(p.minus), // what their bombs cost it
   }));
   if (mode === 'team') {
     const [a, b] = sim.score;

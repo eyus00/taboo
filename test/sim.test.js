@@ -1000,6 +1000,10 @@ test('team battle: a flag fills with the colour of whoever stands in its ring, p
     end.payBeat();
     assert.deepEqual(end.score, [2 + FLAG_POINTS - BOMB_COST, 0]);
     assert.deepEqual(end.events.map((e) => [e.type, e.n]), [['flag', FLAG_POINTS], ['cost', BOMB_COST]]);
+    // what a flag pays is to the credit of whoever took it; what a bomb costs is on whoever holds it
+    end.flags[0].by = [1];
+    end.payBeat();
+    assert.deepEqual([end.players[1].plus, end.players[0].minus, end.players[0].plus], [FLAG_POINTS, 2 * BOMB_COST, 0]);
     end.score[0] = 1;
     end.finish();
     assert.deepEqual(end.score, [1 + FLAG_END_POINTS, BOMB_POINTS], 'the buzzer: the flag pays its side in full, the bomb scores for the others');

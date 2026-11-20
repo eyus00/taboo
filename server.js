@@ -42,6 +42,7 @@ import { ARENAS, ARENA_IDS, arenaById, arenasFor, arenaFits } from './shared/are
 import { Sim, standings, makeTeams } from './shared/sim.js';
 import { makeBot, botThink, prepareBots, BOT_NAMES } from './shared/bots.js';
 import { packState, publicFlags } from './shared/physics.js';
+import { CHAT_MAX, cleanText, soften, makeSpeaker, take, makeLog, remember } from './chat.js';
 
 const DEFAULT_SIZE = 6; // seats in a new room
 
@@ -332,6 +333,15 @@ function addPlayer(room, socket, name) {
   return player;
 }
 
+// ---------------------------------------------------------------------------
+// Chat (see chat.js): a channel for everyone in the menus, and one per room
+const GLOBAL_CHAT = process.env.TAG_GLOBAL_CHAT !== 'off'; // (the channel for everyone can be switched off where it is not wanted)
+const EPOCH = Date.now(); // when this server started: a client seeing another one knows the chat began again
+const allChat = makeLog();
+const inChat = () => io.sockets.adapter.rooms.get('chat:all')?.size || 0;
+// a line in a room's chat that nobody said ("Hana joined")
+const roomNote = (room, text) => io.to(room.code).emit('chat', remember(room.chat, { to: 'room', sys: true, text }));
+
 function leaveRoom(socket) {
   const room = rooms.get(socket.data.code);
   socket.data.code = null;
@@ -349,6 +359,7 @@ function leaveRoom(socket) {
   }
   if (room.hostId === socket.id) room.hostId = room.players.keys().next().value;
   io.to(room.code).emit('toast', `${player.name} left`);
+  roomNote(room, `${player.name} left`);
   syncBots(room); // (a bot takes the empty seat, from the next round on)
 
   const g = room.game;
@@ -559,7 +570,7 @@ function finishRound(room, reason) {
     winners, // slots
     loser, // slot of whoever was "it" at the end, or -1
     // ms: time as it (team battle: with a bomb in hand); tags: tags made (bombs passed); boom: a bomb went off on them; caps: flags taken
-    rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: gained[r.slot] || 0, team: r.team, boom: !!r.boom, caps: r.caps || 0, bot: g.bots.has(r.slot) })),
+    rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: gained[r.slot] || 0, team: r.team, boom: !!r.boom, caps: r.caps || 0, plus: r.plus || 0, minus: r.minus || 0, bot: g.bots.has(r.slot) })),
     // team battle: this round's score, who won it (-1: a draw) - and how: flags each side held at the buzzer, bombs that went off on each side
     team: team ? { score, win, total: null, held: [0, 1].map((t) => g.sim.flags.filter((f) => f.owner === t).length), blown: [0, 1].map((t) => rows.filter((r) => r.team === t && r.boom).length) } : null,
     cup: null,
@@ -844,6 +855,7 @@ io.on('connection', (socket) => {
     if (!code) return ack({ error: 'Every room code is in use. Try again in a minute.' });
     const room = {
       code,
+      chat: makeLog(), // what has been said in this room (it goes when the room does)
       hostId: socket.id,
       players: new Map(),
       bots: new Map(), // the bots in the seats nobody has taken: id -> the same kind of record as a player
@@ -882,6 +894,7 @@ io.on('connection', (socket) => {
     const player = addPlayer(room, socket, name);
     ack({ ok: true, id: socket.id, room: roomState(room) });
     socket.to(room.code).emit('toast', `${player.name} joined`);
+    roomNote(room, `${player.name} joined`);
     emitRoom(room);
     // Arrived mid-match: watch this round, play the next one.
     if (room.game) socket.emit('round', roundInfo(room));
@@ -900,6 +913,44 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     clearInterval(probe);
     leaveRoom(socket);
+  });
+
+  // --- chat ---
+  const speaker = makeSpeaker();
+  const who = socket.id.slice(0, 6); // (how the others know two messages are from the same connection - to mute it, say)
+  // Open the chat: what has been said so far, in the room this socket is in and - if
+  // wanted, and from then on - in the channel for everyone.
+  socket.on('chat:open', (msg, ack) => {
+    if (typeof ack !== 'function') return;
+    const all = GLOBAL_CHAT && msg?.all !== false;
+    if (all) socket.join('chat:all');
+    else socket.leave('chat:all');
+    const room = rooms.get(socket.data.code);
+    ack({ me: who, epoch: EPOCH, max: CHAT_MAX, global: GLOBAL_CHAT, all: all ? allChat : [], room: room?.players.has(socket.id) ? room.chat : null, online: inChat() });
+  });
+  socket.on('chat:close', () => socket.leave('chat:all'));
+  socket.on('chat:say', (msg, ack) => {
+    const done = typeof ack === 'function' ? ack : () => {};
+    const to = msg?.to === 'room' ? 'room' : 'all';
+    const room = rooms.get(socket.data.code);
+    const player = room?.players.get(socket.id);
+    if (to === 'room' && !player) return done({ error: 'You are not in a room.' });
+    if (to === 'all' && !GLOBAL_CHAT) return done({ error: 'This chat is switched off.' });
+    const name = player?.name || cleanName(msg?.name);
+    if (!name) return done({ error: 'Enter your name first.', needName: true });
+    const text = soften(cleanText(msg?.text));
+    if (!text) return done({ error: '' });
+    if (text === speaker.last) return done({ error: 'You just said that.' });
+    const turn = take(speaker, Date.now());
+    if (!turn.ok) return done({ error: turn.shut ? `Too many messages. Chat is back in ${Math.ceil(turn.wait / 1000)} s.` : 'Slow down a little.', wait: turn.wait });
+    speaker.last = text;
+    const m = remember(to === 'room' ? room.chat : allChat, { to, from: who, name, text });
+    if (to === 'room') io.to(room.code).emit('chat', m);
+    else {
+      socket.join('chat:all'); // (whoever speaks there hears the answer)
+      io.to('chat:all').emit('chat', { ...m, online: inChat() });
+    }
+    done({ ok: true, id: m.id });
   });
 
   socket.on('settings', (msg) => {

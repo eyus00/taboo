@@ -76,6 +76,7 @@ every player sees the same scenery; never use `Math.random()` for scenery.
 ```
 slot, id (the player's real place; slot is the colour worn), color, name, x, y (top-left of the 32x40 box), cx, feet, vx, vy,
 ground, face (-1 | 1), isIt, immune, stunned, frozen, speedy, springy, shield, local,
+sad (only ever true in a portrait: this player has just lost - see below),
 run (advances while running - drive leg cycles with Math.sin(pv.run)),
 squash (-0.2 stretch .. 0.3 squash; use squashAt(g, cx, feet, pv.squash) from util.js),
 blink (1 -> 0 during a blink), seed (stable per player)
@@ -93,6 +94,13 @@ A style may keep a little memory per player between frames (Shadow remembers how
 far each block has turned): key it by the `scene` you are handed - every renderer
 builds its own, so the match, each demo and each menu portrait never share one -
 and then by `pv.id`.
+**Sad.** Between the rounds of a tournament the ones who lost are shown as a still picture
+of your character with `pv.sad` set (standing, `t` fixed). Draw what losing looks like *in
+your style*, with your own shapes and colours: Ink tips the hat over shut eyes and lets two
+washes of indigo run; Shadow bows the block and drops squares of steel from the slit; Neon's
+visor shows `T T`; Nightmare's sockets run; Sketchbook colours in crayon tears; Arcade is an
+8-bit frown. A style that ignores it simply shows its ordinary character.
+
 Whoever `isIt` should still look different in your own drawing (angry eyes, a
 glow sprite, a tint...) - it is the most important thing on screen.
 

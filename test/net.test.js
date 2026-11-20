@@ -816,6 +816,73 @@ try {
     await sleep(150);
   });
 
+  await test('chat: everyone in the menus shares one channel, a room has its own; text is cut, softened and rate-limited; history is handed over', async () => {
+    const [x, y, z] = [client('Xavi'), client('Yoko'), client('Zed')];
+    for (const c of [x, y, z]) {
+      c.heard = [];
+      c.socket.on('chat', (m) => c.heard.push(m));
+    }
+    await until(() => x.socket.connected && y.socket.connected && z.socket.connected, 'three connections');
+    // the channel for everyone: you are told from the moment you open it
+    const ox = await x.call('chat:open', { all: true });
+    assert.ok(ox.global && Array.isArray(ox.all) && ox.room === null && ox.max >= 100 && ox.me, 'opening hands over the history and the limits');
+    await y.call('chat:open', { all: true });
+    const said = await x.call('chat:say', { to: 'all', text: '  hello   everyone  ', name: 'Xavi' });
+    assert.ok(said.ok);
+    await until(() => y.heard.length === 1 && x.heard.length === 1, 'the message, on both screens');
+    assert.deepEqual([y.heard[0].to, y.heard[0].name, y.heard[0].text, y.heard[0].from], ['all', 'Xavi', 'hello everyone', ox.me]);
+    assert.ok(y.heard[0].id > 0 && Math.abs(y.heard[0].at - Date.now()) < 5000);
+    assert.equal(z.heard.length, 0, 'someone who has not opened the chat is not sent it');
+    // ...and whoever opens it later is handed what was said
+    const oz = await z.call('chat:open', { all: true });
+    assert.deepEqual(oz.all.map((m) => m.text).slice(-1), ['hello everyone']);
+    // no name, no word; nothing to say, nothing said
+    assert.ok((await z.call('chat:say', { to: 'all', text: 'hi', name: '   ' })).needName);
+    assert.equal((await z.call('chat:say', { to: 'all', text: '   ', name: 'Zed' })).ok, undefined);
+    // softened: links, phone numbers, the roughest words; cut to the limit; no markup survives as markup (it is plain text)
+    await y.call('chat:say', { to: 'all', text: 'see www.example.com/x and evil.gg, ring 555 123 4567 you shit <b>bold</b>', name: 'Yoko' });
+    await until(() => x.heard.length === 2, 'the softened message');
+    assert.equal(x.heard[1].text, 'see [link] and [link], ring [number] you **** <b>bold</b>');
+    await y.call('chat:say', { to: 'all', text: 'x'.repeat(500), name: 'Yoko' });
+    await until(() => x.heard.length === 3, 'the long message');
+    assert.equal(x.heard[2].text.length, ox.max);
+    // the same thing twice in a row is not said twice
+    assert.ok(/just said/.test((await y.call('chat:say', { to: 'all', text: 'x'.repeat(500), name: 'Yoko' })).error));
+    // a flood: a short burst gets through, then nothing - and after a few more tries, a time-out
+    const burst = [];
+    for (let i = 0; i < 12; i++) burst.push(await z.call('chat:say', { to: 'all', text: `flood ${i}`, name: 'Zed' }));
+    const through = burst.filter((r) => r.ok).length;
+    assert.ok(through >= 3 && through <= 6, `${through} of 12 got through`);
+    assert.ok(burst.some((r) => /Too many/.test(r.error || '') && r.wait > 5000), 'and then they are shut out for a while');
+    // a room's own channel
+    assert.ok((await x.call('chat:say', { to: 'room', text: 'anyone?', name: 'Xavi' })).error, 'no room, no room chat');
+    const made = await x.call('create', { name: 'Xavi' });
+    x.room = made.room;
+    assert.ok((await y.call('join', { code: made.room.code, name: 'Yoko' })).ok);
+    await until(() => x.heard.some((m) => m.sys && m.text === 'Yoko joined'), 'the room is told who came in');
+    const before = z.heard.length;
+    assert.ok((await x.call('chat:say', { to: 'room', text: 'ready?', name: 'ignored' })).ok);
+    await until(() => y.heard.some((m) => m.to === 'room' && m.text === 'ready?'), 'the room message');
+    assert.equal(y.heard.find((m) => m.text === 'ready?').name, 'Xavi', 'in a room your name is the one you came in with');
+    await sleep(150);
+    assert.equal(z.heard.length, before, 'nobody outside the room hears it');
+    // the room's history comes with opening the chat there - and nobody else's does
+    const oy = await y.call('chat:open', { all: true });
+    assert.deepEqual(oy.room.map((m) => m.text), ['Yoko joined', 'ready?']);
+    assert.equal((await z.call('chat:open', { all: true })).room, null);
+    assert.ok(!('chat' in x.room), 'what is said is not part of the room everyone is sent');
+    // closing the channel for everyone: nothing more from it
+    y.socket.emit('chat:close');
+    await sleep(100);
+    const quiet = y.heard.length;
+    await sleep(2600); // (Xavi's bucket has refilled by now)
+    assert.ok((await x.call('chat:say', { to: 'all', text: 'still here', name: 'Xavi' })).ok);
+    await until(() => z.heard.some((m) => m.text === 'still here'), 'the others hear it');
+    assert.equal(y.heard.length, quiet, 'whoever closed it does not');
+    for (const c of [x, y, z]) c.socket.close();
+    await sleep(150);
+  });
+
   console.log(`net: ${passed} tests passed`);
 } finally {
   clearInterval(chase);

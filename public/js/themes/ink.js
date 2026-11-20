@@ -6,6 +6,7 @@ import { ART_W as W, ART_H as H, PW } from '/shared/config.js';
 import { rgba, darken, vnoise, hash1, clamp, squashAt, rr, drawIcon, KIND_COLORS, PORTAL_COLORS } from '../util.js';
 
 const INK = '#1c1b1f';
+const TEAR = '#4f6f8f'; // the wash a tear is painted in (the indigo of the updrafts)
 const PAPER = '#efe6d2';
 const RED = '#c8372d';
 
@@ -453,12 +454,13 @@ export default {
 
     // scarf streaming out behind
     const dir = -pv.face;
-    const flow = clamp(Math.abs(pv.vx) / 260, 0.2, 1);
-    const lift = clamp(pv.vy / 900, -1, 1) * -9;
+    // (sad: it hangs straight down, with no wind in it)
+    const flow = pv.sad ? 0 : clamp(Math.abs(pv.vx) / 260, 0.2, 1);
+    const lift = pv.sad ? 13 : clamp(pv.vy / 900, -1, 1) * -9;
     const nx = cx + dir * 7;
     const ny = top + 17;
-    const wave = Math.sin(t * 10 + pv.seed);
-    const wave2 = Math.sin(t * 10 + pv.seed + 1.7);
+    const wave = pv.sad ? 0 : Math.sin(t * 10 + pv.seed);
+    const wave2 = pv.sad ? 0 : Math.sin(t * 10 + pv.seed + 1.7);
     g.strokeStyle = color;
     g.lineWidth = 4.5;
     g.beginPath();
@@ -529,7 +531,36 @@ export default {
     g.stroke();
     const ex = cx + pv.face * 4;
     const ey = top + 13.5;
-    if (pv.isIt) {
+    if (pv.sad) {
+      // Lost: eyes shut tight, the outer ends drooping, and tears let run - two thin
+      // washes of indigo down the cheeks and on to the robe, each ending in a bead.
+      g.strokeStyle = INK;
+      g.lineWidth = 1.4;
+      g.beginPath();
+      g.moveTo(ex - 5.6, ey + 1.6);
+      g.quadraticCurveTo(ex - 3.4, ey - 0.6, ex - 1.4, ey + 0.2);
+      g.moveTo(ex + 5.6, ey + 1.6);
+      g.quadraticCurveTo(ex + 3.4, ey - 0.6, ex + 1.4, ey + 0.2);
+      g.stroke();
+      // a small mouth, turned down
+      g.lineWidth = 1.1;
+      g.beginPath();
+      g.arc(ex, ey + 4.9, 1.7, Math.PI * 1.15, Math.PI * 1.85);
+      g.stroke();
+      g.strokeStyle = rgba(TEAR, 0.9);
+      g.fillStyle = TEAR;
+      g.lineWidth = 1.5;
+      for (const [s, len] of [[-1, 9.5], [1, 7]]) {
+        const tx = ex + s * 4;
+        g.beginPath();
+        g.moveTo(tx, ey + 1.6);
+        g.quadraticCurveTo(tx + s * 1.2, ey + len * 0.5, tx + s * 0.4, ey + len);
+        g.stroke();
+        g.beginPath();
+        g.ellipse(tx + s * 0.4, ey + len + 1, 1.5, 2, 0, 0, 6.283);
+        g.fill();
+      }
+    } else if (pv.isIt) {
       g.strokeStyle = RED;
       g.lineWidth = 2.2;
       g.beginPath();
@@ -555,7 +586,12 @@ export default {
       g.stroke();
     }
 
-    // straw hat
+    // straw hat (sad: tipped forward over the face)
+    if (pv.sad) {
+      g.translate(cx, top + 9);
+      g.rotate(pv.face * 0.2);
+      g.translate(-cx, -(top + 9) + 1.5);
+    }
     g.fillStyle = INK;
     g.beginPath();
     g.moveTo(x - 5, top + 9.5);

@@ -1175,6 +1175,7 @@ export class Renderer {
         shield: !!p.shd,
         slow: !!p.slw,
         dark: !!p.ecl, // night has fallen on them (Eclipse)
+        sad: !!p.sad, // a portrait of someone who has just lost (see art.js): never set in a match
         dashing: !!p.dsh,
         ghost: !!p.gho, // Vanish: out of sight for everyone but themselves and their own side
         titan: !!p.inv, // Titan: nothing touches them

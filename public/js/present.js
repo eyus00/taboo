@@ -28,7 +28,7 @@
 // frame, when the pictures are painted and the page is quiet again. While it
 // covers the screen the match behind it is not drawn at all (onCover).
 
-import { MODES, THEMES, TEAM_NAMES, TEAM_COLORS, FLAG_END_POINTS, BOMB_POINTS, twistById } from '/shared/config.js';
+import { MODES, THEMES, TEAM_NAMES, TEAM_COLORS, twistById } from '/shared/config.js';
 import { arenaById, ARENAS } from '/shared/arenas.js';
 import { scenePreview, styleStill, styleReady, styleThumb, arenaThumb } from './art.js';
 
@@ -69,12 +69,13 @@ function layer() {
 
 // One player: their character over a slab of their colour, and a name plate.
 //   face: 1 looks right, -1 left; i: the place in the line (for the stagger); from: l | r | up
-function card(p, { face = 1, i = 0, from = 'up', me = false, size = 192, tag = '', stats = null } = {}) {
+function card(p, { face = 1, i = 0, from = 'up', me = false, size = 192, tag = '', stats = null, sad = false } = {}) {
   const c = el('div', `pz-card from-${from}${me ? ' me' : ''}${p.out ? ' gone' : ''}`);
   c.style.setProperty('--i', String(i));
   c.style.setProperty('--c', p.color || '#888');
   const pic = el('span', 'pz-pic');
-  const url = opts.portrait?.(p.slot, size, face);
+  // (sad: the style's own drawing of this character having lost - see pv.sad in the styles)
+  const url = opts.portrait?.(p.slot, size, face, sad ? { sad: true } : undefined);
   if (url) {
     const img = el('img');
     img.alt = '';
@@ -90,10 +91,10 @@ function card(p, { face = 1, i = 0, from = 'up', me = false, size = 192, tag = '
   if (tag) c.append(el('b', 'pz-tag', tag));
   if (stats) {
     const row = el('span', 'pz-stats');
-    for (const [icon, text, label, top] of stats) {
-      const s = el('span', top ? 'st top' : 'st');
+    for (const [icon, text, label, tone] of stats) {
+      const s = el('span', tone ? `st ${tone}` : 'st');
       s.innerHTML = svg(icon);
-      s.append(text);
+      if (text) s.append(text);
       s.title = label;
       row.append(s);
     }
@@ -102,6 +103,42 @@ function card(p, { face = 1, i = 0, from = 'up', me = false, size = 192, tag = '
   return c;
 }
 
+// What one player did, in as few tags as say it (each: [icon, text, what it means, tone]):
+//   a team game - what their flags made for their side, what their bombs cost it (the tag is
+//   filled when one went off in their hands), how many bombs they passed on;
+//   everyone for themselves - how long they were the oni, how many tags they made.
+// Nothing is shown for a nought.
+function tagsFor(res, x) {
+  if (!x) return null;
+  const list = [];
+  if (res.team) {
+    if (x.plus > 0) list.push(['flag', `+${x.plus}`, `Their flags made ${x.plus} points`, 'good']);
+    if (x.minus > 0) list.push(['bomb', `\u2212${x.minus}`, x.boom ? `A bomb went off in their hands: ${x.minus} points lost` : `Holding a bomb cost ${x.minus} points`, x.boom ? 'bad boom' : 'bad']);
+    if (x.tags > 0) list.push(['swap', String(x.tags), `${x.tags} bomb${x.tags === 1 ? '' : 's'} passed on`, '']);
+  } else {
+    list.push(['oni', `${Math.round(x.ms / 1000)}s`, 'Time as the oni', x.ms === 0 ? 'good' : '']);
+    if (x.tags > 0) list.push(['target', String(x.tags), `${x.tags} tag${x.tags === 1 ? '' : 's'} made`, '']);
+  }
+  return list.length ? list : null;
+}
+// the one who did most for the winning side (a team game: flags' points less bombs' cost), or -1
+function starOf(res) {
+  if (!res.team || res.team.win < 0) return -1;
+  let best = null;
+  for (const x of res.rows) {
+    if (x.team !== res.team.win) continue;
+    const net = (x.plus || 0) - (x.minus || 0);
+    if (net > 0 && (!best || net > best.net)) best = { slot: x.slot, net };
+  }
+  return best ? best.slot : -1;
+}
+
+const starBadge = () => {
+  const b = el('b', 'pz-star');
+  b.innerHTML = svg('star');
+  b.title = 'Did most for the winning side';
+  return b;
+};
 // how big a card can be: `n` of them in `cols` columns inside w x h
 const fit = (w, h, n, cols, max = 200) => {
   const rows = Math.ceil(n / cols);
@@ -170,18 +207,6 @@ function plate(label, name, cells, i) {
   p.append(words, win);
   return p;
 }
-// a line of facts: what decided the round
-function facts(list) {
-  const row = el('div', 'pz-facts');
-  for (const [icon, label, value, tone] of list) {
-    const f = el('span', tone ? `pz-fact ${tone}` : 'pz-fact');
-    f.innerHTML = svg(icon);
-    f.append(el('small', '', label), el('b', '', value));
-    row.append(f);
-  }
-  return row;
-}
-
 // where a team tournament stands: the two sides and their tally, large
 function tallyStrip(total, small) {
   const strip = el('div', 'pz-tally');
@@ -243,18 +268,11 @@ export const present = {
     const emblem = el('b', 'pz-vs');
     const cards = new Map(); // slot -> its card
     const add = (line, p, o, size) => {
-      // (their numbers only where a card is wide enough to carry them)
-      const c = card(p, { ...o, me: p.slot === me, tag: p.out ? 'Out' : '', stats: size >= 72 ? p.stats || null : null });
+      // (their tags only where a card is wide enough to carry them)
+      const c = card(p, { ...o, me: p.slot === me, tag: p.out ? 'Out' : '', stats: size >= 72 ? p.stats || null : null, sad: !!p.sad });
       if (p.won) c.classList.add('won');
-      // (the ones who lost the round: head down, and a tear or two)
-      if (p.sad) {
-        c.classList.add('sad');
-        for (const k of ['a', 'b']) {
-          const cry = el('i', `pz-cry ${k}`);
-          cry.append(el('i'));
-          c.querySelector('.pz-pic').append(cry);
-        }
-      }
+      if (p.sad) c.classList.add('sad');
+      if (p.star) c.append(starBadge());
       cards.set(p.slot, c);
       line.append(c);
     };
@@ -405,12 +423,14 @@ export const present = {
         const c = cards.get(slot);
         if (!c) return;
         c.classList.add('picked');
-        c.append(el('b', `pz-mark ${cls}`, text));
+        const m = el('b', `pz-mark ${cls}`, text);
+        if (!text) m.innerHTML = svg(cls); // (a sign instead of a word: the bomb)
+        c.append(m);
       };
       const start = Math.min(Math.max(t0 + 400, stageAt + 350), free - 300);
       if (teams) {
         (info.bombs || []).forEach((slot, i) => later(start + i * 180, () => {
-          mark(slot, 'Bomb', 'bomb');
+          mark(slot, '', 'bomb');
           opts.sfx?.play('tick');
         }));
       } else if (info.it >= 0 && cards.has(info.it)) {
@@ -463,7 +483,7 @@ export const present = {
     const mine = res.rows.find((x) => x.slot === me);
     const stillIn = cup.ko ? cup.table.filter((x) => !x.out) : [];
     const through = stillIn.some((x) => x.slot === me);
-    const best = (key) => Math.max(0, ...res.rows.map((x) => x[key] || 0));
+    const star = starOf(res);
     const players = res.rows.map((x) => ({
       slot: x.slot,
       name: x.name,
@@ -471,9 +491,8 @@ export const present = {
       out: cup.ko && cup.caught === x.slot,
       won: team ? team.win === x.team : cup.caught >= 0 && cup.caught !== x.slot,
       sad: team ? team.win >= 0 && team.win !== x.team : cup.caught === x.slot,
-      stats: team
-        ? [['flag', String(x.caps || 0), 'flags taken', x.caps > 0 && x.caps === best('caps')], ['swap', String(x.tags), 'bombs passed on', x.tags > 0 && x.tags === best('tags')]]
-        : [['target', String(x.tags), 'tags made', x.tags > 0 && x.tags === best('tags')], ['oni', `${(x.ms / 1000).toFixed(1)}s`, 'as the oni', false]],
+      star: x.slot === star,
+      stats: tagsFor(res, x),
     }));
     if (players.length < 2) return false;
     const teams = team ? Object.fromEntries(res.rows.map((x) => [x.slot, x.team])) : null;
@@ -485,31 +504,13 @@ export const present = {
       kicker = `Round ${cup.round} of ${cup.rounds} · Team Bomb`;
       mood = team.win < 0 ? 'draw' : !mine ? 'info' : mine.team === team.win ? 'win' : 'lose';
       title = team.win < 0 ? 'Round drawn' : !mine ? `${TEAM_NAMES[team.win]} take it` : mine.team === team.win ? 'Round won' : 'Round lost';
-      // how it was won: the flags each side held at the buzzer, the bombs that went off on each, the rest
-      const held = team.held || [0, 0];
-      const blown = team.blown || [0, 0];
-      const during = [0, 1].map((t) => Math.max(0, team.score[t] - held[t] * FLAG_END_POINTS - blown[1 - t] * BOMB_POINTS));
-      const vs = (x) => `${x[0]} – ${x[1]}`;
-      board.push(facts([
-        ['flag', 'Flags held', vs(held), held[0] === held[1] ? '' : held[0] > held[1] ? 't0' : 't1'],
-        ['bomb', 'Bombs blown on', vs(blown), blown[0] === blown[1] ? '' : blown[0] < blown[1] ? 't0' : 't1'],
-        ['clock', 'In play', vs(during), during[0] === during[1] ? '' : during[0] > during[1] ? 't0' : 't1'],
-        ['star', 'Round', vs(team.score), team.win < 0 ? '' : `t${team.win}`],
-      ]));
-      board.push(tallyStrip(team.total || team.score, cup.score === 'rounds' ? 'Rounds won' : 'Points so far'));
+      // (the round's own score under the tally: it is what decided it)
+      board.push(tallyStrip(team.total || team.score, `This round ${team.score[0]} \u2013 ${team.score[1]}`));
     } else {
       const out = res.rows.find((x) => x.slot === cup.caught);
       kicker = `Knockout · round ${cup.round} of ${cup.rounds}`;
       mood = cup.caught === me ? 'lose' : through ? 'win' : 'info';
       title = cup.caught === me ? 'Knocked out' : through ? 'Through' : out ? `${out.name} is out` : 'Next round';
-      // how it went: who was caught, who was the oni longest, who made the most tags
-      const longest = res.rows.reduce((x, y) => (y.ms > x.ms ? y : x));
-      const tagger = res.rows.reduce((x, y) => (y.tags > x.tags ? y : x));
-      const list = [];
-      if (out) list.push(['oni', 'Oni at the buzzer', out.name, 'bad']);
-      if (longest.ms > 0) list.push(['clock', 'Longest as the oni', `${longest.name} · ${(longest.ms / 1000).toFixed(1)}s`, '']);
-      if (tagger.tags > 0) list.push(['target', 'Most tags', `${tagger.name} · ${tagger.tags}`, '']);
-      if (list.length) board.push(facts(list));
       const strip = el('div', 'pz-tally');
       strip.append(el('b', 'n', String(stillIn.length)), el('span', 'what', stillIn.length === 2 ? 'left: the Final is next' : stillIn.length === 3 ? 'left: the semi-final is next' : 'left'));
       board.push(strip);
@@ -651,15 +652,9 @@ export const present = {
     }
     inner.append(big);
     if (cast.length) {
-      // what each of them did: flags taken and bombs passed on (a team game), or tags made and time as the oni
-      const rows = cast.map((p) => res.rows.find((x) => x.slot === p.slot)).filter(Boolean);
-      const best = (key) => Math.max(0, ...rows.map((x) => x[key] || 0));
-      const statsOf = (p) => {
-        const x = res.rows.find((y) => y.slot === p.slot);
-        if (!x || between || p.out) return null;
-        if (team) return [['flag', String(x.caps || 0), 'flags taken', x.caps > 0 && x.caps === best('caps')], ['swap', String(x.tags), 'bombs passed on', x.tags > 0 && x.tags === best('tags')]];
-        return [['target', String(x.tags), 'tags made', x.tags > 0 && x.tags === best('tags')], ['oni', `${(x.ms / 1000).toFixed(1)}s`, 'as the oni', false]];
-      };
+      // what each of them did (see tagsFor), and a star on whoever did most for the winners
+      const star = between ? -1 : starOf(res);
+      const statsOf = (p) => (between || p.out ? null : tagsFor(res, res.rows.find((y) => y.slot === p.slot)));
       const n = cast.length + (fallen ? 1 : 0);
       const W = Math.min(innerWidth, 860) * 0.92;
       const cols = innerWidth < 560 && n > 3 ? Math.ceil(n / 2) : n;
@@ -668,8 +663,12 @@ export const present = {
       const row = el('div', 'pz-line');
       row.style.setProperty('--card', `${size}px`);
       row.style.maxWidth = `${cols * (size + 16)}px`;
-      cast.forEach((p, i) => row.append(card(p, { i, from: 'up', me: p.slot === me, tag: p.out ? 'Oni' : '', size: 144, stats: size >= 70 ? statsOf(p) : null })));
-      if (fallen) row.append(card({ ...fallen, out: true }, { i: cast.length, from: 'up', me: fallen.slot === me, tag: 'Out', size: 144 }));
+      cast.forEach((p, i) => {
+        const c = card(p, { i, from: 'up', me: p.slot === me, tag: p.out ? 'Oni' : '', size: 144, stats: size >= 70 ? statsOf(p) : null, sad: !!p.out });
+        if (p.slot === star) c.append(starBadge());
+        row.append(c);
+      });
+      if (fallen) row.append(card({ ...fallen, out: true }, { i: cast.length, from: 'up', me: fallen.slot === me, tag: 'Out', size: 144, sad: true }));
       if (mood === 'win' || mood === 'info') row.classList.add('cheer');
       inner.append(row);
     }

@@ -41,7 +41,7 @@ function painter(w, h) {
   return painters.get(key);
 }
 
-const still = (slot, x, y, o = {}) => ({ slot, name: '', x, y, vx: o.vx || 0, vy: o.vy || 0, ground: o.ground !== false, face: o.face || 1, immune: 0, stun: 0, frz: 0, dead: 0, orb: 0, spd: 0, jmp: 0, shd: 0, itTicks: 0, local: false });
+const still = (slot, x, y, o = {}) => ({ slot, name: '', x, y, vx: o.vx || 0, vy: o.vy || 0, ground: o.ground !== false, face: o.face || 1, sad: !!o.sad, immune: 0, stun: 0, frz: 0, dead: 0, orb: 0, spd: 0, jmp: 0, shd: 0, itTicks: 0, local: false });
 
 function shoot(arena, themeId, w, h, view) {
   const p = painter(w, h);
@@ -183,12 +183,12 @@ export function playerPortrait(themeId, colourIndex = 0, opts = {}) {
   const size = Math.max(16, Math.round(opts.size || 96));
   const col = ((Math.round(colourIndex) % 10) + 10) % 10;
   const face = opts.face === -1 ? -1 : 1;
-  const key = `portrait/${themeId}/${col}/${size}/${opts.bg ? 1 : 0}${opts.it ? 1 : 0}${face}`;
+  const key = `portrait/${themeId}/${col}/${size}/${opts.bg ? 1 : 0}${opts.it ? 1 : 0}${face}${opts.sad ? 's' : ''}`;
   if (opts.peek) return cache.get(key) || null;
   if (!cache.has(key)) {
     const p = poser(size, themeId);
     p.parts.length = 0;
-    const view = { phase: 'countdown', it: opts.it ? 0 : -1, names: false, boxes: [], players: [{ ...still(0, POSE_W / 2 - 16, POSE_FEET - 40, { face }), col }] };
+    const view = { phase: 'countdown', it: opts.it ? 0 : -1, names: false, boxes: [], players: [{ ...still(0, POSE_W / 2 - 16, POSE_FEET - 40, { face, sad: opts.sad }), col }] };
     p.draw(view, 1000);
     p.draw(view, 1016);
     // the middle square of the picture

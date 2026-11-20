@@ -15,6 +15,7 @@ import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } 
 import * as art from './art.js'; // (also: playerPortrait, for the results)
 import { loadTheme, THEME_MAP } from './themes/index.js';
 import { present } from './present.js';
+import { chat } from './chat.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -72,10 +73,11 @@ const { renderer, input, sfx, net } = play;
 present.init({
   sfx,
   colorOf: (slot) => play.colorOf(slot),
-  portrait: (slot, size, face) => portraitOf(slot, { size, face }),
+  portrait: (slot, size, face, more) => portraitOf(slot, { size, face, ...more }),
   // (while the opening covers the screen, the match behind it is not drawn)
   onCover: (on) => (play.covered = on),
 });
+chat.init({ socket, sfx, name: () => myName, askName });
 
 let myName = cleanName(store.get('tag.name'));
 let screen = ''; // name | home | game
@@ -214,6 +216,10 @@ function show(name, beside = '') {
   $('btn-help').toggleAttribute('aria-current', panel === 'help');
   setOverlay('');
 }
+// Chat is for the menus (and the card after a match): tell it when they are in front, and which room we are in.
+function chatNow() {
+  chat.sync({ visible: screen === 'home' || (screen === 'game' && overlay === 'results'), room: room?.code || '' });
+}
 
 function setOverlay(name) {
   overlay = name;
@@ -230,6 +236,7 @@ function setOverlay(name) {
     else demos.stop();
   }
   focusFirst();
+  chatNow();
 }
 
 const topRoot = () => $(`s-${top()}`);
@@ -429,6 +436,7 @@ async function enterRoom(event, payload, errorEl, btn) {
   room = res.room;
   net.code = room.code;
   if (event === 'create') recallSetup();
+  chatNow();
   sfx.play('join');
   openLobby();
   return true;
@@ -2566,6 +2574,7 @@ function shortcut(key, e) {
   if (typing) return false; // letters belong to the name being typed
 
   // anywhere: sound and full screen
+  if (key === '/') return chat.toggle(true), true;
   if (key === 'm') return toggleSound(true), true;
   if (key === 'f') return toggleFullscreen(), true;
   if (at === 'game') return false; // everything else belongs to the match
@@ -2643,6 +2652,11 @@ function shortcut(key, e) {
 
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  // (Esc closes the chat before it does anything to what is behind it)
+  if (chat.isOpen && e.key === 'Escape') {
+    e.preventDefault();
+    return chat.close();
+  }
   // a real keyboard is here: show the key cues (matters on tablets)
   if (/^(Arrow|Escape|Tab)/.test(e.key)) document.body.classList.remove('no-kbd');
   if (e.key === 'Escape') {

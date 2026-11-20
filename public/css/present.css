@@ -38,11 +38,9 @@
 .pz-card.lit .pz-slab, .pz-card.picked .pz-slab { border-color: #ffd76a; box-shadow: inset 0 0 0 4px var(--c), 0 0 0 4px #ffd76a, 5px 6px 0 rgba(0, 0, 0, 0.4); }
 .pz-card.lit .pz-slab { background: #fff3c4; }
 .pz-mark { position: absolute; left: 50%; top: calc(var(--card, 140px) * 0.34); z-index: 2; padding: 3px 12px 4px; background: #c8372d; color: #fff; border: 3px solid #14100e; font: 800 clamp(11px, calc(var(--card, 140px) * 0.15), 24px)/1.15 var(--serif); letter-spacing: 0.16em; text-transform: uppercase; translate: -50% 0; animation: pz-stamp 0.34s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
-.pz-mark.bomb { background: #14100e; color: #ffb347; border-color: #ffb347; }
-.pz-stats { display: flex; gap: 3px; margin-top: 4px; }
-.pz-stats .st { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border: 1.5px solid #14100e; border-radius: 999px; background: #fff; color: #14100e; font: 800 11px/1.3 var(--serif); font-variant-numeric: tabular-nums; }
-.pz-stats .st .ic { font-size: 10px; }
-.pz-stats .st.top { background: #ffd76a; }
+.pz-mark.bomb { left: auto; right: -7%; top: 50%; translate: none; display: grid; place-items: center; width: calc(var(--card, 140px) * 0.36); height: calc(var(--card, 140px) * 0.36); padding: 0; border-radius: 50%; background: #1c1b1f; color: #ffb347; border: 3px solid #fbf6e8; box-shadow: 0 0 0 2px #1c1b1f; font-size: calc(var(--card, 140px) * 0.2); letter-spacing: 0; }
+.pz-side.r .pz-mark.bomb, .pz-card.from-r .pz-mark.bomb { right: auto; left: -7%; }
+.pz-mark.bomb .ic { display: block; }
 
 .pz-sparks { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; z-index: 4; }
 .pz-sparks i { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; will-change: transform, opacity; animation: pz-spark 0.75s cubic-bezier(0.1, 0.7, 0.3, 1) var(--d, 0s) both; }
@@ -54,7 +52,7 @@
 /* (faint slanted stripes, standing still: texture, not motion) */
 .pz-half::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(100deg, transparent 0 58px, rgba(255, 255, 255, 0.07) 58px 61px, transparent 61px 140px, rgba(0, 0, 0, 0.08) 140px 142px); }
 /* (VS arrives without a flash or a shake: it settles in) */
-.pz-top { display: contents; }
+.pz-top { position: relative; z-index: 3; grid-row: 1; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; gap: clamp(4px, 1vh, 10px); min-height: 0; }
 .pz-head { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; animation: pz-drop 0.4s cubic-bezier(0.2, 1.3, 0.4, 1) 0.2s both; }
 .pz-title.long { font-size: clamp(24px, 5.4vmin, 50px); }
 .pz-title { padding: 0 18px 4px; font: 400 clamp(28px, 6.6vmin, 62px)/1.05 var(--brush); text-shadow: 0 4px 0 rgba(0, 0, 0, 0.45); }
@@ -160,12 +158,12 @@
 @keyframes pz-letter { 0% { transform: translateY(-0.5em) scale(2.2) rotate(-12deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
 @keyframes pz-letter-fall { 0% { transform: translateY(-1em) rotate(9deg); opacity: 0; } 70% { transform: translateY(0.06em); opacity: 1; } 100% { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { #present *, .pz-hero *, #s-results .pz-hero ~ * { animation: none !important; } }
-/* (a plate that is drawn keeps one width while names run through it) */
-/* a narrow screen: the two plates share the width */
-}
 
 /* ---- the scene as one balanced column: billing, the draw, the players, the board ---- */
-#present.pz-versus { display: flex; flex-direction: column; align-items: center; justify-content: space-evenly; gap: clamp(4px, 1.2vh, 12px); padding: max(1.6vh, env(safe-area-inset-top)) 0 max(1.6vh, env(safe-area-inset-bottom)); }
+#present.pz-versus { display: grid; grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr); justify-items: center; align-items: center; padding: max(1.4vh, env(safe-area-inset-top)) 0 max(1.4vh, env(safe-area-inset-bottom)); }
+/* (the players are the middle of the screen: the billing and the draw share the space above them, the board the space below) */
+.pz-stage { grid-row: 2; }
+.pz-board { grid-row: 3; }
 .pz-head { position: relative; z-index: 3; }
 .pz-note { padding: 2px 12px 3px; background: #fbf6e8; color: #1c1b1f; border: 2px solid #1c1b1f; font: 800 clamp(10px, 1.6vmin, 14px)/1.4 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; }
 .pz-versus[data-grade='final'] .pz-note { background: #ffd76a; }
@@ -190,14 +188,6 @@
 @keyframes pz-reel { from { transform: none; } to { transform: translateY(calc(-100% * (var(--n, 1) - 1) / var(--n, 1))); } }
 
 /* the board at the foot: what decided the round, then where things stand - on paper */
-.pz-facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 8px; max-width: min(96vw, 900px); }
-.pz-fact { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 10px 4px; background: #fbf6e8; color: #1c1b1f; border: 2px solid #1c1b1f; }
-.pz-fact .ic { align-self: center; font-size: 13px; }
-.pz-fact small { font: 800 clamp(8.5px, 1.3vmin, 11px)/1.3 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; color: #5a5148; }
-.pz-fact b { font: 800 clamp(13px, 2.1vmin, 17px)/1.2 var(--serif); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pz-fact.t0 { box-shadow: inset 5px 0 0 #e2543f; padding-left: 14px; }
-.pz-fact.t1 { box-shadow: inset -5px 0 0 #3f7fe2; padding-right: 14px; }
-.pz-fact.bad b { color: #a32a22; }
 .pz-tally { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 14px; padding: 4px 20px 5px; background: #fbf6e8; color: #1c1b1f; border: 2px solid #1c1b1f; box-shadow: inset 0 0 0 3px #fbf6e8, inset 0 0 0 4px rgba(28, 27, 31, 0.3), 4px 5px 0 rgba(0, 0, 0, 0.3); }
 .pz-tally .ts { display: flex; align-items: baseline; gap: 10px; }
 .pz-tally .ts.t1 { flex-direction: row-reverse; }
@@ -211,25 +201,27 @@
 .pz-btn { padding: 4px 14px 5px; background: #fbf6e8; color: #1c1b1f; border: 2px solid #1c1b1f; font: 800 clamp(10px, 1.6vmin, 13px)/1.3 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; }
 .pz-btn:hover, .pz-btn:focus-visible { background: #1c1b1f; color: #fbf6e8; }
 
-/* the ones who lost the round: still, head bowed, and crying in two steady square streams */
-.pz-interval .pz-card.sad .pz-pic img { transform: translateY(9%) rotate(13deg); transform-origin: 50% 90%; }
-.pz-interval .pz-side.r .pz-card.sad .pz-pic img, .pz-interval .pz-card.from-r.sad .pz-pic img { transform: translateY(9%) rotate(-13deg); }
-.pz-cry { position: absolute; top: 54%; width: calc(var(--card, 140px) * 0.1); height: calc(var(--card, 140px) * 0.27); overflow: hidden; background: #8fd0ff; border: 2px solid #1c1b1f; border-top: 0; }
-.pz-cry.a { left: 31%; }
-.pz-cry.b { left: 57%; }
-/* (inside each stream, blocks of darker water run down without end) */
-.pz-cry i { position: absolute; left: 0; right: 0; top: -100%; height: 200%; background: repeating-linear-gradient(180deg, #4aa3ee 0 30%, #8fd0ff 30% 50%); will-change: transform; animation: pz-pour 0.7s linear infinite; }
-.pz-cry.b i { animation-delay: -0.35s; }
-.pz-cry::after { content: ''; position: absolute; left: -60%; right: -60%; bottom: 0; height: 12%; background: #4aa3ee; }
-@keyframes pz-pour { from { transform: none; } to { transform: translateY(50%); } }
 
 @media (max-width: 560px) {
   .pz-draw { width: 100%; gap: 8px; padding: 0 8px; }
   .pz-draw .pz-plate { flex: 1 1 0; min-width: 0; }
   .pz-draw .pz-thumb { width: 100%; }
   .pz-words { flex-direction: column; align-items: flex-start; gap: 0; }
-  .pz-fact small { display: none; }
 }
 /* between rounds the reels are only waiting: lower windows, so the players and the board have the room */
 .pz-interval .pz-thumb { width: clamp(104px, 18vmin, 170px); aspect-ratio: 16 / 6; }
 @media (max-width: 560px) { .pz-interval .pz-draw .pz-thumb { width: 100%; } }
+
+/* what a player did, in a few tags under their name: a sign and a number, nothing to read */
+.pz-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; margin-top: 6px; width: 132%; }
+.pz-stats .st { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px 2px; background: #fbf6e8; color: #1c1b1f; border: 2px solid #1c1b1f; font: 800 clamp(11px, calc(var(--card, 140px) * 0.105), 15px)/1.25 var(--serif); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pz-stats .st .ic { font-size: 0.85em; }
+.pz-stats .st.good { background: #ffd76a; }
+.pz-stats .st.bad { color: #a32a22; border-color: #a32a22; }
+.pz-stats .st.bad.boom { background: #c8372d; color: #fff3e0; border-color: #1c1b1f; }
+/* whoever did most for the winning side */
+.pz-star { position: absolute; left: -5%; top: 12%; z-index: 2; display: grid; place-items: center; width: calc(var(--card, 140px) * 0.26); height: calc(var(--card, 140px) * 0.26); background: #ffd76a; color: #1c1b1f; border: 2px solid #1c1b1f; font-size: calc(var(--card, 140px) * 0.15); transform: rotate(-8deg); animation: pz-stamp 0.34s cubic-bezier(0.2, 1.5, 0.4, 1) 0.9s both; }
+.pz-side.r .pz-star, .pz-card.from-r .pz-star { left: auto; right: -5%; }
+.pz-hero .pz-star { top: 4%; }
+/* a low screen: smaller reels, so the billing and the draw stay clear of the players */
+@media (max-height: 760px) and (min-width: 561px) { .pz-versus:not(.pz-interval) .pz-thumb { width: clamp(118px, 20vmin, 180px); } .pz-title { font-size: clamp(26px, 5.8vmin, 52px); } }

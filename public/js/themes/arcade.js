@@ -7,6 +7,7 @@ import { vnoise, hash1, lighten, darken, rgba, KIND_COLORS, PORTAL_COLORS } from
 
 const U = 2; // one art pixel, in world units
 const OUT = '#1a1040'; // outline colour
+const TEARS = '#5cc8ff'; // a tear, one pixel wide
 const HOT = '#ff2d55'; // the colour of being "it"
 const AIR = '#b8f0ff'; // updraft columns
 const THICK = 14; // how thick ledges and slopes are
@@ -570,7 +571,25 @@ export default {
       P(14, 4 + by, 2, 4, out);
     }
     // face (looks the way it is heading)
-    if (pv.blink > 0.5 || pv.stunned) {
+    if (pv.sad) {
+      // Lost: the classic - brows up in the middle, pupils on the floor, the mouth a
+      // little bridge, and tears one pixel wide in the blue of the sky here.
+      P(6, 6 + by, 3, 4, '#ffffff');
+      P(10, 6 + by, 3, 4, '#ffffff');
+      P(7, 8 + by, 1, 2, OUT);
+      P(11, 8 + by, 1, 2, OUT);
+      P(5, 5 + by, 2, 1, OUT);
+      P(7, 4 + by, 2, 1, OUT);
+      P(10, 4 + by, 2, 1, OUT);
+      P(12, 5 + by, 2, 1, OUT);
+      P(8, 12 + by, 3, 1, OUT);
+      P(7, 13 + by, 1, 1, OUT);
+      P(11, 13 + by, 1, 1, OUT);
+      P(6, 10 + by, 1, 3, '#eaf9ff');
+      P(6, 13 + by, 1, 1, TEARS);
+      P(12, 10 + by, 1, 2, '#eaf9ff');
+      P(12, 12 + by, 1, 1, TEARS);
+    } else if (pv.blink > 0.5 || pv.stunned) {
       P(6, 8 + by, 3, 1, OUT);
       P(10, 8 + by, 3, 1, OUT);
     } else {
@@ -579,7 +598,9 @@ export default {
       P(8, 7 + by, 1, 2, OUT);
       P(12, 7 + by, 1, 2, OUT);
     }
-    if (pv.isIt) {
+    if (pv.sad) {
+      // (drawn above, with the rest of the sad face)
+    } else if (pv.isIt) {
       // angry brows and bared teeth
       P(5, 5 + by, 2, 1, OUT);
       P(6, 6 + by, 2, 1, OUT);

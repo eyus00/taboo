@@ -770,7 +770,8 @@ export default {
     const top = feet - BLOCK;
     const my = feet - BLOCK / 2;
     const ang = turnOf(sc, pv, t);
-    const lean = pv.ground ? clamp(pv.vx / 350, -1, 1) * (pv.dashing ? 0.26 : 0.1) : 0;
+    // (sad: the block bows its head - tips forward on its leading edge)
+    const lean = pv.sad ? f * 0.13 : pv.ground ? clamp(pv.vx / 350, -1, 1) * (pv.dashing ? 0.26 : 0.1) : 0;
 
     if (oni) {
       // red hangs in the air around whoever is it
@@ -853,7 +854,30 @@ export default {
 
     // the slit they see through
     const ey = top + 14.5;
-    if (pv.stunned) {
+    if (pv.sad) {
+      // Lost: the slit sags at both ends, the eyes look at the ground, and what falls
+      // from them is what everything here is made of - small squares of steel.
+      g.fillStyle = WHITE;
+      R(-6, ey, 19, 7);
+      g.fillStyle = BODY;
+      // (the lids, in steps: low at the outer ends, open in the middle)
+      R(-6, ey, 3.2, 3.6);
+      R(-2.8, ey, 3.2, 2.4);
+      R(0.4, ey, 3.1, 1.2);
+      R(3.5, ey, 3.1, 1.2);
+      R(6.6, ey, 3.2, 2.4);
+      R(9.8, ey, 3.2, 3.6);
+      R(-0.6, ey + 3.4, 3.2, 3.6); // eyes, cast down
+      R(7.4, ey + 3.4, 3.2, 3.6);
+      // (a chain of squares from the outer corner of each eye, smaller as they fall)
+      g.fillStyle = WHITE;
+      R(-5.4, ey + 8.4, 2.6, 2.6);
+      R(10.4, ey + 8.4, 2.6, 2.6);
+      R(-5.1, ey + 12.2, 2, 2);
+      g.fillStyle = STEEL;
+      R(10.7, ey + 12.2, 2, 2);
+      R(-4.9, ey + 15.4, 1.6, 1.6);
+    } else if (pv.stunned) {
       g.fillStyle = STEEL;
       R(-6, ey, 19, 7);
       g.fillStyle = BODY;

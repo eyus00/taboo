@@ -831,7 +831,8 @@ export default {
     const glow = pv.isIt ? sc.itGlow[Math.sin(t * 9) > 0 ? 1 : 0] : pv.local ? pal.mine : pal.glow;
     g.drawImage(glow.c, Math.round((cx - glow.w / 2) * k) / k, Math.round((y + 18 - glow.h / 2) * k) / k, glow.w, glow.h);
     squashAt(g, cx, feet, pv.squash);
-    const hover = pv.ground ? Math.sin(t * 4 + pv.seed) * 1.2 : 0;
+    // (sad: it does not float - it sinks on to the floor)
+    const hover = pv.sad ? 2.4 : pv.ground ? Math.sin(t * 4 + pv.seed) * 1.2 : 0;
     const lean = clamp(pv.vx / 260, -1, 1) * 5;
     const left = x + 1;
     const right = x + PW - 1;
@@ -896,6 +897,26 @@ export default {
       g.fillStyle = EMBER;
       g.fillRect(ex - 7 + pv.face, ey - 0.8, 2.8, 2.8);
       g.fillRect(ex + 4.2 + pv.face, ey - 0.8, 2.8, 2.8);
+    } else if (pv.sad) {
+      // Lost: the sockets sag at their outer ends and run - the dark in them drips down
+      // the sheet, as everything in this place drips - and the mouth is a line bent down.
+      g.beginPath();
+      g.ellipse(ex - 5.5, ey + 1, 4, 2.7, -0.5, 0, 6.283);
+      g.ellipse(ex + 5.5, ey + 1, 4, 2.7, 0.5, 0, 6.283);
+      g.fill();
+      for (const [s, len] of [[-1, 11], [1, 7.5]]) {
+        const tx = ex + s * 6.6;
+        g.fillRect(tx - 0.9, ey + 2, 1.8, len);
+        g.beginPath();
+        g.arc(tx, ey + 2 + len, 1.7, 0, 6.283);
+        g.fill();
+      }
+      g.strokeStyle = VOID;
+      g.lineWidth = 1.8;
+      g.lineCap = 'round';
+      g.beginPath();
+      g.arc(ex, ey + 13.2, 3.4, Math.PI * 1.18, Math.PI * 1.82);
+      g.stroke();
     } else {
       g.beginPath();
       g.ellipse(ex - 5.5, ey, 3.7, 0.7 + 4.6 * open, 0, 0, 6.283);

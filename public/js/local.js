@@ -145,7 +145,7 @@ export class LocalGame {
             loser,
             cup: null,
             team: this.teams ? { score, win, total: null } : null,
-            rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: 0, team: r.team, boom: !!r.boom, caps: r.caps || 0 })),
+            rows: rows.map((r) => ({ slot: r.slot, name: r.name, ms: Math.round((r.ticks * 1000) / TICK_RATE), tags: r.tags, pts: 0, team: r.team, boom: !!r.boom, caps: r.caps || 0, plus: r.plus || 0, minus: r.minus || 0 })),
           });
           break;
         }

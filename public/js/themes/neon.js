@@ -827,7 +827,26 @@ export default {
     g.stroke();
 
     g.drawImage(bot.c, left, top, bot.side, bot.side);
-    if (pv.blink > 0.25 && !pv.isIt) {
+    if (pv.sad) {
+      // Lost: the visor blanks and shows the one face a screen has for it - T T - and
+      // the light of it runs on down the shell in two thin lines.
+      const vx = cx - 10 + pv.face * 3;
+      const e1 = vx + 3.2 + pv.face * 2;
+      const e2 = vx + 11.6 + pv.face * 2;
+      g.fillStyle = SHELL;
+      g.fillRect(vx + 1.5, by + 8, 17, 8);
+      g.fillStyle = '#d8fcff';
+      for (const e of [e1, e2]) {
+        g.fillRect(e, by + 9.4, 5.2, 1.5); // the bar of the T
+        g.fillRect(e + 1.85, by + 9.4, 1.5, 6.2); // its stem
+      }
+      g.fillStyle = '#b9f7ff';
+      g.fillRect(e1 + 1.85, by + 17.2, 1.5, 9.5);
+      g.fillRect(e2 + 1.85, by + 17.2, 1.5, 6.5);
+      g.fillStyle = '#d8fcff';
+      g.fillRect(e1 + 1.35, by + 26.2, 2.5, 2.5);
+      g.fillRect(e2 + 1.35, by + 23.2, 2.5, 2.5);
+    } else if (pv.blink > 0.25 && !pv.isIt) {
       // eyes shut: cover them, leave two slits
       const vx = cx - 10 + pv.face * 3;
       g.fillStyle = SHELL;
