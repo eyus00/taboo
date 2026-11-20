@@ -10,3 +10,11 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22
+      # Accounts are optional (see README): without DATABASE_URL the game runs without them.
+      # (sync: false - each is typed in on the dashboard, and never overwritten from here)
+      - key: DATABASE_URL
+        sync: false
+      - key: PIN_SECRET
+        sync: false
+      - key: ADMIN_KEY
+        sync: false

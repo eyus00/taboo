@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Onigokko - accounts</title>
+    <link rel="stylesheet" href="/css/fonts.css" />
+    <style>
+      /* The owner's page: paper, ink and the seal's red, like the game - and nothing else. */
+      :root { --paper: #f3ead6; --lit: #fbf6e8; --ink: #1c1b1f; --red: #a32a22; --soft: #5a5146; --faint: rgba(28, 27, 31, 0.2); --brush: 'Kaushan Script', cursive; --serif: 'Baseline Dots', 'Shippori Mincho', Georgia, serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 24px 16px 60px; background: var(--paper); color: var(--ink); font: 600 15px/1.45 var(--serif); }
+      main { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+      h1 { margin: 0; font: 400 40px/1.1 var(--brush); }
+      h1 small { margin-left: 10px; font: 800 12px/1 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; color: var(--red); }
+      h2 { margin: 0 0 8px; font: 800 12px/1.2 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; color: var(--red); }
+      section { padding: 14px 16px 16px; background: var(--lit); border: 2px solid var(--ink); box-shadow: inset 0 0 0 3px var(--lit), inset 0 0 0 4px rgba(28, 27, 31, 0.3); }
+      [hidden] { display: none !important; }
+      input { padding: 7px 9px; background: #fff; color: var(--ink); border: 2px solid var(--ink); border-radius: 0; font: 600 16px/1.2 var(--serif); }
+      button { padding: 7px 14px; background: var(--lit); color: var(--ink); border: 2px solid var(--ink); font: 800 12px/1.3 var(--serif); letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; }
+      button:hover { background: var(--ink); color: var(--lit); }
+      button.red { background: var(--red); color: #fff3e0; }
+      button:focus-visible, input:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+      .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+      .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+      .facts b { font: 400 30px/1 var(--brush); color: var(--red); margin-right: 6px; }
+      .msg { min-height: 1.4em; margin: 6px 0 0; color: var(--red); }
+      .code { display: inline-block; margin: 8px 0 2px; padding: 6px 16px; background: var(--ink); color: #fff3e0; font: 400 34px/1.2 var(--brush); letter-spacing: 0.16em; user-select: all; }
+      table { width: 100%; border-collapse: collapse; }
+      th { text-align: left; font: 800 11px/1.3 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; color: var(--soft); }
+      th, td { padding: 6px 8px 6px 0; border-bottom: 1.5px solid var(--faint); vertical-align: baseline; }
+      td.n { font: 400 20px/1 var(--brush); }
+      td.acts { text-align: right; white-space: nowrap; }
+      td.acts button { padding: 3px 8px; font-size: 10.5px; }
+      .tag { padding: 1px 6px; border: 1.5px solid var(--red); color: var(--red); font: 800 10px/1.4 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; }
+      .log { margin: 0; padding: 0; list-style: none; font-size: 13.5px; color: var(--soft); }
+      .note { margin: 6px 0 0; font-size: 13px; color: var(--soft); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Onigokko <small>accounts</small></h1>
+
+      <section id="door">
+        <h2>The key</h2>
+        <form class="row" id="key-form">
+          <input id="key" type="password" autocomplete="current-password" placeholder="ADMIN_KEY" aria-label="The admin key" size="28" />
+          <button type="submit">Open</button>
+        </form>
+        <p class="msg" id="door-msg" role="alert"></p>
+        <p class="note">The key is the ADMIN_KEY set on the server. It is kept in this tab only, and forgotten when the tab is closed.</p>
+      </section>
+
+      <section id="state" hidden>
+        <h2>Now</h2>
+        <div class="facts">
+          <span><b id="f-total">0</b>accounts</span>
+          <span><b id="f-hour">0</b>made in the last hour (of <span id="f-cap">0</span> allowed)</span>
+          <span><b id="f-need">3</b>rounds before one can be made</span>
+        </div>
+        <p class="row" style="margin: 12px 0 0">
+          <span id="f-open"></span>
+          <button id="btn-pause"></button>
+          <button id="btn-refresh">Refresh</button>
+        </p>
+      </section>
+
+      <section id="reset" hidden>
+        <h2>A forgotten PIN</h2>
+        <form class="row" id="reset-form">
+          <label for="reset-id">Player number</label>
+          <input id="reset-id" inputmode="numeric" pattern="[0-9]*" size="8" placeholder="12" />
+          <button type="submit">Make a reset code</button>
+        </form>
+        <p class="msg" id="reset-msg" role="alert"></p>
+        <div id="reset-out" hidden>
+          <span class="code" id="reset-code"></span>
+          <p class="note" id="reset-note"></p>
+        </div>
+        <p class="note">Give the code to the player once you are sure the account is theirs. In the game they choose Profile, Sign in, "Forgot your PIN?", and enter their number, the code and a new PIN. The code works once, for a day; making it signs every device out of that account.</p>
+      </section>
+
+      <section id="list" hidden>
+        <h2>The newest accounts</h2>
+        <p class="msg" id="list-msg" role="alert"></p>
+        <table>
+          <thead><tr><th>No.</th><th>Name</th><th>Rounds</th><th>Made</th><th>Last seen</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </section>
+
+      <section id="logbox" hidden>
+        <h2>What has been done here</h2>
+        <ul class="log" id="log"></ul>
+      </section>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const el = (tag, cls, text) => {
+        const e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text != null) e.textContent = text;
+        return e;
+      };
+      let key = sessionStorage.getItem('tag.admin') || '';
+      const when = (ms) => (ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '-');
+
+      async function call(action, extra = {}) {
+        try {
+          const res = await fetch('/api/admin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key, action, ...extra }) });
+          const data = await res.json().catch(() => ({ error: 'The server sent something that could not be read.' }));
+          return { status: res.status, ...data };
+        } catch {
+          return { status: 0, error: 'The server did not answer.' };
+        }
+      }
+
+      function show(o) {
+        for (const id of ['state', 'reset', 'list', 'logbox']) $(id).hidden = false;
+        $('door').hidden = true;
+        $('f-total').textContent = o.total;
+        $('f-hour').textContent = o.lastHour;
+        $('f-cap').textContent = o.perHour;
+        $('f-need').textContent = o.need;
+        $('f-open').textContent = o.paused ? 'New accounts are switched OFF.' : 'New accounts can be made.';
+        $('btn-pause').textContent = o.paused ? 'Allow new accounts' : 'Stop new accounts';
+        $('btn-pause').className = o.paused ? '' : 'red';
+        $('btn-pause').onclick = async () => {
+          await call(o.paused ? 'resume' : 'pause');
+          load();
+        };
+        const rows = $('rows');
+        rows.textContent = '';
+        for (const a of o.accounts) {
+          const tr = el('tr');
+          const name = el('td', '', a.name);
+          if (a.status !== 'ok') name.append(' ', el('span', 'tag', 'closed'));
+          if (a.locked) name.append(' ', el('span', 'tag', 'locked'));
+          const acts = el('td', 'acts');
+          const act = (label, action, sure) => {
+            const b = el('button', '', label);
+            b.onclick = async () => {
+              if (sure && !confirm(sure)) return;
+              const r = await call(action, { id: a.id });
+              $('list-msg').textContent = r.error || '';
+              load();
+            };
+            acts.append(b, ' ');
+          };
+          act(a.status === 'ok' ? 'Close' : 'Open', a.status === 'ok' ? 'close' : 'open', a.status === 'ok' ? `Close player #${a.id} (${a.name})? They are signed out and cannot sign in until it is opened again.` : '');
+          act('Delete', 'delete', `Delete player #${a.id} (${a.name}) for good? The number is not given out again.`);
+          tr.append(el('td', 'n', `#${a.id}`), name, el('td', '', String(a.rounds)), el('td', '', when(a.created)), el('td', '', when(a.seen)), acts);
+          rows.append(tr);
+        }
+        if (!o.accounts.length) rows.append(Object.assign(el('tr'), { innerHTML: '<td colspan="6">No accounts yet.</td>' }));
+        const log = $('log');
+        log.textContent = '';
+        for (const l of o.log) log.append(el('li', '', `${when(l.at)} - ${l.action}${l.id ? ` #${l.id}` : ''}${l.note ? `: ${l.note}` : ''}`));
+        if (!o.log.length) log.append(el('li', '', 'Nothing yet.'));
+      }
+
+      async function load() {
+        const o = await call('overview');
+        if (o.error) {
+          $('door').hidden = false;
+          $('door-msg').textContent = o.error;
+          if (o.status === 401 || o.status === 429 || o.status === 404) {
+            key = '';
+            sessionStorage.removeItem('tag.admin');
+            for (const id of ['state', 'reset', 'list', 'logbox']) $(id).hidden = true;
+          }
+          return;
+        }
+        sessionStorage.setItem('tag.admin', key);
+        $('door-msg').textContent = '';
+        show(o);
+      }
+
+      $('key-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        key = $('key').value;
+        $('key').value = '';
+        load();
+      });
+      $('btn-refresh').addEventListener('click', load);
+      $('reset-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = Number($('reset-id').value);
+        $('reset-out').hidden = true;
+        if (!Number.isInteger(id) || id < 1) return ($('reset-msg').textContent = 'Enter the player number.');
+        const r = await call('reset', { id });
+        $('reset-msg').textContent = r.error || '';
+        if (!r.ok) return;
+        $('reset-code').textContent = r.code;
+        $('reset-note').textContent = `For player #${id}. Good until ${when(r.expires)}. It is shown this once: it is not kept anywhere it could be read again.`;
+        $('reset-out').hidden = false;
+        load();
+      });
+      if (key) load();
+    </script>
+  </body>
+</html>

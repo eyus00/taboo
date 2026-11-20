@@ -85,3 +85,5 @@ body.chat-game .chat-feed { bottom: auto; top: 168px; width: min(320px, calc(100
 }
 /* (a phone, in a match: the bookmark sits above the touch buttons) */
 @media (max-width: 560px) { body.chat-game .chat-tab { bottom: auto; top: 38%; } }
+/* (the number of whoever has an account, beside their name) */
+.chat-no { padding: 0 4px; border: 1.5px solid var(--faint); font: 800 10.5px/1.5 var(--serif); color: var(--soft); font-variant-numeric: tabular-nums; }

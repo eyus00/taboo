@@ -768,3 +768,23 @@ button.hub-room:active { scale: 0.99; }
 .tool .ring.you { position: relative; }
 .you-pic { position: absolute; inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); object-fit: cover; border-radius: 50%; border: 2px solid var(--ink); }
 .you-pic[hidden] { display: none; }
+
+/* --- your account (account.js): a line in the profile, and the small card where a PIN is typed --- */
+.pf-acct { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--s3); padding: var(--s2) var(--s3); background: var(--paper-lit); border: 1.5px solid var(--faint); }
+.pf-acct[hidden] { display: none; }
+.pf-acct-line { flex: 1 1 240px; margin: 0; font: 600 13px/1.4 var(--serif); color: var(--soft); }
+.pf-no { margin-right: var(--s2); padding: 1px 9px 2px; background: var(--red-deep); color: #fff3e0; font: 400 19px/1.2 var(--brush); white-space: nowrap; }
+.pf-acct-btns { display: flex; flex-wrap: wrap; gap: 4px var(--s3); }
+.acct { display: flex; flex-direction: column; gap: var(--s2); }
+.acct .lead { font-size: 14px; font-weight: 600; color: var(--soft); text-wrap: pretty; }
+.acct-f { display: flex; flex-direction: column; gap: 2px; }
+.acct-f[hidden] { display: none; }
+.acct-f input { width: 100%; padding: 6px 2px; background: transparent; color: var(--ink); border: 0; border-bottom: 2.5px solid var(--ink); border-radius: 0; font: 400 26px/1.2 var(--brush); letter-spacing: 0.12em; }
+.acct-f input::placeholder { color: rgba(28, 27, 31, 0.28); letter-spacing: 0.04em; }
+.acct-f input:focus { outline: none; border-bottom-color: var(--red); }
+.acct .btn { align-self: flex-start; margin-top: var(--s1); }
+.acct .pf-link { align-self: flex-start; }
+/* on the results card, once: there is such a thing as an account */
+.acct-hint { margin: 0; padding: 6px 12px; background: var(--paper-lit); border: 1.5px solid var(--faint); font: 600 13.5px/1.4 var(--serif); text-align: center; }
+.acct-hint[hidden] { display: none; }
+.pf-link.quiet { color: var(--soft); margin-left: var(--s2); }

@@ -185,7 +185,9 @@ function item(m, prev) {
   const joined = prev && !prev.sys && prev.from === m.from && prev.name === m.name && m.at - prev.at < GROUP_MS;
   if (!joined) {
     const head = el('div', 'chat-who');
-    head.append(sealOf(m), el('b', '', m.name), el('time', '', clock(m.at)));
+    head.append(sealOf(m), el('b', '', m.name));
+    if (m.no) head.append(el('small', 'chat-no', `#${m.no}`)); // (their account's number, if they have one)
+    head.append(el('time', '', clock(m.at)));
     if (m.from !== me) {
       const mute = el('button', 'chat-mute', 'Mute');
       mute.type = 'button';

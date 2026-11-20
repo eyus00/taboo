@@ -42,6 +42,20 @@ Things to know about the free plan:
 - The server goes to sleep after about 15 minutes with no visitors. The next visit takes 30&ndash;60 seconds to wake it up; after that it is fast. Opening the page is what wakes it, so load the site a minute before you want to play.
 - Rooms live in memory. If the server restarts or goes to sleep, open rooms are gone &ndash; just make a new one.
 
+### Accounts (optional)
+
+Without any of this the game runs exactly as it is, and every player's record stays in their own browser. To let players have an **account** (a number of their own and a four-digit PIN, their record kept in a database - see *Accounts* under *How it works*):
+
+1. Make a free Postgres database. [Neon](https://neon.com) is the one this was built with: create a project (only *Postgres database* is needed), in the region nearest your server, and copy its connection string (it starts with `postgresql://`).
+2. On Render open your service &rarr; **Environment** and add three variables:
+   - `DATABASE_URL` &ndash; the connection string.
+   - `PIN_SECRET` &ndash; any long random text (*Generated secret* makes one). PINs are hashed with it: **never change it**, or every PIN stops working.
+   - `ADMIN_KEY` &ndash; another long random text. It is the password of your admin page: keep a copy.
+3. Save and deploy. The log says `Accounts are on.`; the tables are made by themselves.
+4. Your admin page is at `/admin.html`: the newest accounts, a reset code for someone who has forgotten their PIN, closing or deleting an account, and a switch that stops new accounts.
+
+Optional settings: `TAG_ACCOUNT_ROUNDS` (rounds to play before an account can be made; 3), `TAG_SIGNUPS_PER_HOUR` (the most new accounts in an hour, for the whole server; 120).
+
 Any host that runs a long-lived Node process with WebSockets works the same way (the server reads the `PORT` environment variable). Static-only hosts such as GitHub Pages cannot run it.
 
 ## How to play
@@ -83,6 +97,7 @@ Anything that would take you out of a game (Esc or the cross in a room, Q in the
 - **Stages come in three sizes.** Two duel stages for 2&ndash;4 players, six for 2&ndash;6 and three big ones for 5&ndash;10. The room only offers the ones that suit the number of players (a line under them says how many more there are for other numbers), and one that was chosen goes back to Random when the room outgrows it.
 - **Chat.** A bookmark on the right edge of the screen (or `/`) opens a small scroll with two channels: **Room** (only the people in the room you are in; it also says who came and went) and **Everyone** (everybody who is online). It is there everywhere - in the menus and in a match - and whatever is said shows for a few seconds at the left of the screen as it is said, with the speaker's character beside it. In a match `/` takes the keys from the game, Enter says it and hands them back, Esc closes the chat and nothing else. See *Chat* under *How it works* for what it keeps and what it refuses.
 - **Your profile.** The picture on the title scroll (or `N`) opens it. **Your character**: pick any art style's character and one of its ten colours - that is you on the title scroll and in chat (in a match everyone is drawn in that match's style and colours). **Your record**, kept short: wins, rounds, your best run of wins, and wins game by game. *Save to a file* writes it all out, *Load a file* reads one back (to move to another device, or to keep a copy), *Start afresh* wipes the numbers. See *Your record* under *How it works*.
+- **Accounts, for whoever wants one.** Nobody needs one. After three rounds the results card mentions it, once; from then on it is in the profile. An account is the next free number (*Player #12*) and a PIN of four digits: your record and your character are kept on the server, counted there, and yours again on any device you sign in on. See *Accounts* under *How it works*. (Only on a server that has been given a database.)
 - **Your choices are remembered.** What a host chose last time is kept on their device and put back into the next room they open: which stages and styles Random may draw, a stage or style picked outright, which items are in the lucky boxes, and whether there are boxes at all.
 - **What Random draws from is yours to say.** While Random is the choice, every stage (and every style) has a small round tick in the corner of its picture: take one out of the draw, or put it back. Random then only draws from the ones left in (and from the stages that suit the number of players). The same goes for the lucky boxes: tap an item's button to take it out of the boxes or put it back; the reel of a box then only rolls through what is in. Point at an item (or bring the keyboard's focus to it) and a card opens over it: its name, what it does, and the How to play demo of it, playing. Guests get the same card from the row of icons on their match card.
 - **Every round is an occasion.** Before a round one scene plays over everything: the players come on face to face &ndash; the two teams from either side of a split screen with VS between them, two players alone for a duel, or everyone in a line under *All VS All* &ndash; with the round's billing over them (*Round 2 of 5* and where the sides stand, *Semi-final*, a golden *The Final*, *Tie-break*). The draw is made in the same picture, on two reels under the billing and above the players: paper cards with a window of pictures that spins and stops on the style and the stage drawn, their names over it. Everything in the scene is set in one balanced column. Until it lands nothing is known: the plates at the foot say *?*, and the players are blank tokens in their colours. First the style is drawn (names run through its plate, it lands, and the players turn into that style's characters), then the stage (it shows faintly through the ground), then who starts as the oni &ndash; a light runs along the players and stops on them (in a team game, whoever starts with a bomb is stamped). What the host fixed beforehand is simply there from the start. Then the scene parts, three seconds before GO: the 3-2-1 is counted over the stage itself, with everyone standing where they start, so there is time to choose where to run. A player's card is paper with a rim of their colour, so a character in that colour never vanishes into it. After a round the results card opens with the word for it across its head &ndash; *Victory*, *Defeat*, *Round won*, *Through*, *Knocked out*, *Champions* &ndash; over whoever won, each with their own numbers (and, in a knockout, whoever went out), with the score and what comes next (*Next: the Final*); the scoreboard is right under it on the same card. The opening is built while the match is being set up and only starts to move once the page is quiet, moves nothing but transforms and opacity, and the match behind it is not drawn while it covers the screen. With reduced motion switched on in the system, the opening is not shown. **Between the rounds of a tournament** the result is shown on this same screen rather than on a card of its own: the winners are rimmed in gold and dance, the ones who lost the round are shown in their style's own drawing of having lost (every art style has one: the ink figure's hat tipped over shut eyes and two washes of tears, the block ninja bowed with squares of steel falling from its slit, the robot's visor showing T T, the ghost's sockets running, the doodle's crayon tears, the 8-bit frown) (in a knockout, whoever went out is greyed and stamped *Out*), everyone has a few plain tags under their name (a bomb if one went off in their hands, bombs passed on, flags taken; in a knockout, time as the oni and tags made), and at the foot a board that says where the tournament stands and counts down to the next round &ndash; whose draw then begins right there, without the players leaving the screen. The host can end the tournament from it (anyone else can leave).
@@ -132,10 +147,12 @@ You hold one item at a time and choose when to use it. Boxes keep coming, and it
 ```
 server.js            Express + Socket.io. Rooms (people and the bots in the empty seats), tournaments, and the real simulation of every match.
 chat.js              Chat on the server: cleaning and softening text, the rate limit, each channel's short memory.
+accounts.js          Accounts: numbers, PINs and their limits, devices, reset codes, records written to the database in the background.
 shared/              Code that runs on BOTH the server and the browser:
   config.js            every tunable number (speeds, jump, timers, items, team battle, tournament rules)
   physics.js           one player, one tick: movement, ledges, slopes, trampolines, launchers, updrafts, thorns, portals
   sim.js               the rules: who is it, tagging, lucky boxes and items, the team battle, scoring
+  record.js            a player's record, and the one piece of code that counts a round into it (the browser and the server both use it)
   arenas.js            the maps, drawn as text
   nav.js, bots.js      route map of each arena and the computer players that use it
 public/
@@ -146,6 +163,8 @@ public/
   js/present.js        the opening before each round (players, stage, style, who is the oni) and the head of the results card
   js/chat.js           chat in the menus: the bookmark, the scroll, the two channels
   js/profile.js        your record: what is counted, kept in this browser, written to a file and read from one
+  js/account.js        your account, as the browser sees it: the device's token, the ticket of rounds played
+  admin.html           the owner's page (needs ADMIN_KEY)
   js/demo.js           the live demos on the how-to-play page
   js/net.js            online play: prediction, reconciliation, interpolation
   js/local.js          a match against bots in the browser alone (not in any menu: the automated checks use it, as __tag.practice())
@@ -182,12 +201,21 @@ test/                `npm test` - rules/physics checks and scripted online match
 - **Mute.** *Mute* beside a name hides that person's messages on your screen for as long as the page is open.
 - **What it is not.** The filter is a courtesy, not a moderator: nobody reads the chat, there is no reporting and nobody can be banned. *Everyone* is an open channel between strangers. To run the game without it, start the server with `TAG_GLOBAL_CHAT=off` (room chat stays).
 
+### Accounts
+
+- **What one is.** The next free number and a PIN of four digits. The server keeps the name, the character, and the record - and counts the record itself at the end of each round, with the same code the browser uses for someone without an account (`shared/record.js`), so it cannot be edited. A device that has signed in stays signed in (it holds a long random token; the PIN is not kept anywhere on it).
+- **A PIN is not much of a secret**, and the numbers are none at all, so the limits do the work: five wrong tries lock that one account for a quarter of an hour, twice as long each time it happens again; the PINs anyone would try first are refused; PINs are stored hashed with a secret that is not in the database. This is the security of a game's save file, not of a bank.
+- **A forgotten PIN.** From a device that is still signed in: *Change PIN*. Otherwise the owner of the server makes a one-time code on the admin page and hands it over; with it the player chooses a new PIN, and every device is signed out. There is no e-mail, so there is no way back that does not go through a person.
+- **Accounts by the bucketful.** One can only be made after three rounds played to the buzzer: the server hands the browser a signed ticket that counts them, and a ticket makes one account. There is a ceiling on new accounts per hour for the whole server, and a switch on the admin page that stops them. Nothing is limited per network address - a school is one address.
+- **The game never waits for the database.** A match touches it not at all. A record is counted in memory when the round ends and written a moment later; if the database is asleep or away, the write is tried again. The one way to lose a round's count is the server itself restarting before a retry has succeeded.
+- **What is stored:** the name, the character, the record, a hash of the PIN, hashes of the devices' tokens, and when the account was made and last seen. No e-mail, no real name, no network address. *Delete account* in the profile removes all of it.
+
 ### Your record
 
-- **There are no accounts.** The record lives in the browser's own storage on the device you play on; the server never sees it. Clearing the browser's data clears it - hence the file.
+- **Without an account** the record lives in the browser's own storage on the device you play on; the server never sees it. Clearing the browser's data clears it - hence the file. (With an account it is the server's, and the copy in the browser is only what was last sent.)
 - **What is counted.** Only rounds you played in to the buzzer, in a room (not ones you watched, and not one that ended because everyone else left). A tournament is counted when its last round has been played.
 - **The file** is plain JSON. Anyone can open it and change the numbers, so this is a diary, not a ranking: nothing in the game trusts it. Whatever is read from a file is checked first - only what a profile has is kept, and numbers that cannot be true (more wins than rounds) are put right.
-- **Later.** The record has a version and a random id of its own, so a future version can offer to keep it on a server under a private code without changing what is counted.
+- **One shape.** A record in a browser, in a file and in an account are the same object with the same version, so one becomes the other without translation: an account starts with whatever the browser had counted.
 
 ## Changing things
 

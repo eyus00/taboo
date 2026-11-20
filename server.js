@@ -43,6 +43,8 @@ import { Sim, standings, makeTeams } from './shared/sim.js';
 import { makeBot, botThink, prepareBots, BOT_NAMES } from './shared/bots.js';
 import { packState, publicFlags } from './shared/physics.js';
 import { CHAT_MAX, cleanText, soften, makeSpeaker, take, makeLog, remember } from './chat.js';
+import { makeAccounts, NEED_ROUNDS } from './accounts.js';
+import { timingSafeEqual, createHash } from 'node:crypto';
 
 const DEFAULT_SIZE = 6; // seats in a new room
 
@@ -65,6 +67,7 @@ const VIEW_DELAY_TICKS = 6;
 // ---------------------------------------------------------------------------
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1); // (behind the host's proxy: an address is the visitor's, not the proxy's)
 app.get('/healthz', (_req, res) => res.type('text/plain').send('ok'));
 
 const staticOpts = {
@@ -75,6 +78,49 @@ const staticOpts = {
 };
 app.use('/shared', express.static(path.join(__dirname, 'shared'), staticOpts));
 app.use(express.static(path.join(__dirname, 'public'), staticOpts));
+
+// --- the owner's page (public/admin.html): accounts, reset codes, stopping new ones ---
+// Only with ADMIN_KEY set, and only for whoever has it. Ten wrong keys from one address
+// and that address is turned away for an hour.
+const adminFails = new Map(); // address -> [count, since]
+app.post('/api/admin', express.json({ limit: '2kb' }), async (req, res) => {
+  const key = process.env.ADMIN_KEY || '';
+  if (!key || key.length < 8) return res.status(404).json({ error: 'There is no admin page on this server (ADMIN_KEY is not set).' });
+  const from = req.ip || 'x';
+  const f = adminFails.get(from);
+  if (f && Date.now() - f[1] > 3600000) adminFails.delete(from);
+  if ((adminFails.get(from)?.[0] || 0) >= 10) return res.status(429).json({ error: 'Too many wrong keys. Try again in an hour.' });
+  const given = createHash('sha256').update(String(req.body?.key || '')).digest();
+  if (!timingSafeEqual(given, createHash('sha256').update(key).digest())) {
+    adminFails.set(from, [(adminFails.get(from)?.[0] || 0) + 1, adminFails.get(from)?.[1] || Date.now()]);
+    return res.status(401).json({ error: 'That is not the key.' });
+  }
+  if (!accounts) return res.json({ off: true, error: 'Accounts are off on this server (no database, or it cannot be reached).' });
+  const id = Number(req.body.id);
+  try {
+    const A = accounts.admin;
+    const act = String(req.body.action || 'overview');
+    let out;
+    if (act === 'overview') out = await A.overview();
+    else if (act === 'find') out = { account: await A.find(id) };
+    else if (act === 'reset') out = await A.reset(id);
+    else if (act === 'close' || act === 'open') out = await A.ban(id, act === 'close');
+    else if (act === 'delete') out = await A.remove(id);
+    else if (act === 'pause' || act === 'resume') out = await A.pause(act === 'pause');
+    else return res.status(400).json({ error: 'Unknown action.' });
+    // (whoever was signed in to an account that is closed or gone is signed out where they sit)
+    if ((act === 'close' || act === 'delete' || act === 'reset') && out.ok) {
+      for (const s of acctSockets(id)) {
+        s.data.acct = null;
+        s.data.token = null;
+        s.emit('acct', { out: true });
+      }
+    }
+    res.json(out);
+  } catch (err) {
+    res.status(503).json({ error: `The database did not answer (${err.message}). Try again in a moment.` });
+  }
+});
 
 const http = createServer(app);
 const io = new Server(http, {
@@ -631,8 +677,78 @@ function finishRound(room, reason) {
   room.game = null;
   room.phase = 'results';
   io.to(room.code).emit('end', out);
+  afterRound(room, out, [...bySlot.values()].filter((p) => !p.bot), g, cup);
   emitRoom(room);
   updateLoop();
+}
+
+// ---------------------------------------------------------------------------
+// Accounts (see accounts.js). There are none unless a database is given
+// (DATABASE_URL): the game is the same without them.
+// ---------------------------------------------------------------------------
+let accounts = null;
+async function openAccounts() {
+  let query = null;
+  if (process.env.TAG_TEST_DB === 'memory') {
+    // (the tests: a real Postgres, in memory)
+    const { PGlite } = await import('@electric-sql/pglite');
+    const db = new PGlite();
+    query = (text, params) => db.query(text, params);
+  } else if (process.env.DATABASE_URL) {
+    const { default: pg } = await import('pg');
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 5, connectionTimeoutMillis: 10000, idleTimeoutMillis: 30000 });
+    pool.on('error', (err) => console.log(`accounts: the database dropped a connection (${err.message})`)); // (a sleeping database does: the next query opens another)
+    // one more try when the connection itself failed: a database that was asleep is awake by then
+    query = async (text, params) => {
+      try {
+        return await pool.query(text, params);
+      } catch (err) {
+        if (err.code && /^[0-9A-Z]{5}$/.test(err.code) && !err.code.startsWith('08') && !err.code.startsWith('57')) throw err; // (the database answered: it is the question that is wrong)
+        return pool.query(text, params);
+      }
+    };
+  }
+  if (!query) return console.log('Accounts are off (no DATABASE_URL): records stay in each browser.');
+  if (!process.env.PIN_SECRET) console.log('accounts: PIN_SECRET is not set - set one (any long random text) and keep it: PINs are hashed with it.');
+  const secret = process.env.PIN_SECRET || createHash('sha256').update(`fallback:${process.env.DATABASE_URL || 'memory'}`).digest('hex');
+  const a = makeAccounts({ query, secret, perHour: Number(process.env.TAG_SIGNUPS_PER_HOUR) || 120, need: Number(process.env.TAG_ACCOUNT_ROUNDS) || NEED_ROUNDS, log: console.log });
+  try {
+    await a.init();
+    accounts = a;
+    console.log('Accounts are on.');
+  } catch (err) {
+    console.log(`Accounts are off: the database could not be reached (${err.message}).`);
+    setTimeout(openAccounts, 60000).unref(); // (it may only be asleep, or not there yet)
+  }
+}
+const acctSockets = (id) => [...io.sockets.sockets.values()].filter((s) => s.data.acct === id);
+
+// A round has been played to the buzzer. Everyone who played in it has one more round on
+// their ticket (three make an account possible); whoever has an account has the round
+// counted into their record - here, by the server, not by their browser.
+function afterRound(room, out, players, g, cup) {
+  if (!accounts || out.reason === 'forfeit') return;
+  const ctx = { theme: g.themeId, arena: g.arenaId, duration: g.duration };
+  const told = new Map(); // account -> its record after this round
+  for (const p of players) {
+    const s = io.sockets.sockets.get(p.id);
+    if (!s) continue;
+    s.data.played = { tid: (s.data.played || accounts.newTicket()).tid, n: (s.data.played?.n || 0) + 1 };
+    const msg = { ticket: accounts.ticket(s.data.played), played: s.data.played.n };
+    if (s.data.acct) {
+      msg.record = accounts.count(s.data.acct, out, { ...ctx, slot: p.slot });
+      if (cup && out.cup) (cup.seen ||= new Map()).set(s.data.acct, p.slot); // (they played in this tournament)
+      told.set(s.data.acct, msg.record);
+    }
+    s.emit('acct', msg);
+  }
+  // a tournament is over: it counts for everyone with an account who played a round of it
+  if (cup?.seen && out.cup?.final) {
+    for (const [id, slot] of cup.seen) {
+      const record = accounts.cup(id, out.cup.ko ? 'ko' : 'team', out.winners.includes(slot));
+      if (record) for (const s of acctSockets(id)) s.emit('acct', { record });
+    }
+  }
 }
 
 function flushEvents(room) {
@@ -915,6 +1031,90 @@ io.on('connection', (socket) => {
     leaveRoom(socket);
   });
 
+  // --- accounts ---
+  // (every question here is answered, with an error if need be: the page is waiting)
+  const acctTurn = makeSpeaker(); // (the same patience as for chat: a burst, then a trickle)
+  const acct = (name, fn) =>
+    socket.on(name, async (msg, ack) => {
+      if (typeof ack !== 'function') return;
+      if (!accounts) return ack({ off: true, error: 'There are no accounts on this server.' });
+      if (name !== 'acct:hello' && !take(acctTurn, Date.now()).ok) return ack({ error: 'Slow down a little.' });
+      try {
+        ack(await fn(msg || {}));
+      } catch (err) {
+        console.log(`accounts: ${name} failed (${err.message})`);
+        ack({ error: 'Accounts are waking up. Try again in a moment.' });
+      }
+    });
+  const signedIn = (account, token) => {
+    socket.data.acct = account.id;
+    socket.data.token = token;
+    return { ok: true, token, account };
+  };
+  const signedOut = async () => {
+    const id = socket.data.acct;
+    socket.data.acct = null;
+    socket.data.token = null;
+    if (id && !acctSockets(id).length) await accounts.release(id);
+  };
+  // What this connection brings along: the ticket of the rounds it has played, and - if this
+  // device is signed in - its token.
+  acct('acct:hello', async (msg) => {
+    socket.data.played = accounts.readTicket(msg.ticket) || socket.data.played || accounts.newTicket();
+    const account = msg.token ? await accounts.resume(msg.token) : null;
+    if (account) signedIn(account, msg.token);
+    return { on: true, need: accounts.need, played: socket.data.played.n, open: !accounts.paused, account, gone: !!msg.token && !account };
+  });
+  acct('acct:create', async (msg) => {
+    if (socket.data.acct) return { error: 'You are signed in already.' };
+    const res = await accounts.create({ pin: msg.pin, name: cleanName(msg.name), look: { style: msg.look?.[0], colour: msg.look?.[1] }, record: msg.record, played: socket.data.played });
+    return res.ok ? signedIn(res.account, res.token) : res;
+  });
+  acct('acct:signin', async (msg) => {
+    if (socket.data.acct) return { error: 'You are signed in already.' };
+    const res = await accounts.signIn(Number(msg.id), msg.pin);
+    return res.ok ? signedIn(res.account, res.token) : res;
+  });
+  acct('acct:reset', async (msg) => {
+    if (socket.data.acct) return { error: 'You are signed in already.' };
+    const res = await accounts.useReset(Number(msg.id), msg.code, msg.pin);
+    return res.ok ? signedIn(res.account, res.token) : res;
+  });
+  acct('acct:pin', async (msg) => (socket.data.acct ? accounts.setPin(socket.data.acct, msg.pin, socket.data.token) : { error: 'Not signed in.' }));
+  acct('acct:save', async (msg) => (socket.data.acct ? accounts.saveProfile(socket.data.acct, { name: cleanName(msg.name), look: { style: msg.look?.[0], colour: msg.look?.[1] } }) : { error: 'Not signed in.' }));
+  acct('acct:signout', async (msg) => {
+    if (!socket.data.acct) return { ok: true };
+    const id = socket.data.acct;
+    await accounts.signOut(socket.data.token, { everywhere: !!msg.everywhere, id });
+    if (msg.everywhere) {
+      for (const s of acctSockets(id)) {
+        if (s === socket) continue;
+        s.data.acct = null;
+        s.data.token = null;
+        s.emit('acct', { out: true });
+      }
+    }
+    await signedOut();
+    return { ok: true };
+  });
+  acct('acct:delete', async (msg) => {
+    if (!socket.data.acct) return { error: 'Not signed in.' };
+    const id = socket.data.acct;
+    const res = await accounts.remove(id, msg.pin);
+    if (!res.ok) return res;
+    for (const s of acctSockets(id)) {
+      s.data.acct = null;
+      s.data.token = null;
+      if (s !== socket) s.emit('acct', { out: true });
+    }
+    return res;
+  });
+  socket.on('disconnect', () => {
+    const id = socket.data.acct;
+    socket.data.acct = null;
+    if (id && accounts && !acctSockets(id).length) accounts.release(id).catch(() => {});
+  });
+
   // --- chat ---
   const speaker = makeSpeaker();
   const who = socket.id.slice(0, 6); // (how the others know two messages are from the same connection - to mute it, say)
@@ -946,7 +1146,8 @@ io.on('connection', (socket) => {
     speaker.last = text;
     // (how they show themselves: one of the styles' characters, in one of its ten colours)
     const look = Array.isArray(msg?.look) && THEME_IDS.includes(msg.look[0]) && Number.isInteger(msg.look[1]) && msg.look[1] >= 0 && msg.look[1] <= 9 ? [msg.look[0], msg.look[1]] : undefined;
-    const m = remember(to === 'room' ? room.chat : allChat, { to, from: who, name, text, look });
+    // (no: their account's number, if they have one - shown as "#12" beside the name)
+    const m = remember(to === 'room' ? room.chat : allChat, { to, from: who, name, text, look, no: socket.data.acct || undefined });
     if (to === 'room') io.to(room.code).emit('chat', m);
     else {
       socket.join('chat:all'); // (whoever speaks there hears the answer)
@@ -1102,6 +1303,7 @@ io.on('connection', (socket) => {
   });
 });
 
+openAccounts();
 http.listen(PORT, () => {
   console.log(`Onigokko running on http://localhost:${PORT}`);
 });

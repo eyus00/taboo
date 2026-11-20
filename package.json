@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node test/sim.test.js && node test/net.test.js"
+    "test": "node test/sim.test.js && node test/accounts.test.js && node test/net.test.js"
   },
   "engines": {
     "node": ">=18"
@@ -15,9 +15,11 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.21.2",
+    "pg": "^8.23.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.17",
     "socket.io-client": "^4.8.1"
   }
 }

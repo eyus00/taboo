@@ -18,7 +18,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const server = spawn(process.execPath, ['server.js'], {
   cwd: root,
-  env: { ...process.env, PORT: String(PORT), TAG_TEST_DURATION: String(SHORT), TAG_TEST_BREAK: String(BREAK), TAG_TEST_INTRO: '300' },
+  env: { ...process.env, PORT: String(PORT), TAG_TEST_DURATION: String(SHORT), TAG_TEST_BREAK: String(BREAK), TAG_TEST_INTRO: '300', TAG_TEST_DB: 'memory', TAG_ACCOUNT_ROUNDS: '1', ADMIN_KEY: 'net-test-admin-key', PIN_SECRET: 'net-test-secret' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 await new Promise((resolve) => server.stdout.on('data', (d) => String(d).includes('running') && resolve()));
@@ -880,6 +880,90 @@ try {
     await until(() => z.heard.some((m) => m.text === 'still here'), 'the others hear it');
     assert.equal(y.heard.length, quiet, 'whoever closed it does not');
     for (const c of [x, y, z]) c.socket.close();
+    await sleep(150);
+  });
+
+  await test('accounts: a round played earns the ticket; an account is the next number; the server counts its rounds; another connection signs in; the owner resets a PIN', async () => {
+    const admin = (body) => fetch(`${URL}/api/admin`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(async (r) => ({ status: r.status, ...(await r.json()) }));
+    const x = client('Aki');
+    x.acct = [];
+    x.socket.on('acct', (m) => x.acct.push(m));
+    await until(() => x.socket.connected, 'a connection');
+    const hello = await x.call('acct:hello', {});
+    assert.deepEqual([hello.on, hello.need, hello.played, hello.open, hello.account], [true, 1, 0, true, null]);
+    // not before a round has been played - and the page cannot simply say it has played
+    assert.match((await x.call('acct:create', { pin: '4827', name: 'Aki' })).error, /Play 1 more round/);
+    await x.call('acct:hello', { ticket: 'aaaaaaaaaaaaaaaa.9.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' });
+    assert.match((await x.call('acct:create', { pin: '4827', name: 'Aki' })).error, /Play 1 more round/, 'a ticket that was not signed here counts for nothing');
+    // a round, alone with the bots
+    const made = await x.call('create', { name: 'Aki' });
+    x.room = made.room;
+    x.socket.emit('settings', { duration: SHORT, mode: 'potato' });
+    x.socket.emit('start');
+    await until(() => x.ends.length === 1 && x.acct.length === 1, 'a round and its ticket', (SHORT + 12) * 1000);
+    assert.ok(x.acct[0].ticket && x.acct[0].played === 1 && !x.acct[0].record, 'one round on the ticket; no account, no record from the server');
+    const ticket = x.acct[0].ticket;
+    // now an account can be made: the next number, with what the browser had counted so far
+    assert.match((await x.call('acct:create', { pin: '1234', name: 'Aki' })).error, /first anyone would try/);
+    const acc = await x.call('acct:create', { pin: '4827', name: 'Aki', look: ['shadow', 3], record: { app: 'onigokko', kind: 'profile', v: 1, rounds: 1, wins: 1 } });
+    assert.ok(acc.ok && acc.token && acc.account.id >= 1);
+    assert.deepEqual([acc.account.name, acc.account.look, acc.account.record.rounds], ['Aki', { style: 'shadow', colour: 3 }, 1]);
+    const no = acc.account.id;
+    assert.match((await x.call('acct:create', { pin: '4827', name: 'Aki' })).error, /signed in already/);
+    // the next round is counted by the server, and sent back
+    x.socket.emit('lobby');
+    await until(() => x.room.phase === 'lobby', 'back in the room');
+    x.socket.emit('start');
+    await until(() => x.ends.length === 2 && x.acct.length === 2, 'the second round', (SHORT + 12) * 1000);
+    assert.equal(x.acct[1].record.rounds, 2, 'counted once, by the server');
+    assert.equal(x.acct[1].record.name, 'Aki');
+    // what is said in chat carries the number
+    x.heard = [];
+    x.socket.on('chat', (m) => x.heard.push(m));
+    await x.call('chat:say', { to: 'room', text: 'gg', look: ['shadow', 3] });
+    await until(() => x.heard.some((m) => m.text === 'gg'), 'the chat message');
+    assert.deepEqual([x.heard.find((m) => m.text === 'gg').no, x.heard.find((m) => m.text === 'gg').look], [no, ['shadow', 3]]);
+    // a second connection: the same ticket makes no second account; the number and the PIN let it in
+    const y = client('Other');
+    y.acct = [];
+    y.socket.on('acct', (m) => y.acct.push(m));
+    await until(() => y.socket.connected, 'another connection');
+    await y.call('acct:hello', { ticket });
+    assert.match((await y.call('acct:create', { pin: '7730', name: 'Other' })).error, /already been made from here/);
+    assert.match((await y.call('acct:signin', { id: no, pin: '0000' })).error, /4 more tries/);
+    const inn = await y.call('acct:signin', { id: no, pin: '4827' });
+    assert.ok(inn.ok && inn.account.record.rounds === 2 && inn.account.name === 'Aki');
+    // a device comes back with its token
+    const z = client('Back');
+    await until(() => z.socket.connected, 'a third connection');
+    assert.equal((await z.call('acct:hello', { token: inn.token })).account.id, no);
+    assert.equal((await z.call('acct:hello', { token: 'not-a-token-not-a-token-not' })).gone, true);
+    z.socket.close();
+    // the name and the character are kept
+    assert.ok((await y.call('acct:save', { name: 'Akira', look: ['neon', 5] })).ok);
+    // the owner's door: shut without the key
+    assert.equal((await admin({ key: 'nope', action: 'overview' })).status, 401);
+    const over = await admin({ key: 'net-test-admin-key', action: 'overview' });
+    assert.ok(over.total >= 1 && over.accounts.some((q) => q.id === no && q.name === 'Akira' && q.rounds === 2));
+    // a forgotten PIN: a code from the owner; whoever was signed in is signed out where they sit
+    const reset = await admin({ key: 'net-test-admin-key', action: 'reset', id: no });
+    assert.ok(reset.ok && /^[A-Z2-9]{6}$/.test(reset.code));
+    await until(() => x.acct.some((m) => m.out) && y.acct.some((m) => m.out), 'both are told they are signed out');
+    assert.match((await y.call('acct:pin', { pin: '5120' })).error, /Not signed in/);
+    await sleep(2700); // (account questions are rationed like chat: a burst of five, then one every 2.5 s)
+    const back = await y.call('acct:reset', { id: no, code: reset.code, pin: '5120' });
+    assert.ok(back.ok && back.account.name === 'Akira');
+    assert.match((await x.call('acct:signin', { id: no, pin: '4827' })).error, /not right/);
+    // signing out; and deleting, which needs the PIN
+    await sleep(5200);
+    assert.ok((await y.call('acct:signout', {})).ok);
+    assert.match((await y.call('acct:delete', { pin: '5120' })).error, /Not signed in/);
+    await sleep(7800);
+    assert.ok((await y.call('acct:signin', { id: no, pin: '5120' })).ok);
+    assert.match((await y.call('acct:delete', { pin: '0000' })).error, /not right/);
+    assert.ok((await y.call('acct:delete', { pin: '5120' })).ok);
+    assert.equal((await admin({ key: 'net-test-admin-key', action: 'find', id: no })).account, null);
+    for (const c of [x, y]) c.socket.close();
     await sleep(150);
   });
 

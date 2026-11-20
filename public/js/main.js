@@ -17,6 +17,7 @@ import { loadTheme, THEME_MAP } from './themes/index.js';
 import { present } from './present.js';
 import { chat } from './chat.js';
 import { profile } from './profile.js';
+import { account } from './account.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -77,6 +78,29 @@ present.init({
   portrait: (slot, size, face, more) => portraitOf(slot, { size, face, ...more }),
   // (while the opening covers the screen, the match behind it is not drawn)
   onCover: (on) => (play.covered = on),
+});
+account.init({
+  socket,
+  onChange() {
+    if ($('s-profile').open) paintProfile();
+    maybeSuggest();
+  },
+  // the record as the account has it: it takes the place of what this browser had - name and character too
+  onRecord(record, acct) {
+    profile.replace(record);
+    if (acct) {
+      const name = cleanName(acct.name);
+      if (name && !room) {
+        myName = name;
+        store.set('tag.name', name);
+        $('home-name').textContent = myName;
+        $('home-seal').textContent = initial(myName);
+      }
+      paintAvatar();
+    }
+    if ($('s-profile').open) paintProfile();
+  },
+  onOut: () => toast('You have been signed out of your account'),
 });
 chat.init({
   socket,
@@ -144,7 +168,7 @@ const initial = (name) => (Array.from(String(name || '').trim())[0] || '?').toUp
 // rooms, your profile, a question. Each is a native <dialog>, so what is
 // behind it cannot be reached (by pointer, by Tab or by a screen reader) and
 // is not rebuilt; Esc, its cross or a click on the dark around it closes it.
-const POPUPS = ['ask', 'info', 'find', 'profile', 'code']; // (front to back, should two be open)
+const POPUPS = ['ask', 'acct', 'info', 'find', 'profile', 'code']; // (front to back, should two be open)
 const popupOpen = (name) => $(`s-${name}`).open;
 const popupTop = () => POPUPS.find(popupOpen) || '';
 function openPopup(name) {
@@ -419,6 +443,7 @@ $('profile-form').addEventListener('submit', (e) => {
   $('home-seal').textContent = initial(myName);
   sfx.play('click');
   if (changed) toast(`Signed as ${name}`);
+  if (changed) account.save({ name: myName, look: profile.get().look });
   closeProfile();
 });
 
@@ -462,7 +487,8 @@ function paintLook() {
   colours.textContent = '';
   const pick = (style, colour) => {
     sfx.play('click');
-    profile.setLook(style, colour);
+    const look = profile.setLook(style, colour);
+    account.save({ name: myName, look });
     paintLook();
     paintAvatar();
   };
@@ -521,10 +547,121 @@ function paintProfile() {
     w.append(el('b', '', String(value)), el('span', '', label));
     wins.append(w);
   }
-  $('btn-pf-reset').disabled = !p.rounds && !(p.cups.ko.played + p.cups.team.played);
+  // (with an account the record is the server's: it is not to be swapped for a file's, or wiped, from here)
+  const mine = !!account.state.me;
+  $('btn-pf-reset').disabled = mine || (!p.rounds && !(p.cups.ko.played + p.cups.team.played));
+  $('btn-pf-import').disabled = mine;
+  $('pf-kept').textContent = mine ? 'Kept with your account.' : 'Kept on this device.';
+  $('btn-pf-reset').title = $('btn-pf-import').title = mine ? 'Your record is kept with your account' : '';
   paintLook();
   paintAvatar();
+  paintAccount();
 }
+
+// --- your account (account.js): a number of your own, if you want one -------------------------
+function paintAccount() {
+  const s = account.state;
+  const box = $('pf-acct');
+  box.hidden = !s.on;
+  if (!s.on) return;
+  const line = $('pf-acct-line');
+  const btns = $('pf-acct-btns');
+  line.textContent = '';
+  btns.textContent = '';
+  const link = (text, run, off = false) => {
+    const b = el('button', 'pf-link', text);
+    b.type = 'button';
+    b.disabled = off;
+    b.addEventListener('click', () => {
+      sfx.play('click');
+      run();
+    });
+    btns.append(b);
+    return b;
+  };
+  if (s.me) {
+    line.append(el('b', 'pf-no', `Player #${s.me.id}`), el('span', '', 'Your record is kept with your account.'));
+    link('Change PIN', () => openAcct('pin'));
+    link('Sign out', async () => {
+      if (await ask({ title: 'Sign out?', body: `Your record stays with player #${s.me.id}. To come back you need that number and your PIN.`, yes: 'Sign out', no: 'Stay' })) await account.signOut(false);
+    });
+    link('Delete account', () => openAcct('delete'));
+  } else {
+    const left = s.need - s.played;
+    line.append(el('span', '', left > 0 ? `An account keeps your record safe and lets you in from another device. Play ${plural(left, 'more round')} to make one.` : s.open ? 'An account keeps your record safe and lets you in from another device.' : 'New accounts are switched off for the moment.'));
+    link('Create account', () => openAcct('create'), left > 0 || !s.open);
+    link('Sign in', () => openAcct('signin'));
+  }
+}
+const ACCT = {
+  create: { title: 'Create account', go: 'Create', fields: ['pin', 'pin2'], lead: 'You get the next player number. Choose a PIN of four digits: with your number, it lets you in from another device. Nobody can look a PIN up for you, so keep it somewhere.' },
+  signin: { title: 'Sign in', go: 'Sign in', fields: ['id', 'pin'], lead: 'Your player number and your PIN. The record on this device is replaced by your account\'s.', forgot: true },
+  reset: { title: 'Forgot your PIN', go: 'Set new PIN', fields: ['id', 'code', 'pin', 'pin2'], lead: 'Ask whoever runs the game for a reset code. With it you choose a new PIN, and every device that was signed in is signed out.' },
+  pin: { title: 'Change PIN', go: 'Save PIN', fields: ['pin', 'pin2'], lead: 'A new PIN of four digits. Every other device is signed out.' },
+  delete: { title: 'Delete account', go: 'Delete it', fields: ['pin'], lead: 'Your account, its number and its record are deleted for good. Enter your PIN to say it is really you.' },
+};
+let acctMode = 'create';
+function openAcct(mode) {
+  acctMode = mode;
+  const c = ACCT[mode];
+  $('acct-h').textContent = c.title;
+  $('acct-lead').textContent = c.lead;
+  setLabel($('btn-acct-go'), c.go, 'Enter');
+  $('btn-acct-go').disabled = false;
+  $('btn-acct-forgot').hidden = !c.forgot;
+  $('acct-pin-lab').textContent = mode === 'signin' || mode === 'delete' ? 'Your PIN' : mode === 'create' ? 'Choose a PIN' : 'New PIN';
+  for (const f of document.querySelectorAll('#acct-form .acct-f')) {
+    f.hidden = !c.fields.includes(f.dataset.f);
+    f.querySelector('input').value = '';
+    f.querySelector('input').toggleAttribute('data-autofocus', f.dataset.f === c.fields[0]);
+  }
+  $('acct-error').textContent = '';
+  openPopup('acct');
+}
+$('btn-acct-forgot').addEventListener('click', () => openAcct('reset'));
+$('acct-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const c = ACCT[acctMode];
+  const v = (id) => $(`acct-${id}`).value.trim();
+  const fail = (text, field) => {
+    $('acct-error').textContent = text;
+    if (field) $(`acct-${field}`).focus();
+  };
+  if (c.fields.includes('id') && !/^\d{1,9}$/.test(v('id'))) return fail('Your player number is the number you were given, like 12.', 'id');
+  if (c.fields.includes('code') && v('code').length < 4) return fail('Enter the reset code you were given.', 'code');
+  if (!/^\d{4}$/.test(v('pin'))) return fail('A PIN is four digits.', 'pin');
+  if (c.fields.includes('pin2') && v('pin2') !== v('pin')) return fail('The two PINs are not the same.', 'pin2');
+  $('btn-acct-go').disabled = true;
+  $('acct-error').textContent = '';
+  const mode = acctMode;
+  const p = profile.get();
+  const res = mode === 'create' ? await account.create(v('pin'), { name: myName, look: p.look, record: p }) : mode === 'signin' ? await account.signIn(Number(v('id')), v('pin')) : mode === 'reset' ? await account.reset(Number(v('id')), v('code'), v('pin')) : mode === 'pin' ? await account.setPin(v('pin')) : await account.remove(v('pin'));
+  $('btn-acct-go').disabled = false;
+  if (!res.ok) return fail(res.error || 'That did not work. Try again.', mode === 'reset' ? 'code' : 'pin');
+  closePopup('acct');
+  sfx.play('join');
+  if (mode === 'create') await ask({ title: `You are player #${res.account.id}`, body: 'That number and your PIN let you in from any device. Write them down: nobody can look a PIN up for you.', yes: 'Got it', no: '' });
+  else toast(mode === 'pin' ? 'Your PIN is changed' : mode === 'delete' ? 'Your account is deleted' : `Signed in as player #${res.account.id}`);
+});
+// Once, to someone without an account who has now played enough rounds to have one: a line
+// on the results card. "Not now" - or the next card - and it is never shown again.
+function maybeSuggest() {
+  const s = account.state;
+  const box = $('res-acct');
+  if (!box.hidden) return (box.hidden = !(s.on && !s.me && overlay === 'results'));
+  if (!(s.on && s.open && !s.me && s.played >= s.need) || rig || overlay !== 'results' || (lastResults?.cup && !lastResults.cup.final) || store.get('tag.acct.asked')) return;
+  store.set('tag.acct.asked', '1');
+  box.hidden = false;
+}
+$('btn-res-acct').addEventListener('click', () => {
+  sfx.play('click');
+  $('res-acct').hidden = true;
+  openAcct('create');
+});
+$('btn-res-acct-no').addEventListener('click', () => {
+  sfx.play('click');
+  $('res-acct').hidden = true;
+});
 $('btn-pf-export').addEventListener('click', () => {
   sfx.play('click');
   const { filename, text } = profile.toFile(myName);
@@ -585,7 +722,7 @@ $('btn-pf-reset').addEventListener('click', async () => {
 // tournament when its last round has.
 let cupMine = false; // we played a round of the tournament that is on
 function countRound(res) {
-  if (rig) return;
+  if (rig || account.state.me) return; // (with an account the server counts - and sends the record back)
   const slot = play.mySlot();
   const played = profile.round(res, { slot, theme: play.info?.theme, arena: play.info?.arena, duration: play.info?.duration });
   if (!res.cup) return;
@@ -2201,6 +2338,7 @@ function mark(glyph, word, dark) {
 
 function showResults(res) {
   lastResults = res;
+  $('res-acct').hidden = true;
   clearInterval(nextTimer);
   present.clear();
   const mySlot = play.mySlot();
@@ -2761,7 +2899,7 @@ function goBack() {
 function shortcut(key, e) {
   const at = top();
   const onButton = document.activeElement?.tagName === 'BUTTON';
-  const typing = document.activeElement?.tagName === 'INPUT' && document.activeElement.type === 'text';
+  const typing = document.activeElement?.tagName === 'INPUT' && ['text', 'password', 'number', 'tel'].includes(document.activeElement.type);
   if (typing) return false; // letters belong to the name being typed
 
   // anywhere: sound and full screen

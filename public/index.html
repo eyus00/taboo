@@ -255,6 +255,8 @@
             <div class="sides" id="res-teams" hidden></div>
             <ol class="board" id="res-table"></ol>
           </section>
+          <!-- once, after a few rounds, to someone without an account: there is such a thing -->
+          <p class="acct-hint" id="res-acct" hidden><span>Keep your record safe:</span> <button class="pf-link" type="button" id="btn-res-acct">create an account</button> <button class="pf-link quiet" type="button" id="btn-res-acct-no">Not now</button></p>
           <footer class="actions">
             <!-- a tournament between rounds: the next one starts by itself -->
             <p class="next-round" id="res-next" hidden><svg class="ic" aria-hidden="true"><use href="#i-clock" /></svg><span>Next round in</span><b id="res-next-n"></b></p>
@@ -456,6 +458,11 @@
               <button class="btn primary" id="btn-profile-save" type="submit">Save name <kbd>Enter</kbd></button>
             </div>
           </form>
+          <!-- your account, if this server keeps them: a number of your own, or the way to one (account.js) -->
+          <section class="pf-acct" id="pf-acct" hidden>
+            <p class="pf-acct-line" id="pf-acct-line"></p>
+            <div class="pf-acct-btns" id="pf-acct-btns"></div>
+          </section>
           <section class="pf-look" aria-labelledby="pf-look-h">
             <h3 class="lab" id="pf-look-h">Your character</h3>
             <div class="pf-styles" id="pf-styles" role="radiogroup" aria-label="Which style's character" data-group></div>
@@ -469,13 +476,31 @@
             <div class="pf-wins" id="pf-wins"></div>
           </section>
           <footer class="pf-foot">
-            <span class="note">Kept on this device.</span>
+            <span class="note" id="pf-kept">Kept on this device.</span>
             <button class="pf-link" type="button" id="btn-pf-export">Save to a file</button>
             <button class="pf-link" type="button" id="btn-pf-import">Load a file</button>
             <button class="pf-link" type="button" id="btn-pf-reset">Start afresh</button>
             <input type="file" id="pf-file" accept="application/json,.json" hidden />
           </footer>
         </div>
+      </dialog>
+
+      <!-- an account: making one, signing in, a new PIN, a forgotten one (which fields show depends on which) -->
+      <dialog id="s-acct" class="modal sm" aria-labelledby="acct-h">
+        <header class="m-top">
+          <h2 id="acct-h"></h2>
+          <button class="m-x" data-close aria-label="Close (Esc)"><kbd>Esc</kbd><span class="ring"><svg class="ic" aria-hidden="true"><use href="#i-close" /></svg></span></button>
+        </header>
+        <form id="acct-form" class="m-body acct" autocomplete="off">
+          <p class="lead" id="acct-lead"></p>
+          <label class="acct-f" data-f="id"><span class="lab">Your player number</span><input id="acct-id" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="9" placeholder="12" autocomplete="off" /></label>
+          <label class="acct-f" data-f="code"><span class="lab">Reset code</span><input id="acct-code" type="text" maxlength="8" placeholder="ABC234" autocomplete="off" autocapitalize="characters" spellcheck="false" /></label>
+          <label class="acct-f" data-f="pin"><span class="lab" id="acct-pin-lab">PIN</span><input id="acct-pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4 digits" autocomplete="new-password" /></label>
+          <label class="acct-f" data-f="pin2"><span class="lab">The same PIN again</span><input id="acct-pin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="4 digits" autocomplete="new-password" /></label>
+          <p class="error" id="acct-error" role="alert"></p>
+          <button class="btn primary" id="btn-acct-go" type="submit"></button>
+          <button class="pf-link" type="button" id="btn-acct-forgot" hidden>Forgot your PIN?</button>
+        </form>
       </dialog>
 
       <!-- another room's code, typed from inside a room (a narrow screen; a wide one has the title scroll for it) -->
