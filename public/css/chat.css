@@ -87,3 +87,43 @@ body.chat-game .chat-feed { bottom: auto; top: 168px; width: min(320px, calc(100
 @media (max-width: 560px) { body.chat-game .chat-tab { bottom: auto; top: 38%; } }
 /* (the number of whoever has an account, beside their name) */
 .chat-no { padding: 0 4px; border: 1.5px solid var(--faint); font: 800 10.5px/1.5 var(--serif); color: var(--soft); font-variant-numeric: tabular-nums; }
+
+/* --- three leaves, and the key that turns to the next --- */
+.chat-cue { align-self: center; margin: 0 0 5px auto; }
+.chat-cue[hidden], body.no-kbd .chat-cue { display: none; }
+.chat-cue kbd { margin: 0; }
+.chat-tabs .chat-ch { padding-inline: 9px; }
+/* whoever said it can be chosen: their card opens */
+.chat-name { display: inline-flex; align-items: center; gap: 7px; min-width: 0; padding: 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.chat-name b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 17px/1.15 var(--brush); padding-right: 3px; } /* (room for the brush's last stroke) */
+.chat-name:hover b, .chat-name:focus-visible b { text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.chat-name:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+/* --- the friends' leaf: who is about, who has asked, who invites you --- */
+.chat-list[hidden], .chat-form[hidden], .chat-people[hidden] { display: none; }
+.chat-people { flex: 1 1 0; min-height: 0; padding: 2px 10px 6px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.chat-h::after { display: none; }
+.chat-h { margin: 10px 0 1px; font: 800 10.5px/1.3 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; color: var(--red-deep); }
+.chat-plist { margin: 0; padding: 0; list-style: none; }
+.chat-person { display: flex; align-items: center; gap: 8px; padding: 6px 0 7px; border-bottom: 1.5px solid var(--faint); }
+.chat-plist .chat-person:last-child { border-bottom: 0; }
+.chat-pmain { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.chat-pmain .chat-name { max-width: 100%; }
+.chat-sub { margin-left: 27px; font: 600 11.5px/1.3 var(--serif); color: var(--soft); }
+.chat-person.on .chat-sub { color: var(--ink); }
+.chat-person.on .chat-sub::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 5px; background: #3c8f57; border: 1px solid var(--ink); border-radius: 50%; vertical-align: 0; }
+.chat-acts { flex: none; display: flex; gap: 5px; }
+.chat-act { padding: 3px 9px 4px; background: var(--paper-lit); color: var(--ink); border: 2px solid var(--ink); font: 800 10.5px/1.3 var(--serif); letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+.chat-act:hover:not(:disabled) { background: var(--ink); color: #fff3e0; }
+.chat-act.go { background: var(--red-deep); color: #fff3e0; }
+.chat-act.go:hover:not(:disabled) { background: var(--ink); }
+.chat-act:disabled { opacity: 0.5; cursor: default; }
+.chat-act:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+.chat-people > .chat-empty { padding: 24px 6px 0; font-size: 16.5px; }
+.chat-people > .chat-act { display: block; margin: 12px auto 0; padding: 5px 14px 6px; font-size: 11.5px; }
+.chat-hash { align-self: center; font: 400 22px/1 var(--brush); color: var(--soft); }
+.chat-note:empty { display: none; }
+/* an invitation, as it arrives: a line in the corner that can be answered */
+.chat-feed li.invite { align-items: center; pointer-events: auto; }
+.chat-feed li.invite em { font-style: normal; color: var(--soft); }
+.chat-feed li.invite .chat-act { flex: none; }
+.chat-feed li.invite b::after { content: ''; }

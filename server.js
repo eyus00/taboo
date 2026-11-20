@@ -39,6 +39,7 @@ import {
   ITEM_KINDS,
 } from './shared/config.js';
 import { ARENAS, ARENA_IDS, arenaById, arenasFor, arenaFits } from './shared/arenas.js';
+import { worth, best, roundStar } from './shared/star.js';
 import { Sim, standings, makeTeams } from './shared/sim.js';
 import { makeBot, botThink, prepareBots, BOT_NAMES } from './shared/bots.js';
 import { packState, publicFlags } from './shared/physics.js';
@@ -116,6 +117,8 @@ app.post('/api/admin', express.json({ limit: '2kb' }), async (req, res) => {
         s.emit('acct', { out: true });
       }
     }
+    // (an account closed, opened again or gone: the friends lists held in memory are read afresh)
+    if ((act === 'close' || act === 'open' || act === 'delete') && out.ok) circles.clear();
     res.json(out);
   } catch (err) {
     res.status(503).json({ error: `The database did not answer (${err.message}). Try again in a moment.` });
@@ -438,6 +441,7 @@ function startCup(room) {
   for (const p of all) {
     p.pts = 0;
     p.itMs = 0;
+    p.worth = 0;
     p.out = false;
   }
 }
@@ -620,8 +624,12 @@ function finishRound(room, reason) {
     // team battle: this round's score, who won it (-1: a draw) - and how: flags each side held at the buzzer, bombs that went off on each side
     team: team ? { score, win, total: null, held: [0, 1].map((t) => g.sim.flags.filter((f) => f.owner === t).length), blown: [0, 1].map((t) => rows.filter((r) => r.team === t && r.boom).length) } : null,
     cup: null,
+    star: -1,
   };
+  // the star of the round (see shared/star.js); nobody when everyone else walked out
+  if (!forfeit) out.star = roundStar(out.rows, { team, win, loser });
   if (cup) {
+    for (const r of out.rows) if (bySlot.has(r.slot)) bySlot.get(r.slot).worth = (bySlot.get(r.slot).worth || 0) + worth(r, team);
     let final = cup.ko ? forfeit || stillIn(room).length < MIN_PLAYERS : cup.round >= cup.rounds || forfeit || members(room).length < MIN_PLAYERS;
     let table = [];
     if (team) {
@@ -656,7 +664,12 @@ function finishRound(room, reason) {
       ];
       if (final) out.winners = table.filter((r) => !r.out).map((r) => r.slot); // the last one standing
     }
-    out.cup = { round: cup.round, rounds: cup.rounds, score: cup.ko ? null : cup.score, double: g.cup.double, tie: !!cup.tie && !final, final, next: final ? 0 : BREAK_MS, table, ko: cup.ko, caught: caught ? caught.slot : -1 };
+    out.cup = { round: cup.round, rounds: cup.rounds, score: cup.ko ? null : cup.score, double: g.cup.double, tie: !!cup.tie && !final, final, next: final ? 0 : BREAK_MS, table, ko: cup.ko, caught: caught ? caught.slot : -1, star: -1 };
+    if (final && !forfeit) {
+      // the star of the whole tournament: a knockout's champion; of the team that won, whoever was worth most over all its rounds
+      if (cup.ko) out.cup.star = out.winners.length === 1 ? out.winners[0] : -1;
+      else out.cup.star = best(out.winners.filter((slot) => bySlot.has(slot)).map((slot) => ({ slot, w: bySlot.get(slot).worth || 0, ms: bySlot.get(slot).itMs || 0 })));
+    }
     if (final) {
       for (const slot of out.winners) if (bySlot.has(slot)) bySlot.get(slot).wins++;
       room.cup = null;
@@ -722,6 +735,61 @@ async function openAccounts() {
   }
 }
 const acctSockets = (id) => [...io.sockets.sockets.values()].filter((s) => s.data.acct === id);
+
+// ---------------------------------------------------------------------------
+// Friends, and invitations to a room (accounts.js keeps who is whose friend).
+// The lists of whoever is signed in are held here in memory - read once when they
+// sign in, again only after something in them changed - so that asking who is
+// about (which the page does every few seconds while the list is open) never
+// goes to the database, and neither does somebody coming or going.
+// Only friends are told where someone is; an invitation can only go to a friend.
+// ---------------------------------------------------------------------------
+const INVITE_AGAIN_MS = 20000; // the same friend is not invited again sooner than this
+const circles = new Map(); // account -> Promise<{ friends, incoming, outgoing }>
+const circleOf = (id) => {
+  if (!circles.has(id)) {
+    const p = accounts.friends.list(id);
+    circles.set(id, p);
+    p.catch(() => circles.get(id) === p && circles.delete(id));
+  }
+  return circles.get(id);
+};
+const tellAccount = (id, event, msg) => {
+  for (const s of acctSockets(id)) s.emit(event, msg);
+};
+// how an account shows itself to others: its number, name and character (as they are right now, if it is in use)
+const briefOf = (id) => {
+  const a = accounts?.view(id);
+  return a ? { id, name: a.name, look: [a.look.style, a.look.colour] } : { id, name: `Player #${id}`, look: ['ink', 0] };
+};
+// Where an account is right now, as a friend may know it: about at all - and in a room?
+// (the code of a room only if anyone could find it anyway: a private room takes an invitation)
+function whereabouts(socks, viewerCode) {
+  if (!socks?.length) return { online: false, room: null };
+  for (const s of socks) {
+    const r = rooms.get(s.data.code);
+    if (!r?.players.has(s.id)) continue;
+    const open = !!r.settings.open;
+    return { online: true, room: { here: r.code === viewerCode, open, code: open || r.code === viewerCode ? r.code : '', playing: !!r.game, full: r.players.size >= r.settings.size } };
+  }
+  return { online: true, room: null };
+}
+// Something changed between two accounts: both read their lists afresh, and `other` is told (if they are about).
+function circleChanged(me, other, news) {
+  circles.delete(me);
+  circles.delete(other);
+  if (news) tellAccount(other, 'friend:news', news);
+}
+// An account has come (its first connection signed in) or gone (its last one left): its friends who are about hear of it.
+async function presence(id, here) {
+  if (!accounts) return;
+  try {
+    const mine = await circleOf(id);
+    const who = briefOf(id);
+    for (const f of mine.friends) tellAccount(f.id, 'friend:news', { kind: here ? 'here' : 'away', who });
+  } catch {}
+  if (!here && !acctSockets(id).length) circles.delete(id);
+}
 
 // A round has been played to the buzzer. Everyone who played in it has one more round on
 // their ticket (three make an account possible); whoever has an account has the round
@@ -1047,15 +1115,20 @@ io.on('connection', (socket) => {
       }
     });
   const signedIn = (account, token) => {
+    const first = !acctSockets(account.id).length;
     socket.data.acct = account.id;
     socket.data.token = token;
+    if (first) presence(account.id, true); // (their friends see them arrive)
     return { ok: true, token, account };
   };
   const signedOut = async () => {
     const id = socket.data.acct;
     socket.data.acct = null;
     socket.data.token = null;
-    if (id && !acctSockets(id).length) await accounts.release(id);
+    if (id && !acctSockets(id).length) {
+      await presence(id, false);
+      await accounts.release(id);
+    }
   };
   // What this connection brings along: the ticket of the rounds it has played, and - if this
   // device is signed in - its token.
@@ -1081,7 +1154,17 @@ io.on('connection', (socket) => {
     return res.ok ? signedIn(res.account, res.token) : res;
   });
   acct('acct:pin', async (msg) => (socket.data.acct ? accounts.setPin(socket.data.acct, msg.pin, socket.data.token) : { error: 'Not signed in.' }));
-  acct('acct:save', async (msg) => (socket.data.acct ? accounts.saveProfile(socket.data.acct, { name: cleanName(msg.name), look: { style: msg.look?.[0], colour: msg.look?.[1] } }) : { error: 'Not signed in.' }));
+  acct('acct:save', async (msg) => {
+    const id = socket.data.acct;
+    if (!id) return { error: 'Not signed in.' };
+    const res = await accounts.saveProfile(id, { name: cleanName(msg.name), look: { style: msg.look?.[0], colour: msg.look?.[1] } });
+    // (a new name or character: whoever has this account in a list that is held here sees it at once)
+    if (res.ok) {
+      const who = briefOf(id);
+      for (const p of circles.values()) p.then((c) => [...c.friends, ...c.incoming, ...c.outgoing].forEach((x) => x.id === id && Object.assign(x, who))).catch(() => {});
+    }
+    return res;
+  });
   acct('acct:signout', async (msg) => {
     if (!socket.data.acct) return { ok: true };
     const id = socket.data.acct;
@@ -1107,12 +1190,89 @@ io.on('connection', (socket) => {
       s.data.token = null;
       if (s !== socket) s.emit('acct', { out: true });
     }
+    // (the account is no more: it is in nobody's list from now on)
+    const was = await circles.get(id)?.catch(() => null);
+    circles.clear();
+    for (const f of was?.friends || []) tellAccount(f.id, 'friend:news', { kind: 'removed', who: { id } });
     return res;
   });
   socket.on('disconnect', () => {
     const id = socket.data.acct;
     socket.data.acct = null;
-    if (id && accounts && !acctSockets(id).length) accounts.release(id).catch(() => {});
+    if (id && accounts && !acctSockets(id).length) presence(id, false).then(() => accounts.release(id)).catch(() => {});
+  });
+
+  // --- friends, and invitations to this room (see the notes above `circles`) ---
+  const socTurn = { n: 16, at: Date.now() }; // (a burst of sixteen questions, then one every second)
+  const social = (name, fn, signed = true) =>
+    socket.on(name, async (msg, ack) => {
+      if (typeof ack !== 'function') return;
+      if (!accounts) return ack({ off: true, error: 'There are no accounts on this server.' });
+      const t = Date.now();
+      socTurn.n = Math.min(16, socTurn.n + (t - socTurn.at) / 1000);
+      socTurn.at = t;
+      if (socTurn.n < 1) return ack({ error: 'Slow down a little.' });
+      socTurn.n -= 1;
+      if (signed && !socket.data.acct) return ack({ error: 'Friends go with an account: make one, or sign in, from your profile.', needAccount: true });
+      try {
+        ack(await fn(msg || {}, socket.data.acct || 0));
+      } catch (err) {
+        console.log(`friends: ${name} failed (${err.message})`);
+        ack({ error: 'Accounts are waking up. Try again in a moment.' });
+      }
+    });
+  const other = (msg) => (Number.isInteger(Number(msg.id)) ? Number(msg.id) : 0);
+  // everyone I have to do with - and, of my friends, who is about and where
+  social('friend:list', async (msg, me) => {
+    const c = await circleOf(me);
+    const by = new Map();
+    for (const s of io.sockets.sockets.values()) if (s.data.acct) by.set(s.data.acct, [...(by.get(s.data.acct) || []), s]);
+    return { ok: true, me, friends: c.friends.map((f) => ({ ...f, ...whereabouts(by.get(f.id), socket.data.code) })), incoming: c.incoming, outgoing: c.outgoing };
+  });
+  social('friend:add', async (msg, me) => {
+    const id = other(msg);
+    const res = await accounts.friends.ask(me, id);
+    if (res.ok) circleChanged(me, id, res.news ? { kind: res.state === 'friends' ? 'accepted' : 'asked', who: briefOf(me) } : null);
+    return res.ok ? { ok: true, state: res.state, name: res.name } : res;
+  });
+  social('friend:answer', async (msg, me) => {
+    const id = other(msg);
+    const res = await accounts.friends.answer(me, id, msg.yes === true);
+    if (res.ok) circleChanged(me, id, res.news ? { kind: 'accepted', who: briefOf(me) } : null);
+    return res.ok ? { ok: true, state: res.state } : res;
+  });
+  social('friend:remove', async (msg, me) => {
+    const id = other(msg);
+    const res = await accounts.friends.remove(me, id);
+    if (res.ok) circleChanged(me, id, res.news ? { kind: 'removed', who: { id: me } } : null);
+    return res.ok ? { ok: true, state: res.state } : res;
+  });
+  // The card of a player (anybody may look, signed in or not): who they are and a few numbers -
+  // and, for a friend, whether they are about.
+  social('player:card', async (msg, me) => {
+    const id = other(msg);
+    const res = await accounts.card(id, me);
+    if (!res.ok) return res;
+    if (res.card.state === 'friends') Object.assign(res.card, whereabouts(acctSockets(id), socket.data.code));
+    return res;
+  }, false);
+  // "Come and play": a friend who is about is asked into the room this connection is in.
+  social('invite:send', async (msg, me) => {
+    const id = other(msg);
+    const room = rooms.get(socket.data.code);
+    const player = room?.players.get(socket.id);
+    if (!player) return { error: 'You are not in a room. Host one first.' };
+    if (!(await circleOf(me)).friends.some((f) => f.id === id)) return { error: 'Invitations go to friends.' };
+    const socks = acctSockets(id);
+    if (!socks.length) return { error: `${briefOf(id).name} is not online right now.` };
+    if (socks.some((s) => s.data.code === room.code)) return { error: `${briefOf(id).name} is in this room already.` };
+    if (room.players.size >= room.settings.size) return { error: 'This room is full. It needs another seat first.' };
+    const sent = (socket.data.invited ||= new Map());
+    const left = INVITE_AGAIN_MS - (Date.now() - (sent.get(id) || 0));
+    if (left > 0) return { error: `You have just invited them. Give it ${Math.ceil(left / 1000)} s.` };
+    sent.set(id, Date.now());
+    for (const s of socks) s.emit('invite', { from: briefOf(me), code: room.code, playing: !!room.game, at: Date.now() });
+    return { ok: true, name: briefOf(id).name };
   });
 
   // --- chat ---

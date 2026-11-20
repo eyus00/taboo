@@ -67,7 +67,10 @@ async function until(fn, what, ms = 8000) {
 }
 
 let passed = 0;
+// (TAG_ONLY=friends node test/net.test.js runs just the tests with that in their name - the later ones stand on their own)
+const ONLY = process.env.TAG_ONLY || '';
 async function test(name, fn) {
+  if (ONLY && !name.includes(ONLY)) return;
   await fn();
   passed++;
   console.log(`  ok  ${name}`);
@@ -964,6 +967,99 @@ try {
     assert.ok((await y.call('acct:delete', { pin: '5120' })).ok);
     assert.equal((await admin({ key: 'net-test-admin-key', action: 'find', id: no })).account, null);
     for (const c of [x, y]) c.socket.close();
+    await sleep(150);
+  });
+
+  await test('friends: a request and its answer reach the other at once; friends see each other come and go and where they are; an invitation brings one into a private room; the star of a round is named', async () => {
+    const mk = (name) => {
+      const x = client(name);
+      Object.assign(x, { acct: [], news: [], invites: [] });
+      x.socket.on('acct', (m) => x.acct.push(m));
+      x.socket.on('friend:news', (m) => x.news.push(m));
+      x.socket.on('invite', (m) => x.invites.push(m));
+      return x;
+    };
+    const p = mk('Pia');
+    const q = mk('Quin');
+    await until(() => p.socket.connected && q.socket.connected, 'two connections');
+    for (let i = 0; i < 200 && !(await p.call('acct:hello', {})).on; i++) await sleep(50); // (run on its own, this test is here before the accounts are)
+    await q.call('acct:hello', {});
+    // friends go with an account
+    const none = await p.call('friend:list', {});
+    assert.ok(none.needAccount && /account/.test(none.error));
+    assert.match((await p.call('invite:send', { id: 1 })).error, /account/);
+    assert.match((await p.call('player:card', { id: 999999 })).error, /No such player/, 'anybody may look at a card - if there is one');
+    // a round together, in a private room
+    const made = await p.call('create', { name: 'Pia' });
+    p.room = made.room;
+    assert.equal(made.room.settings.open, false);
+    assert.ok((await q.call('join', { name: 'Quin', code: made.room.code })).ok);
+    p.socket.emit('settings', { duration: SHORT, mode: 'potato', bots: false });
+    p.socket.emit('start');
+    await until(() => p.acct.length === 1 && q.acct.length === 1, 'a round and its tickets', (SHORT + 12) * 1000);
+    // (the result names the star of the round: whoever was not the oni at the buzzer - in a duel, the winner)
+    const end = p.ends[p.ends.length - 1];
+    assert.equal(end.rows.length, 2);
+    assert.equal(end.star, end.rows.find((r) => r.slot !== end.loser).slot);
+    const pa = (await p.call('acct:create', { pin: '4827', name: 'Pia' })).account;
+    const qa = (await q.call('acct:create', { pin: '5938', name: 'Quin', look: ['neon', 2] })).account;
+    assert.ok(pa.id >= 1 && qa.id === pa.id + 1);
+    const empty = await p.call('friend:list', {});
+    assert.deepEqual([empty.ok, empty.me, empty.friends, empty.incoming, empty.outgoing], [true, pa.id, [], [], []]);
+    // a card: who they are, a few numbers, what we are to each other - and nothing of where they are
+    let card = (await p.call('player:card', { id: qa.id })).card;
+    assert.deepEqual([card.id, card.name, card.look, card.rounds, card.state, 'online' in card], [qa.id, 'Quin', ['neon', 2], 0, 'none', false]);
+    assert.match((await p.call('invite:send', { id: qa.id })).error, /go to friends/);
+    // Pia asks; Quin hears of it at once, and says yes; Pia hears of that
+    assert.match((await p.call('friend:add', { id: pa.id })).error, /your own number/);
+    assert.deepEqual(await p.call('friend:add', { id: qa.id }), { ok: true, state: 'asked', name: 'Quin' });
+    await until(() => q.news.some((n) => n.kind === 'asked' && n.who.id === pa.id && n.who.name === 'Pia'), 'word of the request');
+    assert.deepEqual((await q.call('friend:list', {})).incoming, [{ id: pa.id, name: 'Pia', look: ['ink', 0] }]);
+    assert.deepEqual((await p.call('friend:list', {})).outgoing.map((x) => x.id), [qa.id]);
+    assert.deepEqual(await q.call('friend:answer', { id: pa.id, yes: true }), { ok: true, state: 'friends' });
+    await until(() => p.news.some((n) => n.kind === 'accepted' && n.who.id === qa.id), 'word of the yes');
+    // friends see each other: about, and in this room
+    await sleep(3000); // (questions about friends are rationed too: a burst, then one a second)
+    let list = await p.call('friend:list', {});
+    assert.deepEqual(list.friends, [{ id: qa.id, name: 'Quin', look: ['neon', 2], online: true, room: { here: true, open: false, code: made.room.code, playing: false, full: false } }]);
+    card = (await p.call('player:card', { id: qa.id })).card;
+    assert.deepEqual([card.state, card.online, card.room.here], ['friends', true, true]);
+    assert.match((await p.call('invite:send', { id: qa.id })).error, /in this room already/);
+    // Quin leaves the room: about, but nowhere. A private room's code is not for looking up...
+    q.socket.emit('leave');
+    await sleep(120);
+    list = await p.call('friend:list', {});
+    assert.deepEqual([list.friends[0].online, list.friends[0].room], [true, null]);
+    assert.deepEqual((await q.call('friend:list', {})).friends[0].room, { here: false, open: false, code: '', playing: false, full: false });
+    // ...it comes with an invitation
+    assert.deepEqual(await p.call('invite:send', { id: qa.id }), { ok: true, name: 'Quin' });
+    await until(() => q.invites.length === 1, 'the invitation');
+    assert.deepEqual([q.invites[0].from, q.invites[0].code, q.invites[0].playing], [{ id: pa.id, name: 'Pia', look: ['ink', 0] }, made.room.code, false]);
+    assert.match((await p.call('invite:send', { id: qa.id })).error, /just invited/);
+    assert.match((await q.call('invite:send', { id: pa.id })).error, /not in a room/);
+    assert.ok((await q.call('join', { name: 'Quin', code: q.invites[0].code })).ok);
+    assert.equal((await p.call('friend:list', {})).friends[0].room.here, true);
+    // a new name shows in the friend's list at once
+    assert.ok((await q.call('acct:save', { name: 'Quinn', look: ['arcade', 7] })).ok);
+    await sleep(3000);
+    list = await p.call('friend:list', {});
+    assert.deepEqual([list.friends[0].name, list.friends[0].look], ['Quinn', ['arcade', 7]]);
+    // Quin goes: Pia hears of it, and sees it; Quin comes back on another connection: Pia hears of that too
+    q.socket.close();
+    await until(() => p.news.some((n) => n.kind === 'away' && n.who.id === qa.id), 'word that a friend has gone');
+    list = await p.call('friend:list', {});
+    assert.deepEqual([list.friends[0].online, list.friends[0].room], [false, null]);
+    assert.match((await p.call('invite:send', { id: qa.id })).error, /not online/);
+    const q2 = mk('Quin');
+    await until(() => q2.socket.connected, 'a new connection');
+    assert.ok((await q2.call('acct:signin', { id: qa.id, pin: '5938' })).ok);
+    await until(() => p.news.some((n) => n.kind === 'here' && n.who.id === qa.id && n.who.name === 'Quinn'), 'word that a friend is here');
+    // no longer friends: gone from both lists, and no more invitations
+    assert.deepEqual(await q2.call('friend:remove', { id: pa.id }), { ok: true, state: 'none' });
+    await until(() => p.news.some((n) => n.kind === 'removed'), 'word of it');
+    assert.deepEqual((await p.call('friend:list', {})).friends, []);
+    assert.match((await p.call('invite:send', { id: qa.id })).error, /go to friends/);
+    for (const x of [p, q2]) x.socket.close();
     await sleep(150);
   });
 

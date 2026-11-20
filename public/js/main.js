@@ -18,6 +18,7 @@ import { present } from './present.js';
 import { chat } from './chat.js';
 import { profile } from './profile.js';
 import { account } from './account.js';
+import { friends } from './friends.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -79,11 +80,20 @@ present.init({
   // (while the opening covers the screen, the match behind it is not drawn)
   onCover: (on) => (play.covered = on),
 });
+let friendsOf = 0; // the account whose friends are being shown (0: nobody is signed in)
 account.init({
   socket,
   onChange() {
     if ($('s-profile').open) paintProfile();
     maybeSuggest();
+    // friends go with the account: someone else's, or nobody's, and the lists are not theirs any more
+    const id = account.state.me?.id || 0;
+    if (id !== friendsOf) {
+      friendsOf = id;
+      if (id) friends.refresh();
+      else friends.reset();
+    }
+    chat.people();
   },
   // the record as the account has it: it takes the place of what this browser had - name and character too
   onRecord(record, acct) {
@@ -102,9 +112,38 @@ account.init({
   },
   onOut: () => toast('You have been signed out of your account'),
 });
+friends.init({
+  socket,
+  onChange() {
+    chat.people();
+    if (popupOpen('player') && cardOf?.no) lookUp(cardOf); // (what we are to each other may have changed)
+  },
+  // something happened between me and somebody: a word about it, wherever I am
+  onNews(n) {
+    const name = n.who?.name;
+    if (!name) return;
+    if (n.kind === 'asked') {
+      toast(`${name} wants to be friends`);
+      sfx.play('join', 0.6);
+    } else if (n.kind === 'accepted') toast(`You and ${name} are friends now`);
+    else if (n.kind === 'here' && !(screen === 'game' && !overlay)) toast(`${name} is here`);
+  },
+  onInvite: (v) => chat.invited(v),
+});
 chat.init({
   socket,
   sfx,
+  friends,
+  account: () => account.state,
+  onPerson: (who) => openPlayer(who),
+  // (an account is made, or signed in to, from the menu)
+  onAccount(mode) {
+    if (screen !== 'home') return toast('Accounts are in your profile, in the menu');
+    chat.close(true);
+    closePopups();
+    openAcct(mode);
+  },
+  onJoin: (v) => joinInvite(v),
   name: () => myName,
   askName,
   look: () => profile.get().look, // (how you show yourself: sent with what you say)
@@ -168,7 +207,7 @@ const initial = (name) => (Array.from(String(name || '').trim())[0] || '?').toUp
 // rooms, your profile, a question. Each is a native <dialog>, so what is
 // behind it cannot be reached (by pointer, by Tab or by a screen reader) and
 // is not rebuilt; Esc, its cross or a click on the dark around it closes it.
-const POPUPS = ['ask', 'acct', 'info', 'find', 'profile', 'code']; // (front to back, should two be open)
+const POPUPS = ['ask', 'acct', 'info', 'find', 'player', 'profile', 'code']; // (front to back, should two be open)
 const popupOpen = (name) => $(`s-${name}`).open;
 const popupTop = () => POPUPS.find(popupOpen) || '';
 function openPopup(name) {
@@ -556,6 +595,164 @@ function paintProfile() {
   paintLook();
   paintAvatar();
   paintAccount();
+}
+
+// --- somebody else's card (friends.js): who they are, a few numbers, and what to do about it ---
+// Opened from a name: in chat, or in the list of friends. Whoever has an account has a card
+// the server keeps (their number, their character, what they have won); whoever has none is
+// only what their message said. Your own name opens your own profile.
+let cardOf = null; // { no, name, look, from, card, error }
+let cardRun = 0;
+async function lookUp(w) {
+  const my = ++cardRun;
+  const res = await friends.card(w.no);
+  if (my !== cardRun || cardOf !== w || !popupOpen('player')) return;
+  if (res.ok) w.card = res.card;
+  else w.error = res.off ? '' : res.error || '';
+  w.looked = true;
+  paintPlayer();
+}
+function openPlayer(who) {
+  if (popupTop() && popupTop() !== 'player') return;
+  if (who.me || (who.no && who.no === account.state.me?.id)) {
+    if (screen !== 'home') return;
+    chat.close(true);
+    closePopup('player');
+    return openProfile();
+  }
+  cardOf = { ...who, card: null, error: '', looked: !who.no || !account.state.on };
+  paintPlayer();
+  openPopup('player');
+  input.active = false;
+  input.clear();
+  if (!cardOf.looked) lookUp(cardOf);
+}
+onClose.player = () => {
+  cardRun++;
+  cardOf = null;
+  input.active = screen === 'game' && !overlay && !chat.isOpen;
+};
+const whereabouts = (c) => (!c.online ? 'Not here now' : c.room?.here ? 'In this room with you' : c.room ? `In a ${c.room.open ? '' : 'private '}room${c.room.playing ? ', playing' : ''}` : 'Online now');
+function paintPlayer() {
+  const w = cardOf;
+  if (!w) return;
+  const c = w.card;
+  const name = c?.name || w.name || 'Player';
+  const look = c ? { style: c.look[0], colour: c.look[1] } : Array.isArray(w.look) ? { style: w.look[0], colour: w.look[1] } : null;
+  $('pc-name').textContent = name;
+  $('pc-seal').textContent = initial(name);
+  $('pc-no').textContent = w.no ? `Player #${w.no}` : 'No account';
+  const since = c?.since ? new Date(c.since).toLocaleDateString([], { month: 'long', year: 'numeric' }) : '';
+  $('pc-where').textContent = !c ? '' : c.state === 'friends' ? `Your friend \u00b7 ${whereabouts(c)}` : since ? `Playing since ${since}` : '';
+  $('pc-where').classList.toggle('on', !!c?.online);
+  // their character, in front of its style's sky (their seal until it is painted)
+  const box = $('pc-avatar');
+  const key = look ? `${look.style}:${look.colour}` : '';
+  if (box.dataset.key !== key) {
+    box.dataset.key = key;
+    box.querySelector('img')?.remove();
+    box.classList.remove('has-pic');
+    if (look) {
+      avatarOf(look, 160).then((url) => {
+        if (cardOf !== w || !url || box.dataset.key !== key) return;
+        const img = el('img');
+        img.alt = '';
+        img.src = url;
+        box.append(img);
+        box.classList.add('has-pic');
+      });
+    }
+  }
+  // the few numbers that matter
+  const big = $('pc-big');
+  big.textContent = '';
+  big.hidden = !c;
+  if (c) {
+    for (const [label, value] of [['Wins', c.wins], ['Rounds', c.rounds], ['Cups', c.cups]]) {
+      const tile = el('div', 'pf-tile');
+      tile.append(el('b', '', String(value)), el('span', '', label));
+      big.append(tile);
+    }
+  }
+  const me = account.state.me;
+  $('pc-note').textContent = !w.no
+    ? `${name} has no account: what they have won is kept in their own browser, and they cannot be added as a friend.`
+    : !w.looked
+      ? 'Looking them up…'
+      : c && c.state === 'none' && !me && account.state.on
+        ? 'Friends go with an account. Make one, or sign in, from your profile.'
+        : c?.state === 'asked'
+          ? `You have asked ${name} to be friends. They have not answered yet.`
+          : c?.state === 'incoming'
+            ? `${name} wants to be friends.`
+            : '';
+  $('pc-error').textContent = w.error || '';
+  // what can be done
+  const btns = $('pc-btns');
+  const more = $('pc-more');
+  btns.textContent = '';
+  more.textContent = '';
+  const act = (into, cls, label, run) => {
+    const b = el('button', cls, label);
+    b.type = 'button';
+    b.addEventListener('click', async () => {
+      sfx.play('click');
+      b.disabled = true;
+      w.error = '';
+      const res = await run();
+      if (cardOf !== w) return;
+      if (res?.error) w.error = res.error;
+      if (res?.say) toast(res.say);
+      if (w.no && account.state.on && res !== 'gone') await lookUp(w);
+      else paintPlayer();
+    });
+    into.append(b);
+    return b;
+  };
+  if (c && me) {
+    if (c.state === 'none') act(btns, 'btn primary', 'Add friend', () => friends.add(c.id));
+    else if (c.state === 'incoming') {
+      act(btns, 'btn primary', 'Accept', () => friends.answer(c.id, true));
+      act(btns, 'btn', 'No', () => friends.answer(c.id, false));
+    } else if (c.state === 'asked') act(more, 'pf-link', 'Take the request back', () => friends.remove(c.id));
+    else if (c.state === 'friends') {
+      if (room && c.online && !c.room?.here) {
+        act(btns, 'btn primary', 'Invite to this room', async () => {
+          const res = await friends.invite(c.id);
+          return res.ok ? { say: `${name} has been invited` } : res;
+        });
+      }
+      if (c.room && !c.room.here && c.room.code && !c.room.full) {
+        act(btns, room ? 'btn' : 'btn primary', 'Join their room', async () => {
+          joinInvite({ from: { id: c.id, name }, code: c.room.code });
+          return 'gone';
+        });
+      }
+      act(more, 'pf-link', 'Remove from friends', async () => ((await ask({ title: `Remove ${name} from your friends?`, body: 'You can ask each other again any time.', yes: 'Remove', no: 'Keep' })) ? friends.remove(c.id) : null));
+    }
+  }
+  // (someone in chat: what they say can be hidden, for as long as this page is open)
+  if (w.from) {
+    const off = chat.isMuted(w.from);
+    act(more, 'pf-link', off ? 'Show what they say in chat again' : 'Mute in chat', async () => {
+      chat.mute(w.from, !off);
+      return null;
+    });
+  }
+}
+// "Come and play": into the room of whoever asked (leaving the one we are in, if we are sure).
+async function joinInvite(v) {
+  if (!v?.code) return;
+  if (room?.code === v.code) return toast('You are in that room already');
+  const name = v.from?.name || 'them';
+  if (room && !(await ask({ title: `Leave this room and join ${name}?`, yes: 'Leave and join', no: 'Stay' }))) return;
+  if (v.from?.id) friends.dropInvite(v.from.id);
+  closePopups();
+  chat.close(true);
+  if (room) leaveRoom();
+  const said = { textContent: '' };
+  const ok = await enterRoom('join', { code: v.code, name: myName }, said, null);
+  if (!ok && said.textContent) toast(said.textContent);
 }
 
 // --- your account (account.js): a number of your own, if you want one -------------------------
@@ -2683,6 +2880,14 @@ function paintPodium(res, mySlot) {
 }
 
 // The board: one line each, with a bar for the time they spent as the oni.
+// The star (the server names them: see shared/star.js): of the round - or, once a tournament is over, of all of it.
+const starOf = (res) => (res.cup?.final ? res.cup.star ?? -1 : res.star ?? -1);
+function starMark(res) {
+  const m = el('span', 'star-mark');
+  m.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-star" /></svg>';
+  m.title = res.cup?.final ? 'Star of the tournament' : res.cup ? 'Star of the round' : 'Star of the match';
+  return m;
+}
 function paintBoard(res, mySlot, ranked) {
   const cup = res.cup;
   const board = $('res-table');
@@ -2700,6 +2905,7 @@ function paintBoard(res, mySlot, ranked) {
     const who = el('span', 'who');
     who.append(face(r.slot), r.name);
     if (r.bot || r.row?.bot) who.append(el('span', 'badge bot', 'Bot'));
+    if (r.slot === starOf(res)) who.append(starMark(res));
     // a seal for the winner, and one for whoever was it at the end
     // (not when nearly everyone won - Hot Potato - where the one seal that matters is the oni's)
     if (final && res.winners.includes(r.slot) && !ranked && res.winners.length * 2 <= rows.length) who.append(mark('勝', 'wins'));
@@ -2751,6 +2957,7 @@ function paintSides(res, mySlot) {
       const who = el('span', r.name.length > 9 ? 'who long' : 'who'); // (a long name a size down, so it and its marks are whole)
       who.append(face(r.slot), r.name);
       if (r.bot) who.append(el('span', 'badge bot', 'Bot'));
+      if (r.slot === starOf(res)) who.append(starMark(res));
       // a bomb went off in their hands
       if (r.boom) {
         const blown = el('span', 'mark blown');
@@ -2981,8 +3188,8 @@ function shortcut(key, e) {
 
 addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  // (Esc closes the chat before it does anything to what is behind it)
-  if (chat.isOpen && e.key === 'Escape') {
+  // (Esc closes the chat before it does anything to what is behind it - but a card laid over the chat goes first)
+  if (chat.isOpen && e.key === 'Escape' && !popupTop()) {
     e.preventDefault();
     return chat.close();
   }

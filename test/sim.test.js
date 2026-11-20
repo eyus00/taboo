@@ -11,10 +11,14 @@ import { ARENAS, ARENA_IDS, arenaById, arenaFits, arenasFor, TILE, rampY, VIEW_U
 import { makeState, stepPlayer, packState, unpackState, STATE_LEN, publicFlags, PF_DARK, PF_DASH, PF_GHOST, PF_STAR, isFree, portalAt } from '../shared/physics.js';
 import { Sim, standings, cupPoints, makeTeams, warpSpots } from '../shared/sim.js';
 import { buildNav, surfaceAt } from '../shared/nav.js';
+import { roundStar, worth, best } from '../shared/star.js';
 import { makeBot, botThink } from '../shared/bots.js';
 
 let passed = 0;
+// (TAG_ONLY=arena node test/sim.test.js runs just the tests with that in their name: handy while drawing a stage)
+const ONLY = process.env.TAG_ONLY || '';
 function test(name, fn) {
+  if (ONLY && !name.includes(ONLY)) return;
   fn();
   passed++;
   console.log(`  ok  ${name}`);
@@ -1191,21 +1195,44 @@ test('if "it" leaves, someone else becomes it', () => {
 });
 
 // The player counts a stage's bots are tried with: all of them inside what the stage is meant for.
+test('the star of a round: from the side that won, whoever was worth most; nobody when the best two cannot be told apart', () => {
+  const row = (slot, team, o = {}) => ({ slot, team, plus: 0, minus: 0, tags: 0, caps: 0, ms: 0, ...o });
+  // a team game: points earned less points cost, three for a pass and for a flag
+  assert.equal(worth(row(0, 0, { plus: 22, minus: 4, tags: 2, caps: 1 }), true), 27);
+  const rows = [row(0, 0, { plus: 20, tags: 1, caps: 1, ms: 3000 }), row(1, 0, { plus: 20, tags: 1, caps: 1, ms: 1000 }), row(2, 1, { minus: 20, tags: 9, ms: 9000 }), row(3, 1, { plus: 2 })];
+  assert.equal(roundStar(rows, { team: true, win: 0 }), 1, 'level on worth: whoever held a bomb for less');
+  assert.equal(roundStar(rows, { team: true, win: 1 }), 2, 'only the winning side is looked at');
+  assert.equal(roundStar(rows, { team: true, win: -1 }), 1, 'a drawn round: everyone is');
+  assert.equal(roundStar([row(0, 0), row(1, 0), row(2, 1)], { team: true, win: 0 }), -1, 'two who did nothing: nobody stands out');
+  // everyone for themselves: never the oni at the buzzer; little time as the oni, tags made
+  const ffa = [{ slot: 0, ms: 4000, tags: 3 }, { slot: 1, ms: 0, tags: 0 }, { slot: 2, ms: 1000, tags: 0 }, { slot: 3, ms: 9000, tags: 6 }];
+  assert.equal(worth(ffa[0], false), 2);
+  assert.equal(roundStar(ffa, { loser: 3 }), 0);
+  assert.equal(roundStar(ffa, { loser: 0 }), 3, 'the oni at the buzzer is never the star - anyone else can be');
+  assert.equal(roundStar([{ slot: 0, ms: 0, tags: 0 }, { slot: 1, ms: 0, tags: 0 }, { slot: 2, ms: 8000, tags: 0 }], { loser: 2 }), -1);
+  assert.equal(roundStar([{ slot: 0, ms: 0, tags: 0 }, { slot: 1, ms: 8000, tags: 0 }], { loser: 1 }), 0, 'a duel: whoever won it');
+  assert.equal(best([]), -1);
+  assert.equal(roundStar(null), -1);
+});
+
 const sizeOf = (arena) => (arena.players[1] > 6 ? 'big' : arena.players[1] < 6 ? 'duel' : 'small');
 const botCounts = (arena) => ({ big: [5, 6, 8, 10], small: [2, 4, 5, 6], duel: [2, 3, 4] })[sizeOf(arena)];
 
-test('stages by size: two duel stages (48 x 28 tiles, 2 to 4 players), six small (64 x 36, 2 to 6), three big (96 x 47, 5 to 10); arenaFits and arenasFor say which', () => {
-  assert.equal(ARENAS.length, 11);
-  assert.equal(new Set(ARENA_IDS).size, 11);
+test('stages by size: duel arenas (48 tiles wide, 2 to 4 players), small arenas (64 wide, 2 to 6), big arenas (96 x 47, 5 to 10); arenaFits and arenasFor say which', () => {
+  assert.equal(ARENAS.length, 14);
+  assert.equal(new Set(ARENA_IDS).size, 14);
   const small = ['hills', 'canyon', 'pagoda', 'zigzag', 'dojo', 'bramble'];
   const big = ['valley', 'gorge', 'halls'];
-  const duel = ['court', 'span'];
+  const duel = ['court', 'span', 'steps', 'kite', 'hollow'];
   assert.deepEqual(ARENA_IDS, [...small, ...big, ...duel]);
   for (const a of ARENAS) {
     const kind = sizeOf(a);
     assert.equal(kind, big.includes(a.id) ? 'big' : duel.includes(a.id) ? 'duel' : 'small');
     assert.deepEqual(a.players, { big: [5, 10], small: [2, 6], duel: [2, 4] }[kind], `${a.id} is meant for ${a.players.join(' to ')} players`);
-    assert.deepEqual([a.w / TILE, a.h / TILE], { big: [96, 47], small: [64, 36], duel: [48, 28] }[kind], `${a.id}: ${a.w / TILE} x ${a.h / TILE} tiles`);
+    // (the floors of every stage are five tiles apart - a jump and a half - so how tall a stage is depends on how many floors it has)
+    const tall = { big: [47, 47], small: [28, 32], duel: [25, 25] }[kind];
+    assert.equal(a.w / TILE, { big: 96, small: 64, duel: 48 }[kind], `${a.id}: ${a.w / TILE} tiles wide`);
+    assert.ok(a.h / TILE >= tall[0] && a.h / TILE <= tall[1], `${a.id}: ${a.w / TILE} x ${a.h / TILE} tiles`);
     assert.ok(a.name && a.blurb && a.blurb.length <= 60, `${a.id}: a name, and a blurb of at most 60 characters (${a.blurb.length})`);
     assert.deepEqual(arenaById(a.id).players, a.players, 'the stage as a match plays it says the same');
     // a big stage is watched from a little further off (and no stage from closer than the usual)
@@ -1213,14 +1240,15 @@ test('stages by size: two duel stages (48 x 28 tiles, 2 to 4 players), six small
     assert.equal(arenaById(a.id).view, a.view);
   }
   assert.ok(VIEW_USUAL === 660, 'the usual view');
-  assert.ok((96 * 47) / (64 * 36) >= 1.8 && (96 * 47) / (64 * 36) <= 2.2, 'a big stage has about twice the room of a small one');
-  assert.ok((48 * 28) / (64 * 36) >= 0.5 && (48 * 28) / (64 * 36) <= 0.65, 'a duel stage a little over half');
+  const room = (kind) => ARENAS.filter((a) => sizeOf(a) === kind).reduce((sum, a, _, all) => sum + (a.w * a.h) / TILE / TILE / all.length, 0);
+  assert.ok(room('big') / room('small') >= 1.8 && room('big') / room('small') <= 2.6, `a big stage has twice the room of a small one, or a little more (${(room('big') / room('small')).toFixed(2)})`);
+  assert.ok(room('duel') / room('small') >= 0.5 && room('duel') / room('small') <= 0.7, `a duel stage a little over half (${(room('duel') / room('small')).toFixed(2)})`);
   for (let n = 2; n <= 10; n++) {
     const want = n <= 4 ? [...small, ...duel] : n <= 6 ? [...small, ...big] : big;
     assert.deepEqual(arenasFor(n), want, `stages for ${n} players`);
     for (const id of ARENA_IDS) assert.equal(arenaFits(id, n), want.includes(id), `${id} with ${n} players`);
   }
-  assert.ok(!arenaFits('nowhere', 4) && arenasFor(1).length === 8 && arenasFor(99).length === 3 && arenasFor().length === 8, 'never an empty list, never an unknown stage');
+  assert.ok(!arenaFits('nowhere', 4) && arenasFor(1).length === 11 && arenasFor(99).length === 3 && arenasFor().length === 11, 'never an empty list, never an unknown stage');
 });
 
 // Where a pad puts down someone who steps onto it and touches nothing: [x of their middle, y of their feet] - or null (off the map).
@@ -1258,7 +1286,7 @@ test('every arena: starts, three flags and boxes stand on something; every surfa
     assert.equal(arena.bases[0][0], arena.w - arena.bases[2][0], `${arena.id}: the two ends mirror each other`);
     assert.equal(arena.bases[0][1], arena.bases[2][1]);
     assert.equal(arena.bases[1][0], arena.w / 2, `${arena.id}: the third flag is dead centre`);
-    assert.ok(arena.bases[1][1] <= arena.bases[0][1] - 6 * TILE && arena.bases[1][1] <= arena.h * 0.5, `${arena.id}: and high up (${arena.bases[1][1] / TILE} against ${arena.bases[0][1] / TILE})`);
+    assert.ok(arena.bases[1][1] <= arena.bases[0][1] - 5 * TILE && arena.bases[1][1] <= arena.h * 0.55, `${arena.id}: and high up (${arena.bases[1][1] / TILE} against ${arena.bases[0][1] / TILE})`);
     // portals come in pairs: one to three of them (a duel stage: one at most), at least one you can drop out of
     const pairs = arena.portals.length / 2;
     assert.ok(Number.isInteger(pairs) && pairs <= 3 && pairs >= (duel ? 0 : 1), `${arena.id}: ${pairs} portal pairs`);
@@ -1359,7 +1387,7 @@ function openGround(arena, head = 5) {
 test('every arena has room to run: four clear flat stretches of 14 tiles (one of 24; a duel stage: 12, one of 16), a bottom floor that is mostly plain ground, few gadgets', () => {
   const log = [];
   for (const arena of ARENAS) {
-    const { grid, floor, runs } = openGround(arena, sizeOf(arena) === 'big' ? 4 : 5); // (a big stage's floors are five tiles apart: four of air)
+    const { grid, floor, runs } = openGround(arena, 4); // (floors are five tiles apart: four of air)
     const [least, best] = sizeOf(arena) === 'duel' ? [12, 16] : [14, 24];
     const long = runs.filter((q) => q.len >= least).map((q) => q.len).sort((a, b) => b - a);
     log.push(`${arena.id} ${long.join('/')}`);

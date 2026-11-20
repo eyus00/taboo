@@ -398,6 +398,9 @@ body.in-game .conn { display: none; }
 /* a bomb went off in their hands */
 .side .blown { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 7px; vertical-align: 2px; color: var(--paper); background: var(--ink); transform: rotate(-5deg); clip-path: polygon(4% 3%, 50% 0, 97% 2%, 100% 48%, 98% 97%, 52% 100%, 3% 98%, 0 50%); }
 .side .blown .ic { width: 12px; height: 12px; }
+/* the star of the round (or of the match): a small gold seal by their name */
+.star-mark { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 7px; vertical-align: 2px; color: #14100e; background: #e3b341; border: 1.5px solid #14100e; border-radius: 50%; transform: rotate(-8deg); }
+.star-mark .ic { width: 12px; height: 12px; }
 .side li.hd { border-top: 0; padding: 7px 12px 5px; font: 800 9.5px/1 var(--serif); letter-spacing: 0.06em; text-transform: uppercase; color: var(--soft); }
 .side li span:first-child { text-align: left; }
 .side li .who { font: 400 21px/1.15 var(--brush); overflow: hidden; text-overflow: ellipsis; padding-top: 2px; }

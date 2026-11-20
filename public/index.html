@@ -485,6 +485,29 @@
         </div>
       </dialog>
 
+      <!-- somebody else's card: who they are, a few numbers, and what you can do about it (friends.js; opened from a name in chat) -->
+      <dialog id="s-player" class="modal sm" aria-labelledby="player-h">
+        <header class="m-top">
+          <h2 id="player-h">Player</h2>
+          <button class="m-x" data-close aria-label="Close (Esc)"><kbd>Esc</kbd><span class="ring"><svg class="ic" aria-hidden="true"><use href="#i-close" /></svg></span></button>
+        </header>
+        <div class="m-body pc">
+          <div class="pc-id">
+            <div class="pf-avatar" id="pc-avatar" aria-hidden="true"><i class="seal hanko huge" id="pc-seal"></i></div>
+            <div class="pc-who">
+              <b class="pc-name" id="pc-name"></b>
+              <span class="pc-no" id="pc-no"></span>
+              <span class="pc-where" id="pc-where"></span>
+            </div>
+          </div>
+          <div class="pf-big" id="pc-big"></div>
+          <p class="note" id="pc-note"></p>
+          <p class="error" id="pc-error" role="alert"></p>
+          <div class="pc-btns" id="pc-btns"></div>
+          <div class="pc-more" id="pc-more"></div>
+        </div>
+      </dialog>
+
       <!-- an account: making one, signing in, a new PIN, a forgotten one (which fields show depends on which) -->
       <dialog id="s-acct" class="modal sm" aria-labelledby="acct-h">
         <header class="m-top">

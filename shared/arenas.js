@@ -1,6 +1,7 @@
 // Arenas, drawn as text, in three sizes (one tile = 40 px):
-//   duel   48 x 28 tiles, for 2 to 4 players: quick to cross, a few ledges, hardly any toys
-//   small  64 x 36 tiles, for 2 to 6: a good two screens wide and two high
+//   duel   48 x 25 tiles, for 2 to 4 players: quick to cross, a few ledges, hardly any toys
+//   small  64 tiles wide and 28 to 32 high, for 2 to 6: a good two screens wide and near two high
+//          (the older ones are drawn taller than they are played: see closer() below)
 //   big    96 x 47 tiles (drawn as 96 x 54: see closer() below), for 5 to 10 (ten players in a small one is chaos): two and a
 //          quarter times the room, and shown from a little further away (`view`)
 // The camera follows the player and a minimap shows the rest. Every stage says how
@@ -33,9 +34,11 @@
 // test/sim.test.js check most of them, and public/_map.html draws the result;
 // add &open=1 there to see the open ground shaded):
 //  * Room to run comes first. Every arena has at least four flat stretches of
-//    14 tiles or more (one of them 24) with nothing standing on them and five
-//    tiles of clear air above. Few, long platforms; floors 6 or 7 tiles apart,
-//    which a jump and the jump in mid-air still climb through a thin ledge.
+//    14 tiles or more (one of them 24) with nothing standing on them and four
+//    tiles of clear air above (a duel stage: 12 tiles or more, one of them 16).
+//    Few, long platforms; floors FIVE tiles apart as
+//    they are played: a jump and a half, so the jump in mid-air has a tile and
+//    more to spare (six or seven needed it at the very top of the first, every time).
 //  * Pads, portals, updrafts and thorns live at the END of a stretch: against
 //    a wall or a cliff, on a side ledge, in a pit, under the foot of a climb.
 //    They are shortcuts to choose, not things to trip over. At most 8 pads and
@@ -63,7 +66,7 @@
 //    with nothing but plain ground for two tiles on its open side. One to three
 //    pairs a stage; fewer is better.
 //  * There is a way up within a short run from anywhere, the middle of the map
-//    included: ledges six tiles apart that overlap, a step, a slope, a pad.
+//    included: ledges a storey apart that overlap, a step, a slope, a pad.
 //  * No arena has a pit you can fall out of at present: the two in the canyon
 //    and the well in the maze are full of wind. If you draw one ('r' marks
 //    where people come back), put it at the end of a stretch, in plain sight,
@@ -203,14 +206,14 @@ const MAPS = [
       '...............................uu...............................',
       '.........................*.....uu.....*.........................',
       '......................=========uu=========......................',
-      'A...x...>>.....................uu.....................<<...x...a',
+      '....x...>>.....................uu.....................<<...x....',
       '==========.....................uu.....................==========',
       '...............................uu...............................',
       '...............................uu...............................',
       '...............................uu...............................',
       '......................*...5....uu....6...*......................',
       '................===============uu===============................',
-      '...............................uu...............................',
+      '........A......................uu......................a........',
       '=========......................uu......................=========',
       '...............................uu...............................',
       '...............................uu...............................',
@@ -296,7 +299,7 @@ const MAPS = [
       '................................................................',
       '>>............................................................<<',
       '========.......................9........................========',
-      '..........................============..........................',
+      '.........................==============.........................',
       '................................................................',
       '................................................................',
       '................................................................',
@@ -562,7 +565,7 @@ const MAPS = [
     ],
   },
   // --- big stages (end)
-  // --- duel stages (begin): 48 x 28 tiles, for two to four players (a knockout tournament ends on them)
+  // --- duel stages (begin): 48 tiles wide, for two to four players (a knockout tournament ends on them: five of them, so its last rounds are never the same ground twice)
   {
     id: 'court',
     name: 'Tea Court',
@@ -634,6 +637,110 @@ const MAPS = [
       '................................................',
       '................................................',
       '.A.....*.....5.....*........*.....6.....*.....a.',
+      '################################################',
+      '################################################',
+    ],
+  },
+  // (the three below are drawn as they are played: floors five tiles apart)
+  {
+    id: 'steps',
+    name: 'Stone Steps',
+    blurb: 'Stone steps down to a small yard, and a bridge overhead.',
+    players: DUEL,
+    ramps: [],
+    map: [
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '.................*.....9......*.................',
+      '............========================............',
+      '................................................',
+      '................................................',
+      '................................................',
+      '..7..1*..................................*2..8..',
+      '########................................########',
+      '########................................########',
+      '########................................########',
+      '########................................########',
+      '########...*.3....................4.*...########',
+      '################====........====################',
+      '################................################',
+      '################................################',
+      '################................################',
+      '################..5..*....*..6..################',
+      '################################################',
+      '################################################',
+    ],
+  },
+  {
+    id: 'kite',
+    name: 'Paper Kite',
+    blurb: 'A roof of slopes: up the sides to the ledge at the top.',
+    players: DUEL,
+    ramps: [[6.4, 22, 12, 18], [12, 13, 19, 8], [41.6, 22, 36, 18], [36, 13, 29, 8]],
+    map: [
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '.....................*.9..*.....................',
+      '...................==========...................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '..7..1..*..............................*..2..8..',
+      '============........................============',
+      '................................................',
+      '................................................',
+      '................................................',
+      '...............3...*........*...4...............',
+      '............========================............',
+      '................................................',
+      '................................................',
+      '................................................',
+      '..*.............*...5......6...*.............*..',
+      '################################################',
+      '################################################',
+    ],
+  },
+  {
+    id: 'hollow',
+    name: 'Fox Hollow',
+    blurb: 'A big rock in the middle, and a door high in each corner.',
+    players: DUEL,
+    drop: 'A',
+    ramps: [],
+    map: [
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '................................................',
+      '............*......................*............',
+      '........==========............==========........',
+      '................................................',
+      '................................................',
+      '................................................',
+      'A.....*................9.................*.....a',
+      '==========........============........==========',
+      '................................................',
+      '................................................',
+      '................................................',
+      '.................3..*......*..4.................',
+      '======........####################........======',
+      '..............####################..............',
+      '..............####################..............',
+      '..............####################..............',
+      '...7..1..*.5..####################..6.*..2..8...',
       '################################################',
       '################################################',
     ],
@@ -811,11 +918,26 @@ export function rampY(r, x) {
 // each floor is taken out (walls and updrafts simply get a row shorter), and the
 // slopes are moved up to match.
 const BIG_CUT = [11, 17, 23, 29, 35, 41, 47];
+// The same was then done to the small and the duel stages, whose floors were drawn six or
+// seven tiles apart: a climb there needed the jump in mid-air at the very top of the first,
+// every time. Five tiles is a jump and a half - the second jump has a tile and more to
+// spare. Which rows of plain air go is listed per stage (one or two under each floor).
+const CUTS = {
+  hills: [13, 14, 25, 26],
+  canyon: [16, 17, 23, 24, 30, 31],
+  pagoda: [8, 9, 17, 18, 24, 25, 30, 31],
+  zigzag: [7, 13, 19, 25, 31],
+  dojo: [17, 23, 24, 30, 31],
+  bramble: [9, 10, 16, 17, 22, 24, 30, 31],
+  court: [11, 17, 23],
+  span: [11, 17, 23],
+};
 function closer(def) {
-  if (def.players !== BIG) return def;
-  for (const r of BIG_CUT) if (/[^.u#]/.test(def.map[r])) throw new Error(def.id + ': row ' + r + ' is not plain air');
-  const up = (r) => r - BIG_CUT.filter((c) => c < r).length;
-  return { ...def, map: def.map.filter((_, r) => !BIG_CUT.includes(r)), ramps: (def.ramps || []).map(([c0, r0, c1, r1]) => [c0, up(r0), c1, up(r1)]) };
+  const cut = def.players === BIG ? BIG_CUT : CUTS[def.id] || [];
+  if (!cut.length) return def;
+  for (const r of cut) if (/[^.u#]/.test(def.map[r])) throw new Error(def.id + ': row ' + r + ' is not plain air');
+  const up = (r) => r - cut.filter((c) => c < r).length;
+  return { ...def, map: def.map.filter((_, r) => !cut.includes(r)), ramps: (def.ramps || []).map(([c0, r0, c1, r1]) => [c0, up(r0), c1, up(r1)]) };
 }
 
 export const ARENAS = MAPS.map(closer).map(parse);

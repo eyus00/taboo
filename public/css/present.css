@@ -85,7 +85,9 @@
 .pz-interval[data-mood='lose'] .pz-title { color: #d8d1cd; }
 .pz-interval[data-mood='win'] .pz-title { color: #ffe08a; }
 /* this scene follows another of the same shape: nothing comes on again */
-#present.keep .pz-half, #present.keep .pz-card, #present.keep .pz-vs, #present.keep .pz-team, #present.keep .pz-plate:not(.landed) { animation: none; }
+#present.keep .pz-half, #present.keep .pz-card, #present.keep .pz-vs, #present.keep .pz-team { animation: none; }
+/* (the reels of the next draw do come on: between the rounds there were none) */
+#present.keep .pz-plate:not(.landed):not(.spin) { animation-delay: 0s; }
 /* a tall screen: one side above the other, the halves split top and bottom */
 .pz-versus.tall .pz-stage { grid-template-columns: 1fr; grid-template-rows: auto auto auto; justify-items: center; gap: 6px 0; padding: 0 2vw; }
 .pz-versus.tall .pz-half { left: -10%; right: -10%; width: auto; height: 62%; }
@@ -209,14 +211,38 @@
   .pz-draw .pz-thumb { width: 100%; }
   .pz-words { flex-direction: column; align-items: flex-start; gap: 0; }
 }
-/* between rounds the reels are only waiting: lower windows, so the players and the board have the room */
-.pz-interval .pz-thumb { width: clamp(104px, 18vmin, 170px); aspect-ratio: 16 / 6; }
-@media (max-width: 560px) { .pz-interval .pz-draw .pz-thumb { width: 100%; } }
 
-/* what a player did, in a few tags under their name: a sign and a number, nothing to read */
-.pz-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; margin-top: 6px; width: 132%; }
-.pz-stats .st { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px 2px; background: #fbf6e8; color: #1c1b1f; border: 2px solid #1c1b1f; font: 800 clamp(11px, calc(var(--card, 140px) * 0.105), 15px)/1.25 var(--serif); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pz-stats .st .ic { font-size: 0.85em; }
-.pz-stats .st.boom { background: #1c1b1f; color: #fbf6e8; }
+/* What a player did, under their name: plain marks like the bomb in the draw - a sign and how many, and the word for it. No boxes. */
+.pz-deeds { display: flex; justify-content: center; align-items: flex-start; gap: clamp(4px, calc(var(--card, 140px) * 0.07), 14px); margin-top: 7px; width: 128%; color: #fff; will-change: transform, opacity; animation: pz-pop 0.34s cubic-bezier(0.2, 1.5, 0.4, 1) both; animation-delay: calc(0.62s + var(--i, 0) * 0.06s); }
+.pz-deeds .dd { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.pz-deeds .top { display: flex; align-items: center; gap: 0.16em; font: 400 clamp(18px, calc(var(--card, 140px) * 0.22), 34px)/1 var(--brush); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5); font-variant-numeric: tabular-nums; }
+.pz-deeds .top .ic { width: 0.92em; height: 0.92em; }
+.pz-deeds .top b { font-weight: 400; }
+.pz-deeds small { max-width: 6.4em; text-align: center; text-wrap: balance; font: 800 clamp(8px, calc(var(--card, 140px) * 0.072), 11.5px)/1.2 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; color: #fff3e0; }
+#present.keep .pz-deeds { animation: none; }
+/* (a bomb that went off in their hands: the bomb on their card, as in the draw - a moment after they come on) */
+.pz-interval .pz-mark.bomb, .pz-hero .pz-mark.bomb { animation-delay: calc(0.7s + var(--i, 0) * 0.06s); }
+/* The star: a gold seal on their card, turning a little, and their plate where the draw will be. */
+.pz-star { position: absolute; left: -3%; top: calc(var(--card, 140px) * 0.06); z-index: 3; display: grid; place-items: center; width: calc(var(--card, 140px) * 0.3); min-width: 22px; aspect-ratio: 1; background: #ffd76a; color: #14100e; border: 3px solid #14100e; border-radius: 50%; box-shadow: 0 0 0 2px #ffd76a, 3px 4px 0 rgba(0, 0, 0, 0.4); will-change: transform, opacity; animation: pz-star-in 0.4s cubic-bezier(0.2, 1.6, 0.4, 1) 0.8s both, pz-twinkle 2.4s ease-in-out 1.2s infinite; }
+.pz-star .ic { width: 62%; height: 62%; }
+.pz-side.r .pz-star, .pz-card.from-r .pz-star { left: auto; right: -3%; }
+.pz-card.star .pz-slab { border-color: #ffd76a; box-shadow: inset 0 0 0 4px var(--c), 0 0 0 4px #ffd76a, 0 0 0 7px #14100e, 5px 6px 0 rgba(0, 0, 0, 0.4); }
+.pz-card.star .pz-name { background: #ffd76a; color: #14100e; }
+.pz-starplate { flex-direction: row; align-items: center; gap: 10px; padding: 6px 16px 7px 8px; border-color: #a32a22; box-shadow: inset 0 0 0 3px #fbf6e8, inset 0 0 0 4px #a32a22, 4px 5px 0 rgba(0, 0, 0, 0.3); animation-delay: 0.5s; }
+.pz-starplate .pic { flex: none; width: clamp(44px, 8.4vmin, 66px); aspect-ratio: 1; background: color-mix(in srgb, var(--c) 16%, #fbf6e8); border: 2px solid #1c1b1f; box-shadow: inset 0 0 0 3px var(--c); }
+.pz-starplate .pic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.pz-starplate .txt { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; text-align: left; }
+.pz-starplate small { display: flex; align-items: center; gap: 5px; font: 800 clamp(9px, 1.4vmin, 11.5px)/1.3 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; color: #a32a22; }
+.pz-starplate small .ic { width: 1.15em; height: 1.15em; }
+.pz-starplate b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 clamp(19px, 3.4vmin, 30px)/1.1 var(--brush); padding-right: 3px; }
+.pz-starplate .txt > span { font: 700 clamp(10.5px, 1.6vmin, 13.5px)/1.3 var(--serif); color: #5a5148; }
+.pz-draw:empty { display: none; }
+.pz-starline { display: inline-flex; align-items: center; gap: 7px; padding: 2px 14px 3px 9px; background: #ffd76a; color: #14100e; border: 2px solid #14100e; animation: pz-drop 0.34s cubic-bezier(0.2, 1.3, 0.4, 1) 0.66s both; }
+.pz-starline .ic { width: 15px; height: 15px; }
+.pz-starline small { font: 800 clamp(9px, 1.4vmin, 11.5px)/1.4 var(--serif); letter-spacing: 0.16em; text-transform: uppercase; }
+.pz-starline b { font: 400 clamp(15px, 2.4vmin, 21px)/1.1 var(--brush); }
+@keyframes pz-pop { from { transform: scale(1.5); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pz-star-in { from { transform: scale(2.6) rotate(-40deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pz-twinkle { 0%, 100% { transform: none; } 50% { transform: rotate(10deg) scale(1.08); } }
 /* a low screen: smaller reels, so the billing and the draw stay clear of the players */
 @media (max-height: 760px) and (min-width: 561px) { .pz-versus:not(.pz-interval) .pz-thumb { width: clamp(118px, 20vmin, 180px); } .pz-title { font-size: clamp(26px, 5.8vmin, 52px); } }

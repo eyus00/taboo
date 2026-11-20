@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- Developer tool: a schematic of an arena.  /_map.html?arena=hills&nav=1&scale=0.7&open=1
      nav=1 draws the bots' route map on top; nav=2 only the launcher / trampoline / updraft / portal routes.
-     open=1 shades the open ground: flat stretches with nothing on them and five tiles of clear air above
+     open=1 shades the open ground: flat stretches with nothing on them and four tiles of clear air above
      (the same measure as the "room to run" test in test/sim.test.js); the long ones get their length. -->
 <meta charset="utf-8" />
 <title>Arena map</title>
@@ -61,7 +61,7 @@
 
   // open ground: tiles of flat ground with nothing standing on them and `head` tiles of empty air above
   // (the arena as drawn, with all its thorns - the same count the tests make)
-  function openGround(a, head = 5) {
+  function openGround(a, head = 4) {
     const C = a.w / TILE;
     const R = a.h / TILE;
     const grid = Array.from({ length: R }, () => new Array(C).fill(0)); // 1 solid block, 2 thin ledge, 4 a gadget, 8 a slope
@@ -90,7 +90,7 @@
     return runs;
   }
   if (showOpen) {
-    const HEAD = 5;
+    const HEAD = 4;
     const runs = openGround(ARENAS.find((a) => a.id === arena.id) || arena, HEAD);
     const long = runs.filter((r) => r.len >= 14).map((r) => r.len).sort((a, b) => b - a);
     bar.innerHTML += ` | open ground: ${long.length} stretches of 14 tiles or more (${long.join(', ')})`;

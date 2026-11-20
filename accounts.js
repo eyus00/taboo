@@ -38,6 +38,10 @@ const LOCK_MS = 15 * 60 * 1000; // ...for this long the first time, twice as lon
 const LOCK_MAX_MS = 24 * 60 * 60 * 1000;
 const RESET_MS = 24 * 60 * 60 * 1000; // how long a reset code is good for
 const SESSIONS_MAX = 8; // devices signed in to one account (the oldest goes)
+export const FRIENDS_MAX = 100; // friends one account can have (asked and not yet answered count too)
+const ASKED_MAX = 20; // requests one account can have out, unanswered, at once
+const WAITING_MAX = 50; // requests that can be waiting on one account
+const ASK_AGAIN_MS = 7 * 24 * 60 * 60 * 1000; // someone who said no is not asked again for this long
 const RETRY_MS = 5000; // a failed write is tried again after this (and then less often)
 // (the PINs people choose first: every digit the same, the runs, the corners of the pad, the years nobody will guess)
 const COMMON = new Set(['0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999', '1234', '4321', '0123', '2345', '3456', '4567', '5678', '6789', '9876', '1212', '2121', '1122', '1313', '2580', '0852', '1379', '6969', '1010', '2000', '2020', '2024', '2025', '2026']);
@@ -77,6 +81,19 @@ const SCHEMA = [
     code_hash TEXT NOT NULL,
     expires_at BIGINT NOT NULL
   )`,
+  // Friends: one row for every pair, the lower number first. state: asked (by `asker`, not
+  // answered yet) | ok (friends) | no (the other said no: to `asker` it still looks asked) |
+  // gone (a no that `asker` then took back: shown to nobody, kept so that it is not asked again at once).
+  `CREATE TABLE IF NOT EXISTS friends (
+    a INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    b INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    state TEXT NOT NULL,
+    asker INTEGER NOT NULL,
+    at BIGINT NOT NULL,
+    PRIMARY KEY (a, b),
+    CHECK (a < b)
+  )`,
+  `CREATE INDEX IF NOT EXISTS friends_b ON friends (b)`,
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS admin_log (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -363,6 +380,126 @@ export function makeAccounts({ query, secret, perHour = 120, need = NEED_ROUNDS,
     flush,
     get owed() {
       return dirty.size;
+    },
+
+    // --- what anybody may know of an account: the name, the character, a few numbers ---------------
+    //   viewer: the account that is asking (0: nobody signed in) - `state` says what they are to each other:
+    //   me | friends | asked (by the viewer) | incoming (they asked the viewer) | none
+    async card(id, viewer = 0) {
+      const row = await find(id);
+      if (!row || row.status !== 'ok') return { error: 'No such player.' };
+      const a = live.get(id) ? view(id) : shape(row);
+      const r = a.record;
+      let state = id === viewer ? 'me' : 'none';
+      if (viewer && viewer !== id) {
+        const f = (await query('SELECT state, asker FROM friends WHERE a = $1 AND b = $2', [Math.min(id, viewer), Math.max(id, viewer)])).rows[0];
+        if (f) state = f.state === 'ok' ? 'friends' : f.state === 'gone' ? 'none' : num(f.asker) === viewer ? 'asked' : f.state === 'asked' ? 'incoming' : 'none';
+      }
+      return { ok: true, card: { id, name: a.name, look: [a.look.style, a.look.colour], since: num(row.created_at), rounds: r.rounds, wins: r.wins, best: r.best, cups: r.cups.ko.won + r.cups.team.won, state } };
+    },
+
+    // --- friends -----------------------------------------------------------------------------------
+    // Both sides have an account; one asks, the other says yes or no. Nobody is told they
+    // were turned down: to whoever asked, a request that got a no simply stays asked.
+    friends: {
+      // everyone `id` has to do with: { friends, incoming, outgoing }, each [{ id, name, look: [style, colour] }]
+      async list(id) {
+        const rows = (
+          await query(
+            `SELECT f.state, f.asker, o.id, o.name, o.look_style, o.look_colour
+               FROM friends f JOIN accounts o ON o.id = CASE WHEN f.a = $1 THEN f.b ELSE f.a END
+              WHERE (f.a = $1 OR f.b = $1) AND o.status = 'ok' ORDER BY lower(o.name), o.id`,
+            [id],
+          )
+        ).rows;
+        const out = { friends: [], incoming: [], outgoing: [] };
+        for (const r of rows) {
+          const who = { id: num(r.id), name: live.get(num(r.id))?.name || r.name, look: [idish(r.look_style) ? r.look_style : 'ink', int(num(r.look_colour), 9)] };
+          const mine = num(r.asker) === id;
+          if (r.state === 'ok') out.friends.push(who);
+          else if (r.state === 'gone') continue;
+          else if (mine) out.outgoing.push(who); // (asked, or turned down: the same to whoever asked)
+          else if (r.state === 'asked') out.incoming.push(who);
+        }
+        return out;
+      },
+      // the numbers of `id`'s friends (who is to be told when they come and go)
+      async ids(id) {
+        return (await query("SELECT CASE WHEN a = $1 THEN b ELSE a END AS id FROM friends WHERE (a = $1 OR b = $1) AND state = 'ok'", [id])).rows.map((r) => num(r.id));
+      },
+      async are(x, y) {
+        if (!x || !y || x === y) return false;
+        return !!(await query("SELECT 1 FROM friends WHERE a = $1 AND b = $2 AND state = 'ok'", [Math.min(x, y), Math.max(x, y)])).rows[0];
+      },
+      // `me` asks `other` - or, if `other` had asked already, says yes
+      //   -> { ok, state: 'asked' | 'friends', news: true when `other` should be told }
+      async ask(me, other) {
+        if (!Number.isInteger(other) || other < 1) return { error: 'Enter a player number.' };
+        if (other === me) return { error: 'That is your own number.' };
+        const them = await find(other);
+        if (!them || them.status !== 'ok') return { error: `There is no player #${other}.` };
+        const [a, b] = [Math.min(me, other), Math.max(me, other)];
+        const row = (await query('SELECT state, asker, at FROM friends WHERE a = $1 AND b = $2', [a, b])).rows[0];
+        if (row?.state === 'ok') return { ok: true, state: 'friends', name: them.name };
+        if (row && num(row.asker) === other && row.state !== 'gone') {
+          // they asked first (even if that got a no at the time): asking back makes it so
+          if ((await api.friends.count(me)).friends >= FRIENDS_MAX) return { error: `A friends list holds ${FRIENDS_MAX}. Make room first.` };
+          await query("UPDATE friends SET state = 'ok', at = $3 WHERE a = $1 AND b = $2", [a, b, now()]);
+          return { ok: true, state: 'friends', name: them.name, news: true };
+        }
+        if (row?.state === 'asked') return { ok: true, state: 'asked', name: them.name };
+        if (row && num(row.asker) === me && (row.state === 'no' || row.state === 'gone') && now() - num(row.at) < ASK_AGAIN_MS) {
+          // (not again so soon - and not a word about it: to whoever asks, it is asked)
+          if (row.state === 'gone') await query("UPDATE friends SET state = 'no' WHERE a = $1 AND b = $2", [a, b]);
+          return { ok: true, state: 'asked', name: them.name };
+        }
+        const mine = await api.friends.count(me);
+        if (mine.friends + mine.asked >= FRIENDS_MAX) return { error: `A friends list holds ${FRIENDS_MAX}. Make room first.` };
+        if (mine.asked >= ASKED_MAX) return { error: 'You have a lot of requests waiting for an answer. Wait for some of them first.' };
+        if ((await api.friends.count(other)).waiting >= WAITING_MAX) return { error: 'They have more requests than they can answer just now.' };
+        await query(
+          "INSERT INTO friends (a, b, state, asker, at) VALUES ($1, $2, 'asked', $3, $4) ON CONFLICT (a, b) DO UPDATE SET state = 'asked', asker = $3, at = $4",
+          [a, b, me, now()],
+        );
+        return { ok: true, state: 'asked', name: them.name, news: true };
+      },
+      // how full `id`'s lists are: friends, asked (by them, unanswered or turned down), waiting (on them)
+      async count(id) {
+        const r = (
+          await query(
+            `SELECT count(*) FILTER (WHERE state = 'ok') AS friends,
+                    count(*) FILTER (WHERE state IN ('asked', 'no') AND asker = $1) AS asked,
+                    count(*) FILTER (WHERE state = 'asked' AND asker <> $1) AS waiting
+               FROM friends WHERE a = $1 OR b = $1`,
+            [id],
+          )
+        ).rows[0];
+        return { friends: num(r.friends), asked: num(r.asked), waiting: num(r.waiting) };
+      },
+      // `me` answers `other`'s request
+      async answer(me, other, yes) {
+        const [a, b] = [Math.min(me, other), Math.max(me, other)];
+        const row = (await query('SELECT state, asker FROM friends WHERE a = $1 AND b = $2', [a, b])).rows[0];
+        if (!row || row.state !== 'asked' || num(row.asker) !== other) return { error: 'That request is no longer there.' };
+        if (yes && (await api.friends.count(me)).friends >= FRIENDS_MAX) return { error: `A friends list holds ${FRIENDS_MAX}. Make room first.` };
+        await query('UPDATE friends SET state = $3, at = $4 WHERE a = $1 AND b = $2', [a, b, yes ? 'ok' : 'no', now()]);
+        return { ok: true, state: yes ? 'friends' : 'none', news: !!yes };
+      },
+      // `me` is done with `other`: no longer friends, or a request of their own taken back
+      // (a request of the other's is answered, not removed: see answer)
+      async remove(me, other) {
+        const [a, b] = [Math.min(me, other), Math.max(me, other)];
+        const row = (await query('SELECT state, asker FROM friends WHERE a = $1 AND b = $2', [a, b])).rows[0];
+        if (!row) return { ok: true, state: 'none' };
+        if (row.state !== 'ok' && num(row.asker) !== me) return row.state === 'asked' ? api.friends.answer(me, other, false) : { ok: true, state: 'none' };
+        // (a request that got a no stays on the books until it may be made again: taking it back does not clear the way)
+        if (row.state === 'no' || row.state === 'gone') {
+          await query("UPDATE friends SET state = 'gone' WHERE a = $1 AND b = $2", [a, b]);
+          return { ok: true, state: 'none' };
+        }
+        await query('DELETE FROM friends WHERE a = $1 AND b = $2', [a, b]);
+        return { ok: true, state: 'none', news: row.state === 'ok' };
+      },
     },
 
     // --- for the owner of the server (the admin page) -------------------------------------------

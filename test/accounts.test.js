@@ -199,4 +199,101 @@ await test('no more than so many new accounts in an hour, whoever asks; an accou
   assert.equal(await A.resume(last.token), null);
 });
 
+await test('friends: one asks, the other answers; a no is never told; both lists, the card anybody may see, and the limits', async () => {
+  clock += 2 * 3600 * 1000;
+  const mk = async (name) => (await A.create({ pin: '8842', name, played: played(3) })).account.id;
+  const [x, y, z] = [await mk('Xia'), await mk('Yuki'), await mk('Zed')];
+  const names = (list) => list.map((p) => p.name).join(',');
+  // asking: not yourself, not nobody
+  assert.match((await A.friends.ask(x, x)).error, /your own number/);
+  assert.match((await A.friends.ask(x, 99999)).error, /no player #99999/);
+  assert.match((await A.friends.ask(x, 1.5)).error, /player number/);
+  const asked = await A.friends.ask(x, y);
+  assert.deepEqual([asked.ok, asked.state, asked.news, asked.name], [true, 'asked', true, 'Yuki']);
+  assert.equal((await A.friends.ask(x, y)).news, undefined, 'asked twice: told once');
+  let lx = await A.friends.list(x);
+  let ly = await A.friends.list(y);
+  assert.deepEqual([names(lx.friends), names(lx.incoming), names(lx.outgoing)], ['', '', 'Yuki']);
+  assert.deepEqual([names(ly.friends), names(ly.incoming), names(ly.outgoing)], ['', 'Xia', '']);
+  assert.deepEqual(ly.incoming[0], { id: x, name: 'Xia', look: ['ink', 0] });
+  assert.equal(await A.friends.are(x, y), false);
+  // the card anybody may see: who they are and a few numbers - and what the two are to each other
+  assert.deepEqual((await A.card(y, x)).card.state, 'asked');
+  assert.deepEqual((await A.card(x, y)).card.state, 'incoming');
+  assert.deepEqual((await A.card(x, x)).card.state, 'me');
+  const card = (await A.card(x, 0)).card;
+  assert.deepEqual([card.id, card.name, card.look, card.rounds, card.wins, card.best, card.cups, card.state], [x, 'Xia', ['ink', 0], 0, 0, 0, 0, 'none']);
+  assert.ok(card.since > 0 && !('record' in card) && !JSON.stringify(card).includes('pin'));
+  assert.match((await A.card(99999, x)).error, /No such player/);
+  // yes
+  assert.match((await A.friends.answer(x, y, true)).error, /no longer there/, 'only whoever was asked can answer');
+  const yes = await A.friends.answer(y, x, true);
+  assert.deepEqual([yes.ok, yes.state, yes.news], [true, 'friends', true]);
+  assert.ok((await A.friends.are(x, y)) && (await A.friends.are(y, x)));
+  assert.deepEqual(await A.friends.ids(x), [y]);
+  assert.equal((await A.card(y, x)).card.state, 'friends');
+  assert.deepEqual((await A.friends.ask(y, x)).state, 'friends');
+  // asking someone who has asked you is a yes
+  await A.friends.ask(z, x);
+  const back = await A.friends.ask(x, z);
+  assert.deepEqual([back.state, back.news], ['friends', true]);
+  lx = await A.friends.list(x);
+  assert.deepEqual([names(lx.friends), names(lx.incoming), names(lx.outgoing)], ['Yuki,Zed', '', '']);
+  assert.deepEqual(await A.friends.count(x), { friends: 2, asked: 0, waiting: 0 });
+  // no longer friends: gone from both lists
+  const gone = await A.friends.remove(x, z);
+  assert.deepEqual([gone.ok, gone.state, gone.news], [true, 'none', true]);
+  assert.equal(names((await A.friends.list(z)).friends), '');
+  // a no: whoever asked is not told, and cannot ask again for a week
+  await A.friends.ask(z, y);
+  const no = await A.friends.answer(y, z, false);
+  assert.deepEqual([no.ok, no.state, no.news], [true, 'none', false]);
+  assert.equal(names((await A.friends.list(y)).incoming), '', 'gone from the list of whoever said no');
+  assert.equal(names((await A.friends.list(z)).outgoing), 'Yuki', 'still "asked" to whoever asked');
+  assert.equal((await A.card(y, z)).card.state, 'asked');
+  assert.equal((await A.card(z, y)).card.state, 'none');
+  const again = await A.friends.ask(z, y);
+  assert.deepEqual([again.state, again.news], ['asked', undefined], 'asking again: nothing is sent');
+  assert.equal(names((await A.friends.list(y)).incoming), '');
+  // taking it back hides it - and does not clear the way
+  await A.friends.remove(z, y);
+  assert.equal(names((await A.friends.list(z)).outgoing), '');
+  assert.equal((await A.friends.ask(z, y)).news, undefined);
+  assert.equal(names((await A.friends.list(y)).incoming), '');
+  clock += 8 * 24 * 3600 * 1000;
+  assert.equal((await A.friends.ask(z, y)).news, true, 'a week on, it can be asked again');
+  assert.equal(names((await A.friends.list(y)).incoming), 'Zed');
+  // whoever said no can change their mind by asking themselves
+  await A.friends.answer(y, z, false);
+  assert.deepEqual((await A.friends.ask(y, z)).state, 'friends');
+  await A.friends.remove(y, z);
+  // a request of your own can be taken back before it is answered
+  await A.friends.ask(z, x);
+  assert.equal(names((await A.friends.list(x)).incoming), 'Zed');
+  await A.friends.remove(z, x);
+  assert.equal(names((await A.friends.list(x)).incoming), '');
+  assert.equal((await A.friends.ask(z, x)).news, true);
+  // "remove" on a request that is waiting for YOU is a no
+  assert.equal((await A.friends.remove(x, z)).state, 'none');
+  assert.equal(names((await A.friends.list(z)).outgoing), 'Xia', 'which, again, whoever asked is not told');
+  // an account that is closed or deleted is in nobody's list
+  await A.admin.ban(y, true);
+  assert.equal(names((await A.friends.list(x)).friends), '');
+  assert.match((await A.friends.ask(z, y)).error, /no player/);
+  await A.admin.ban(y, false);
+  assert.equal(names((await A.friends.list(x)).friends), 'Yuki');
+  await A.admin.remove(y);
+  assert.equal(names((await A.friends.list(x)).friends), '');
+  assert.deepEqual(await A.friends.ids(x), []);
+  // the limits: only so many requests out, unanswered, at once
+  const B = makeAccounts({ query, secret: 'test-secret', perHour: 1000, now: () => clock, log: () => {} });
+  const crowd = [];
+  for (let i = 0; i < 21; i++) crowd.push((await B.create({ pin: '8842', name: `Q${i}`, played: played(3) })).account.id);
+  for (const id of crowd.slice(0, 19)) assert.ok((await B.friends.ask(z, id)).ok); // (one is out already: to Xia)
+  assert.deepEqual(await B.friends.count(z), { friends: 0, asked: 20, waiting: 0 });
+  assert.match((await B.friends.ask(z, crowd[19])).error, /waiting for an answer/);
+  assert.ok((await B.friends.answer(crowd[0], z, true)).ok);
+  assert.ok((await B.friends.ask(z, crowd[19])).ok, 'one answered: room for one more');
+});
+
 console.log(`accounts: ${passed} tests passed`);
