@@ -1,5 +1,7 @@
-// Chat, in the menus: a bookmark on the right edge of the screen opens a small scroll with
-// two channels - the room you are in, and everyone who is in the menus.
+// Chat, everywhere: a bookmark on the right edge of the screen (or "/") opens a small scroll
+// with two channels - the room you are in, and everyone who is connected. It is there in the
+// menus and in a match alike; and whatever is said shows up for a few seconds in the corner
+// of the screen as it is said, so nobody has to keep the scroll open to follow.
 //
 // The server is the only memory (see /chat.js at the top of the project): this file keeps
 // what it has been sent while the page is open, and asks again whenever it reconnects or
@@ -8,12 +10,15 @@
 //
 // A message is plain text from end to end: it is only ever set as textContent.
 //
-//   chat.init({ socket, sfx, name(): string, askName(then), toast(text) })
-//   chat.sync({ visible, room })   visible: the menus are in front; room: the code of the room we are in, or ''
+//   chat.init({ socket, sfx, name(): string, askName(then), look(): { style, colour },
+//               avatar(look, size): Promise<url>, onOpen(), inGame(): boolean })
+//   chat.sync({ room, hidden })   room: the code of the room we are in, or ''; hidden: no chat here at all (no name yet)
 //   chat.toggle(open?)  chat.close()  chat.isOpen
 //
-// Typing in the box never reaches the game's shortcuts (the box stops its own key events),
-// and Esc closes the chat rather than whatever is behind it.
+// Typing in the box never reaches the game or the menus' shortcuts (the box stops its own
+// key events; a match is told the keys are not its own while the scroll is open - onOpen),
+// and Esc closes the chat rather than whatever is behind it. In a match the scroll shuts
+// again as soon as you have said your piece.
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -33,9 +38,11 @@ const clock = (at) => {
 };
 const BUBBLE = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4.500h16a1.500 1.500 0 0 1 1.500 1.500v9.500a1.500 1.500 0 0 1-1.500 1.500h-8l-5 3.800v-3.800H4a1.500 1.500 0 0 1-1.500-1.500V6A1.500 1.500 0 0 1 4 4.500z" fill="none" stroke="currentColor" stroke-width="2.200" stroke-linejoin="round"/><path d="M7.500 9.200h9M7.500 12.600h5.500" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const NOTES = {
-  all: 'Everyone in the menus reads this. Keep it friendly, and keep personal details to yourself.',
+  all: 'Everyone who is online reads this. Keep it friendly, and keep personal details to yourself.',
   room: 'Only the people in this room read this.',
 };
+const FEED_MS = 7000; // how long a message stays in the corner of the screen
+const FEED_MAX = 4; // and how many at once
 const GROUP_MS = 90000; // messages from one person this close together share one heading
 
 let opts = {};
@@ -114,7 +121,10 @@ function build() {
   send.type = 'submit';
   form.append(input, send);
   box.append(head, list, note, form);
-  document.body.append(tabBtn, box);
+  // what is being said, as it is said: a few lines in the corner, gone again in a moment
+  const feed = el('ol', 'chat-feed');
+  feed.setAttribute('aria-hidden', 'true');
+  document.body.append(tabBtn, box, feed);
 
   tabBtn.addEventListener('click', () => {
     opts.sfx?.play('click');
@@ -137,10 +147,37 @@ function build() {
     e.preventDefault();
     say();
   });
-  ui = { tabBtn, box, list, note, form, input, send, chRoom, chAll, badge: tabBtn.querySelector('.chat-badge') };
+  ui = { tabBtn, box, list, note, form, input, send, chRoom, chAll, feed, badge: tabBtn.querySelector('.chat-badge') };
 }
 
 // --- what is shown ------------------------------------------------------------------------
+// whoever said it: their initial on their colour - and, a moment later, the character they chose
+function sealOf(m) {
+  const seal = el('i', 'chat-seal', (m.name || '?').trim().charAt(0).toUpperCase());
+  seal.style.setProperty('--c', hueOf(m.from));
+  if (Array.isArray(m.look) && opts.avatar) {
+    Promise.resolve(opts.avatar({ style: m.look[0], colour: m.look[1] }, 48)).then((url) => {
+      if (!url) return;
+      seal.textContent = '';
+      seal.classList.add('pic');
+      seal.style.backgroundImage = `url("${url}")`;
+    }).catch(() => {});
+  }
+  return seal;
+}
+// a line in the corner of the screen
+function pop(m) {
+  if (!ui || !visible || m.sys) return;
+  const li = el('li', m.to === 'room' ? 'room' : 'all');
+  const text = el('p');
+  text.append(el('b', '', m.name), el('span', '', m.text));
+  li.append(sealOf(m), text);
+  if (m.to === 'all' && room) li.append(el('small', '', 'All')); // (in a room, say which channel that came from)
+  ui.feed.append(li);
+  while (ui.feed.childElementCount > FEED_MAX) ui.feed.firstElementChild.remove();
+  setTimeout(() => li.classList.add('going'), FEED_MS - 400);
+  setTimeout(() => li.remove(), FEED_MS);
+}
 function item(m, prev) {
   if (m.sys) return el('li', 'chat-sys', m.text);
   const li = el('li', m.from === me ? 'chat-msg mine' : 'chat-msg');
@@ -148,9 +185,7 @@ function item(m, prev) {
   const joined = prev && !prev.sys && prev.from === m.from && prev.name === m.name && m.at - prev.at < GROUP_MS;
   if (!joined) {
     const head = el('div', 'chat-who');
-    const seal = el('i', 'chat-seal', (m.name || '?').trim().charAt(0).toUpperCase());
-    seal.style.setProperty('--c', hueOf(m.from));
-    head.append(seal, el('b', '', m.name), el('time', '', clock(m.at)));
+    head.append(sealOf(m), el('b', '', m.name), el('time', '', clock(m.at)));
     if (m.from !== me) {
       const mute = el('button', 'chat-mute', 'Mute');
       mute.type = 'button';
@@ -234,7 +269,7 @@ function setTab(to) {
 // --- talking to the server ------------------------------------------------------------------
 // Ask for what has been said (in the room we are in, and by everyone), and to be told from now on.
 function ask() {
-  if (!socket?.connected || !visible) return;
+  if (!socket?.connected) return;
   const my = ++asked;
   socket.emit('chat:open', { all: true }, (res) => {
     if (my !== asked || !res) return;
@@ -274,7 +309,9 @@ function hear(m) {
     ui.list.append(item(m, list[list.length - 2]));
     while (ui.list.childElementCount > 80) ui.list.firstElementChild.remove();
     if (near || m.from === me) ui.list.scrollTop = ui.list.scrollHeight;
-  } else if (!m.sys && m.from !== me) {
+  } else if (!m.sys) {
+    pop(m); // (your own too: you see it land, like everyone else)
+    if (m.from === me) return;
     unread[m.to]++;
     if (m.to === 'room') opts.sfx?.play('tick', 0.6);
     badges();
@@ -293,12 +330,14 @@ function say() {
   if (!socket?.connected) return setNote('Not connected. Try again in a moment.');
   ui.send.disabled = true;
   const to = tab;
-  socket.timeout(6000).emit('chat:say', { to, text, name }, (err, res) => {
+  const look = opts.look?.();
+  socket.timeout(6000).emit('chat:say', { to, text, name, look: look ? [look.style, look.colour] : undefined }, (err, res) => {
     ui.send.disabled = false;
     if (err || !res) return setNote('That did not get through. Try again.');
     if (res.ok) {
       ui.input.value = '';
       setNote('');
+      if (opts.inGame?.()) return chat.close(true); // (said: back to the match)
     } else if (res.error) setNote(res.error);
     ui.input.focus();
   });
@@ -316,10 +355,10 @@ export const chat = {
   get isOpen() {
     return open;
   },
-  // the menus came to the front or went away; we came into a room, or left one
+  // we came into a room, or left one; or there is to be no chat for now (no name yet)
   sync(now) {
     const was = { visible, room };
-    visible = !!now.visible;
+    visible = !now.hidden;
     room = now.room || '';
     if (!ui) return;
     if (room !== was.room) {
@@ -328,14 +367,13 @@ export const chat = {
       tab = room ? 'room' : 'all';
     }
     if (!visible) {
-      if (was.visible) socket.emit('chat:close');
       this.close(true);
       ui.tabBtn.hidden = true;
-      asked++;
+      ui.feed.textContent = '';
       return;
     }
     ui.tabBtn.hidden = open;
-    if (!was.visible || room !== was.room) ask();
+    if (!was.visible || room !== was.room || !me) ask();
     setTab(tab);
   },
   toggle(on = !open) {
@@ -345,7 +383,9 @@ export const chat = {
     ui.box.hidden = false;
     ui.tabBtn.hidden = true;
     ui.tabBtn.setAttribute('aria-expanded', 'true');
+    ui.feed.textContent = ''; // (it is all in the scroll now)
     setTab(tab);
+    opts.onOpen?.();
     ui.input.focus();
   },
   close(quiet = false) {
@@ -355,6 +395,8 @@ export const chat = {
     ui.box.hidden = true;
     ui.tabBtn.hidden = !visible;
     ui.tabBtn.setAttribute('aria-expanded', 'false');
-    if (had && !quiet && visible) ui.tabBtn.focus();
+    if (had) document.activeElement.blur();
+    if (had && !quiet && visible && !opts.inGame?.()) ui.tabBtn.focus();
+    opts.onOpen?.();
   },
 };

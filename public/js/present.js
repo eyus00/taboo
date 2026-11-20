@@ -104,41 +104,22 @@ function card(p, { face = 1, i = 0, from = 'up', me = false, size = 192, tag = '
 }
 
 // What one player did, in as few tags as say it (each: [icon, text, what it means, tone]):
-//   a team game - what their flags made for their side, what their bombs cost it (the tag is
-//   filled when one went off in their hands), how many bombs they passed on;
+//   a team game - a bomb, if one went off in their hands; bombs passed on; flags taken;
 //   everyone for themselves - how long they were the oni, how many tags they made.
 // Nothing is shown for a nought.
 function tagsFor(res, x) {
   if (!x) return null;
   const list = [];
   if (res.team) {
-    if (x.plus > 0) list.push(['flag', `+${x.plus}`, `Their flags made ${x.plus} points`, 'good']);
-    if (x.minus > 0) list.push(['bomb', `\u2212${x.minus}`, x.boom ? `A bomb went off in their hands: ${x.minus} points lost` : `Holding a bomb cost ${x.minus} points`, x.boom ? 'bad boom' : 'bad']);
+    if (x.boom) list.push(['bomb', '', 'A bomb went off in their hands', 'boom']);
     if (x.tags > 0) list.push(['swap', String(x.tags), `${x.tags} bomb${x.tags === 1 ? '' : 's'} passed on`, '']);
+    if (x.caps > 0) list.push(['flag', String(x.caps), `${x.caps} flag${x.caps === 1 ? '' : 's'} taken`, '']);
   } else {
-    list.push(['oni', `${Math.round(x.ms / 1000)}s`, 'Time as the oni', x.ms === 0 ? 'good' : '']);
+    list.push(['oni', `${Math.round(x.ms / 1000)}s`, 'Time as the oni', '']);
     if (x.tags > 0) list.push(['target', String(x.tags), `${x.tags} tag${x.tags === 1 ? '' : 's'} made`, '']);
   }
   return list.length ? list : null;
 }
-// the one who did most for the winning side (a team game: flags' points less bombs' cost), or -1
-export function starOf(res) {
-  if (!res.team || res.team.win < 0) return -1;
-  let best = null;
-  for (const x of res.rows) {
-    if (x.team !== res.team.win) continue;
-    const net = (x.plus || 0) - (x.minus || 0);
-    if (net > 0 && (!best || net > best.net)) best = { slot: x.slot, net };
-  }
-  return best ? best.slot : -1;
-}
-
-const starBadge = () => {
-  const b = el('b', 'pz-star');
-  b.innerHTML = svg('star');
-  b.title = 'Did most for the winning side';
-  return b;
-};
 // how big a card can be: `n` of them in `cols` columns inside w x h
 const fit = (w, h, n, cols, max = 200) => {
   const rows = Math.ceil(n / cols);
@@ -272,7 +253,6 @@ export const present = {
       const c = card(p, { ...o, me: p.slot === me, tag: p.out ? 'Out' : '', stats: size >= 72 ? p.stats || null : null, sad: !!p.sad });
       if (p.won) c.classList.add('won');
       if (p.sad) c.classList.add('sad');
-      if (p.star) c.append(starBadge());
       cards.set(p.slot, c);
       line.append(c);
     };
@@ -483,7 +463,6 @@ export const present = {
     const mine = res.rows.find((x) => x.slot === me);
     const stillIn = cup.ko ? cup.table.filter((x) => !x.out) : [];
     const through = stillIn.some((x) => x.slot === me);
-    const star = starOf(res);
     const players = res.rows.map((x) => ({
       slot: x.slot,
       name: x.name,
@@ -491,7 +470,6 @@ export const present = {
       out: cup.ko && cup.caught === x.slot,
       won: team ? team.win === x.team : cup.caught >= 0 && cup.caught !== x.slot,
       sad: team ? team.win >= 0 && team.win !== x.team : cup.caught === x.slot,
-      star: x.slot === star,
       stats: tagsFor(res, x),
     }));
     if (players.length < 2) return false;
@@ -652,8 +630,7 @@ export const present = {
     }
     inner.append(big);
     if (cast.length) {
-      // what each of them did (see tagsFor), and a star on whoever did most for the winners
-      const star = between ? -1 : starOf(res);
+      // what each of them did (see tagsFor)
       const statsOf = (p) => (between || p.out ? null : tagsFor(res, res.rows.find((y) => y.slot === p.slot)));
       const n = cast.length + (fallen ? 1 : 0);
       const W = Math.min(innerWidth, 860) * 0.92;
@@ -665,7 +642,6 @@ export const present = {
       row.style.maxWidth = `${cols * (size + 16)}px`;
       cast.forEach((p, i) => {
         const c = card(p, { i, from: 'up', me: p.slot === me, tag: p.out ? 'Oni' : '', size: 144, stats: size >= 70 ? statsOf(p) : null, sad: !!p.out });
-        if (p.slot === star) c.append(starBadge());
         row.append(c);
       });
       if (fallen) row.append(card({ ...fallen, out: true }, { i: cast.length, from: 'up', me: fallen.slot === me, tag: 'Out', size: 144, sad: true }));

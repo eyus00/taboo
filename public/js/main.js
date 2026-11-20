@@ -14,7 +14,7 @@ import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
 import * as art from './art.js'; // (also: playerPortrait, for the results)
 import { loadTheme, THEME_MAP } from './themes/index.js';
-import { present, starOf } from './present.js';
+import { present } from './present.js';
 import { chat } from './chat.js';
 import { profile } from './profile.js';
 
@@ -78,7 +78,20 @@ present.init({
   // (while the opening covers the screen, the match behind it is not drawn)
   onCover: (on) => (play.covered = on),
 });
-chat.init({ socket, sfx, name: () => myName, askName });
+chat.init({
+  socket,
+  sfx,
+  name: () => myName,
+  askName,
+  look: () => profile.get().look, // (how you show yourself: sent with what you say)
+  avatar: (look, size) => avatarOf(look, size),
+  // in a match the keys are the game's: while the chat is open they are not
+  onOpen: () => {
+    input.active = screen === 'game' && !overlay && !chat.isOpen;
+    if (!input.active) input.clear();
+  },
+  inGame: () => screen === 'game' && !overlay,
+});
 
 let myName = cleanName(store.get('tag.name'));
 let screen = ''; // name | home | game
@@ -217,9 +230,10 @@ function show(name, beside = '') {
   $('btn-help').toggleAttribute('aria-current', panel === 'help');
   setOverlay('');
 }
-// Chat is for the menus (and the card after a match): tell it when they are in front, and which room we are in.
+// Chat is there wherever you are - once you have a name. Tell it which room we are in.
 function chatNow() {
-  chat.sync({ visible: screen === 'home' || (screen === 'game' && overlay === 'results'), room: room?.code || '' });
+  chat.sync({ room: room?.code || '', hidden: screen === 'name' || !screen });
+  document.body.classList.toggle('chat-game', screen === 'game' && !overlay);
 }
 
 function setOverlay(name) {
@@ -229,7 +243,7 @@ function setOverlay(name) {
   $('s-pause').hidden = name !== 'pause';
   for (const p of PANELS) $(`s-${p}`).hidden = !(panel === p || (p === 'help' && name === 'help'));
   $('s-help').classList.toggle('over', name === 'help');
-  input.active = screen === 'game' && !name;
+  input.active = screen === 'game' && !name && !chat.isOpen;
   if (!input.active) input.clear();
   // the demos only run while How to play is in front
   if (demos) {
@@ -408,70 +422,108 @@ $('profile-form').addEventListener('submit', (e) => {
   closeProfile();
 });
 
-// --- your record (profile.js): what is counted, shown; saved to a file, read from one -------
-const PF_MODES = [['potato', 'Hot Potato', 'flame'], ['time', 'Least Time', 'glass'], ['team', 'Team Bomb', 'bomb'], ['ko', 'Knockout', 'oni']];
-const longTime = (ms) => {
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const min = Math.floor(s / 60);
-  return min < 60 ? `${min}m ${s % 60}s` : `${Math.floor(min / 60)}h ${min % 60}m`;
-};
-const favourite = (counts) => Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+// --- your profile (profile.js): the character you show yourself as, and your record ----------
+// The character: one of the art styles' own, in one of its ten colours, in front of that
+// style's sky. Painting it needs the style loaded, so every picture arrives a moment later.
+async function avatarOf(look, size = 96, bg = true) {
+  try {
+    const id = THEMES.some((t) => t.id === look?.style) ? look.style : DEFAULT_THEME;
+    await loadTheme(id);
+    return art.playerPortrait(id, look?.colour || 0, { size, bg }) || '';
+  } catch {
+    return '';
+  }
+}
+let lookRun = 0;
+async function paintAvatar() {
+  const my = ++lookRun;
+  const look = profile.get().look;
+  const url = await avatarOf(look, 160);
+  if (my !== lookRun) return;
+  const home = $('home-avatar');
+  home.hidden = !url;
+  if (url) home.src = url;
+  $('home-seal').hidden = !!url;
+  const box = $('pf-avatar');
+  box.querySelector('img')?.remove();
+  if (url) {
+    const img = el('img');
+    img.alt = '';
+    img.src = url;
+    box.append(img);
+  }
+  box.classList.toggle('has-pic', !!url);
+}
+function paintLook() {
+  const look = profile.get().look;
+  const styles = $('pf-styles');
+  const colours = $('pf-colours');
+  styles.textContent = '';
+  colours.textContent = '';
+  const pick = (style, colour) => {
+    sfx.play('click');
+    profile.setLook(style, colour);
+    paintLook();
+    paintAvatar();
+  };
+  THEMES.forEach((t) => {
+    const b = el('button', 'pf-style');
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(t.id === look.style));
+    b.setAttribute('aria-label', t.name);
+    b.title = t.name;
+    const pic = el('i', 'pic');
+    b.append(pic, el('span', '', t.name.split(' ')[0])); // ("Ink", "Neon": the first word is enough under a picture)
+    b.addEventListener('click', () => pick(t.id, look.colour));
+    styles.append(b);
+    avatarOf({ style: t.id, colour: look.colour }, 72).then((url) => {
+      if (!url || !b.isConnected) return;
+      const img = el('img');
+      img.alt = '';
+      img.src = url;
+      pic.append(img);
+    });
+  });
+  // (the ten colours as this style has them - the house style's until it has loaded)
+  const paintColours = (list) => {
+    colours.textContent = '';
+    list.forEach((c, i) => {
+      const b = el('button', 'pf-colour');
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(i === look.colour));
+      b.setAttribute('aria-label', `Colour ${i + 1}`);
+      b.style.setProperty('--c', c);
+      b.addEventListener('click', () => pick(look.style, i));
+      colours.append(b);
+    });
+  };
+  paintColours(INK_COLORS);
+  loadTheme(look.style).then((th) => colours.isConnected && profile.get().look.style === look.style && th?.colors && paintColours(th.colors)).catch(() => {});
+}
 function paintProfile() {
   const p = profile.get();
-  const pct = p.rounds ? Math.round((p.wins / p.rounds) * 100) : 0;
   const big = $('pf-big');
   big.textContent = '';
-  for (const [label, value, small] of [['Rounds', p.rounds, ''], ['Won', p.wins, p.rounds ? `${pct}%` : ''], ['Best run', p.best, p.streak > 1 ? `now ${p.streak}` : '']]) {
+  for (const [label, value, small] of [['Wins', p.wins, ''], ['Rounds', p.rounds, ''], ['Best run', p.best, p.streak > 1 ? `now ${p.streak}` : '']]) {
     const tile = el('div', 'pf-tile');
     tile.append(el('b', '', String(value)), el('span', '', label));
     if (small) tile.append(el('small', '', small));
     big.append(tile);
   }
-  // the last rounds, oldest first: won, lost, drawn
-  const form = $('pf-form');
-  form.textContent = '';
-  if (!p.recent.length) form.append(el('p', 'note', 'Play a round with others and it is counted here.'));
-  for (const r of p.recent) {
-    const chip = el('i', `pf-r ${r.r.toLowerCase()}`, r.r);
-    chip.title = `${PF_MODES.find((x) => x[0] === r.mode)?.[1] || ''}: ${r.r === 'W' ? 'won' : r.r === 'L' ? 'lost' : 'drawn'}`;
-    form.append(chip);
+  // wins, game by game - and tournaments
+  const wins = $('pf-wins');
+  wins.textContent = '';
+  for (const [icon, label, value] of [['flame', 'Hot Potato', p.by.potato.wins], ['glass', 'Least Time', p.by.time.wins], ['bomb', 'Team Bomb', p.by.team.wins], ['cup', 'Cups', p.cups.ko.won + p.cups.team.won]]) {
+    const w = el('div', 'pf-win');
+    w.innerHTML = svg(icon);
+    w.append(el('b', '', String(value)), el('span', '', label));
+    wins.append(w);
   }
-  const modes = $('pf-modes');
-  modes.textContent = '';
-  for (const [id, name, icon] of PF_MODES) {
-    const g = p.by[id];
-    const li = el('li', g.rounds ? '' : 'none');
-    li.innerHTML = svg(icon);
-    const bar = el('span', 'bar');
-    const fill = el('i');
-    fill.style.width = `${g.rounds ? Math.round((g.wins / g.rounds) * 100) : 0}%`;
-    bar.append(fill);
-    li.append(el('b', '', name), bar, el('span', 'n', g.rounds ? `${g.wins} of ${g.rounds}` : 'not yet'));
-    modes.append(li);
-  }
-  const cups = p.cups.ko.played + p.cups.team.played;
-  const style = THEMES.find((t) => t.id === favourite(p.styles))?.name;
-  const stage = ARENAS.find((a) => a.id === favourite(p.stages))?.name;
-  const facts = $('pf-facts');
-  facts.textContent = '';
-  for (const [icon, label, value] of [
-    ['target', 'Tags and passes', String(p.tags)],
-    ['oni', 'Time as the oni', longTime(p.oniMs)],
-    ['clock', 'Time played', longTime(p.playMs)],
-    ['flag', 'Flags taken', String(p.team.flags)],
-    ['bomb', 'Bombs gone off in hand', String(p.team.blown)],
-    ['star', 'Best of the winners', String(p.team.stars)],
-    ['cup', 'Tournaments won', cups ? `${p.cups.ko.won + p.cups.team.won} of ${cups}` : '0'],
-    ['brush', 'Most played style', style || '-'],
-    ['gate', 'Most played stage', stage || '-'],
-  ]) {
-    const li = el('li');
-    li.innerHTML = svg(icon);
-    li.append(el('span', '', label), el('b', '', value));
-    facts.append(li);
-  }
-  $('btn-pf-reset').disabled = !p.rounds && !cups;
+  $('btn-pf-reset').disabled = !p.rounds && !(p.cups.ko.played + p.cups.team.played);
+  paintLook();
+  paintAvatar();
 }
 $('btn-pf-export').addEventListener('click', () => {
   sfx.play('click');
@@ -535,7 +587,7 @@ let cupMine = false; // we played a round of the tournament that is on
 function countRound(res) {
   if (rig) return;
   const slot = play.mySlot();
-  const played = profile.round(res, { slot, theme: play.info?.theme, arena: play.info?.arena, duration: play.info?.duration, star: starOf(res) === slot });
+  const played = profile.round(res, { slot, theme: play.info?.theme, arena: play.info?.arena, duration: play.info?.duration });
   if (!res.cup) return;
   if (played) cupMine = true;
   if (!res.cup.final) return;
@@ -2833,4 +2885,5 @@ function practiceRig(opts = {}) {
   rig = true;
   play.practice({ mode: 'potato', arena: 'hills', theme: 'ink', duration: 60, powerups: true, bots: 3, ...opts }, myName || 'You');
 }
+paintAvatar(); // (the character you chose, on the title scroll)
 window.__tag = { practice: practiceRig, renderer, net, socket, input, get game() { return play.game; }, play, present, get demos() { return demos; }, get screen() { return top(); }, get room() { return room; }, fontsReady: () => fontsIn };

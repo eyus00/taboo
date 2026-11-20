@@ -9,7 +9,8 @@
 // to keep a profile on a server under a code of its own without changing what is counted.
 //
 //   profile.get()                      -> the profile (a copy)
-//   profile.round(res, ctx)            count one round that has just ended; ctx = { slot, theme, arena, duration, star }
+//   profile.round(res, ctx)            count one round that has just ended; ctx = { slot, theme, arena, duration }
+//   profile.setLook(style, colour)     the character you show yourself as (an art style's, in one of its colours)
 //   profile.cup(kind, won)             count one tournament that has just ended; kind: 'ko' | 'team'
 //   profile.toFile(name)               -> { filename, text }
 //   profile.fromText(text)             -> { ok: true, data } | { ok: false, error }   (nothing is changed)
@@ -31,6 +32,7 @@ const blank = () => ({
   v: VERSION,
   id: `p_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`,
   name: '',
+  look: { style: 'ink', colour: 0 }, // how you show yourself outside a match: a character of one of the art styles, in one of its ten colours
   since: Date.now(),
   updated: 0,
   rounds: 0,
@@ -43,7 +45,7 @@ const blank = () => ({
   oniMs: 0, // of which as the oni (or holding a bomb)
   tags: 0, // tags made (bombs passed on, in a team game)
   by: Object.fromEntries(MODES.map((m) => [m, { rounds: 0, wins: 0 }])),
-  team: { flags: 0, plus: 0, minus: 0, blown: 0, stars: 0 }, // flags taken, points made and lost, bombs that went off in hand, rounds as the winners' best
+  team: { flags: 0, plus: 0, minus: 0, blown: 0 }, // flags taken, points made and lost, bombs that went off in hand
   cups: { ko: { played: 0, won: 0 }, team: { played: 0, won: 0 } },
   styles: {}, // rounds played in each art style
   stages: {}, // and on each stage
@@ -60,6 +62,8 @@ function tidy(raw) {
   if (!raw || typeof raw !== 'object') return p;
   if (typeof raw.id === 'string' && /^p_[a-z0-9]{6,40}$/.test(raw.id)) p.id = raw.id;
   if (typeof raw.name === 'string') p.name = raw.name.replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 12);
+  if (idish(raw.look?.style)) p.look.style = raw.look.style;
+  p.look.colour = int(raw.look?.colour, 9);
   p.since = int(raw.since, 4e12) || p.since;
   p.updated = int(raw.updated, 4e12);
   for (const k of ['rounds', 'wins', 'losses', 'draws', 'streak', 'best', 'playMs', 'oniMs', 'tags']) p[k] = int(raw[k], k.endsWith('Ms') ? 1e13 : MAX);
@@ -114,7 +118,7 @@ export const profile = {
   },
 
   // One round, as the server (or the browser, in practice) reported it: res is the 'end' message.
-  round(res, { slot, theme = '', arena = '', duration = 0, star = false } = {}) {
+  round(res, { slot, theme = '', arena = '', duration = 0 } = {}) {
     const p = load();
     const mine = res?.rows?.find((x) => x.slot === slot);
     if (!mine || res.reason === 'forfeit') return false;
@@ -145,7 +149,6 @@ export const profile = {
       p.team.plus += int(mine.plus);
       p.team.minus += int(mine.minus);
       if (mine.boom) p.team.blown++;
-      if (star) p.team.stars++;
     }
     if (idish(theme)) p.styles[theme] = (p.styles[theme] || 0) + 1;
     if (idish(arena)) p.stages[arena] = (p.stages[arena] || 0) + 1;
@@ -153,6 +156,14 @@ export const profile = {
     if (p.recent.length > RECENT) p.recent.splice(0, p.recent.length - RECENT);
     save();
     return true;
+  },
+
+  setLook(style, colour) {
+    const p = load();
+    if (idish(style)) p.look.style = style;
+    p.look.colour = int(colour, 9);
+    save();
+    return { ...p.look };
   },
 
   cup(kind, won) {
@@ -187,9 +198,10 @@ export const profile = {
   },
 
   reset() {
-    const keep = load().id;
+    const was = load();
     data = blank();
-    data.id = keep;
+    data.id = was.id; // (the same profile, with nothing counted - and looking as it did)
+    data.look = { ...was.look };
     save();
   },
 };

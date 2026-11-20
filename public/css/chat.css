@@ -1,5 +1,5 @@
-/* Chat (chat.js): a paper bookmark on the right edge of the menus, and the small scroll it
-   opens. Paper, ink and the seal's red, like every other card here. */
+/* Chat (chat.js): a paper bookmark on the right edge of the screen, the small scroll it
+   opens, and the lines that show in the corner as things are said. Paper, ink and the seal's red, like every other card here. */
 .chat-tab { position: fixed; right: 0; top: 50%; z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 6px 12px 8px; translate: 0 -50%; background: var(--paper-lit); color: var(--ink); border: 2px solid var(--ink); border-right: 0; box-shadow: inset 0 0 0 3px var(--paper-lit), inset 0 0 0 4px rgba(28, 27, 31, 0.3), -3px 4px 0 rgba(0, 0, 0, 0.22); font: 800 11px/1 var(--serif); letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer; transition: padding-right var(--quick, 0.12s); }
 .chat-tab[hidden] { display: none; }
 .chat-tab:hover, .chat-tab:focus-visible { padding-right: 12px; }
@@ -30,6 +30,8 @@ body.no-kbd .chat-tab kbd { display: none; }
 .chat-who { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .chat-who b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 17px/1.15 var(--brush); }
 .chat-who time { font: 600 11px/1 var(--serif); color: var(--soft); font-variant-numeric: tabular-nums; }
+/* (whoever chose a character is shown as it: the picture takes the seal's place) */
+.chat-seal.pic { background: #e7dcc4 center / cover no-repeat; border: 1.5px solid var(--ink); transform: none; }
 .chat-seal { flex: none; display: grid; place-items: center; width: 20px; height: 20px; background: var(--c, var(--red)); color: #fff; font: 400 13px/1 var(--brush); font-style: normal; transform: rotate(-4deg); }
 .chat-msg p { margin: 1px 0 0 27px; font: 600 14.5px/1.35 var(--serif); overflow-wrap: anywhere; }
 .chat-msg.mine .chat-who b { color: var(--red-deep); }
@@ -57,3 +59,29 @@ body.no-kbd .chat-tab kbd { display: none; }
   .chat { left: 8px; right: 8px; bottom: 8px; width: auto; height: min(62dvh, 460px); }
   .chat-form input { font-size: 16px; } /* (smaller, and a phone zooms in on it) */
 }
+
+/* in a match the bookmark keeps out of the way: smaller and faint until it is wanted */
+body.chat-game .chat-tab { padding: 8px 4px 8px 6px; opacity: 0.55; }
+body.chat-game .chat-tab span { display: none; }
+body.chat-game .chat-tab:hover, body.chat-game .chat-tab:focus-visible { opacity: 1; }
+body.chat-game .chat { height: min(340px, calc(100dvh - 20px)); }
+
+/* what is being said, as it is said: a few lines at the left of the screen, each gone again in a moment */
+.chat-feed { position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom)); z-index: 8; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; width: min(360px, calc(100vw - 24px)); margin: 0; padding: 0; list-style: none; pointer-events: none; }
+body.chat-game .chat-feed { bottom: auto; top: 168px; width: min(320px, calc(100vw - 24px)); }
+.chat-feed li { display: flex; align-items: flex-start; gap: 7px; max-width: 100%; padding: 5px 10px 6px 7px; background: rgba(251, 246, 232, 0.96); color: var(--ink); border: 2px solid var(--ink); box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.25); animation: feed-in 0.2s ease-out both; transition: opacity 0.4s; }
+.chat-feed li.going { opacity: 0; }
+.chat-feed li.room { border-left: 6px solid var(--red-deep); }
+.chat-feed .chat-seal { width: 22px; height: 22px; margin-top: 1px; }
+.chat-feed p { min-width: 0; margin: 0; font: 600 14px/1.3 var(--serif); overflow-wrap: anywhere; }
+.chat-feed b { margin-right: 6px; font: 400 16px/1.1 var(--brush); }
+.chat-feed b::after { content: ':'; }
+.chat-feed small { flex: none; align-self: center; padding: 1px 5px; background: var(--ink); color: #fff3e0; font: 800 9px/1.4 var(--serif); letter-spacing: 0.14em; text-transform: uppercase; }
+@keyframes feed-in { from { transform: translateX(-14px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .chat-feed li { animation: none; } }
+@media (max-width: 560px) {
+  .chat-feed { bottom: auto; top: 96px; }
+  body.chat-game .chat-feed { top: 150px; }
+}
+/* (a phone, in a match: the bookmark sits above the touch buttons) */
+@media (max-width: 560px) { body.chat-game .chat-tab { bottom: auto; top: 38%; } }

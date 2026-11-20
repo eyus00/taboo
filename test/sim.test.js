@@ -1521,7 +1521,7 @@ await (async () => {
     const row = (slot, o = {}) => ({ slot, name: `P${slot}`, ms: 4000, tags: 2, team: slot % 2, boom: false, caps: 1, plus: 12, minus: 3, ...o });
     const ctx = { slot: 0, theme: 'ink', arena: 'hills', duration: 60 };
     // a team round won, as the best of the winners
-    assert.ok(profile.round({ mode: 'team', reason: 'time', rows: [row(0), row(1, { boom: true })], winners: [0], loser: -1, team: { score: [30, 10], win: 0 }, cup: null }, { ...ctx, star: true }));
+    assert.ok(profile.round({ mode: 'team', reason: 'time', rows: [row(0), row(1, { boom: true })], winners: [0], loser: -1, team: { score: [30, 10], win: 0 }, cup: null }, ctx));
     // a team round drawn; a Hot Potato lost; a knockout round survived; a round watched; one that ended because everyone left
     profile.round({ mode: 'team', reason: 'time', rows: [row(0, { boom: true }), row(1)], winners: [0, 1], loser: -1, team: { score: [5, 5], win: -1 }, cup: null }, ctx);
     profile.round({ mode: 'potato', reason: 'time', rows: [row(0), row(1)], winners: [1], loser: 0, team: null, cup: null }, ctx);
@@ -1530,14 +1530,17 @@ await (async () => {
     assert.equal(profile.round({ mode: 'potato', reason: 'forfeit', rows: [row(0)], winners: [0], loser: -1, team: null, cup: null }, ctx), false, 'nor one that ended because everyone else left');
     profile.cup('ko', true);
     profile.cup('team', false);
-    const p = profile.get();
+    let p = profile.get();
     assert.deepEqual([p.rounds, p.wins, p.losses, p.draws, p.streak, p.best], [4, 2, 1, 1, 1, 1]);
     assert.deepEqual(p.by, { potato: { rounds: 1, wins: 0 }, time: { rounds: 0, wins: 0 }, team: { rounds: 2, wins: 1 }, ko: { rounds: 1, wins: 1 } });
-    assert.deepEqual(p.team, { flags: 2, plus: 24, minus: 6, blown: 1, stars: 1 });
+    assert.deepEqual(p.team, { flags: 2, plus: 24, minus: 6, blown: 1 });
+    assert.deepEqual(profile.setLook('shadow', 14), { style: 'shadow', colour: 9 });
+    assert.deepEqual(profile.setLook('<bad>', 3), { style: 'shadow', colour: 3 });
     assert.deepEqual([p.playMs, p.oniMs, p.tags], [240000, 16000, 8]);
     assert.deepEqual([p.styles, p.stages], [{ ink: 3, shadow: 1 }, { hills: 4 }]);
     assert.deepEqual(p.cups, { ko: { played: 1, won: 1 }, team: { played: 1, won: 0 } });
     assert.equal(p.recent.map((x) => x.r).join(''), 'WDLW');
+    p = profile.get();
     // out to a file and back
     const file = profile.toFile('Hana Sato!');
     assert.equal(file.filename, 'onigokko-hana-sato.json');

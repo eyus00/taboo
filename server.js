@@ -944,7 +944,9 @@ io.on('connection', (socket) => {
     const turn = take(speaker, Date.now());
     if (!turn.ok) return done({ error: turn.shut ? `Too many messages. Chat is back in ${Math.ceil(turn.wait / 1000)} s.` : 'Slow down a little.', wait: turn.wait });
     speaker.last = text;
-    const m = remember(to === 'room' ? room.chat : allChat, { to, from: who, name, text });
+    // (how they show themselves: one of the styles' characters, in one of its ten colours)
+    const look = Array.isArray(msg?.look) && THEME_IDS.includes(msg.look[0]) && Number.isInteger(msg.look[1]) && msg.look[1] >= 0 && msg.look[1] <= 9 ? [msg.look[0], msg.look[1]] : undefined;
+    const m = remember(to === 'room' ? room.chat : allChat, { to, from: who, name, text, look });
     if (to === 'room') io.to(room.code).emit('chat', m);
     else {
       socket.join('chat:all'); // (whoever speaks there hears the answer)
