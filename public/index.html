@@ -439,21 +439,40 @@
       </dialog>
 
       <!-- your profile: your name, under your own seal -->
-      <dialog id="s-profile" class="modal sm" aria-labelledby="profile-h">
+      <dialog id="s-profile" class="modal md" aria-labelledby="profile-h">
         <header class="m-top">
           <h2 id="profile-h">Profile</h2>
           <button class="m-x" data-close aria-label="Close (Esc)"><kbd>Esc</kbd><span class="ring"><svg class="ic" aria-hidden="true"><use href="#i-close" /></svg></span></button>
         </header>
-        <form id="profile-form" class="m-body idcard">
-          <i class="seal hanko huge" id="profile-seal" aria-hidden="true"></i>
-          <div class="sign">
-            <label class="lab" for="profile-name">Your name</label>
-            <input id="profile-name" type="text" name="nickname" autocomplete="nickname" maxlength="12" placeholder="Hana" aria-describedby="profile-error profile-note" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done" data-autofocus />
-            <p class="error" id="profile-error" role="alert"></p>
-            <p class="note" id="profile-note"></p>
-            <button class="btn primary" id="btn-profile-save" type="submit">Save name <kbd>Enter</kbd></button>
-          </div>
-        </form>
+        <div class="m-body pf">
+          <form id="profile-form" class="idcard">
+            <i class="seal hanko huge" id="profile-seal" aria-hidden="true"></i>
+            <div class="sign">
+              <label class="lab" for="profile-name">Your name</label>
+              <input id="profile-name" type="text" name="nickname" autocomplete="nickname" maxlength="12" placeholder="Hana" aria-describedby="profile-error profile-note" autocapitalize="words" autocorrect="off" spellcheck="false" enterkeyhint="done" data-autofocus />
+              <p class="error" id="profile-error" role="alert"></p>
+              <p class="note" id="profile-note"></p>
+              <button class="btn primary" id="btn-profile-save" type="submit">Save name <kbd>Enter</kbd></button>
+            </div>
+          </form>
+          <!-- what you have done, counted on this device (profile.js) -->
+          <section class="pf-stats" aria-labelledby="pf-h">
+            <h3 class="lab" id="pf-h">Your record</h3>
+            <div class="pf-big" id="pf-big"></div>
+            <div class="pf-form" id="pf-form" aria-label="Your last rounds"></div>
+            <ul class="pf-modes" id="pf-modes"></ul>
+            <ul class="pf-facts" id="pf-facts"></ul>
+          </section>
+          <footer class="pf-foot">
+            <p class="note">Counted on this device only. Save it to a file to keep a copy, or to carry it to another device.</p>
+            <div class="pf-btns">
+              <button class="btn" type="button" id="btn-pf-export">Save to a file</button>
+              <button class="btn" type="button" id="btn-pf-import">Load a file</button>
+              <button class="btn" type="button" id="btn-pf-reset">Start afresh</button>
+              <input type="file" id="pf-file" accept="application/json,.json" hidden />
+            </div>
+          </footer>
+        </div>
       </dialog>
 
       <!-- another room's code, typed from inside a room (a narrow screen; a wide one has the title scroll for it) -->

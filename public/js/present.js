@@ -122,7 +122,7 @@ function tagsFor(res, x) {
   return list.length ? list : null;
 }
 // the one who did most for the winning side (a team game: flags' points less bombs' cost), or -1
-function starOf(res) {
+export function starOf(res) {
   if (!res.team || res.team.win < 0) return -1;
   let best = null;
   for (const x of res.rows) {

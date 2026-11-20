@@ -142,6 +142,7 @@ h3.lab::after { display: none; }
   opacity: 0; transition: opacity 150ms ease-out, display 150ms allow-discrete, overlay 150ms allow-discrete;
 }
 .modal.sm { --w: 460px; }
+.modal.md { --w: 600px; }
 .modal.lg { --w: 980px; }
 .modal[open] { display: flex; opacity: 1; transition-duration: 300ms; }
 .modal::backdrop { background: rgba(20, 16, 10, 0.58); opacity: 0; transition: opacity 150ms ease-out, display 150ms allow-discrete, overlay 150ms allow-discrete; }
@@ -717,3 +718,33 @@ button.hub-room:active { scale: 0.99; }
   #opt-mode:has([data-opt='score']:not([hidden])) .lab { gap: 5px; letter-spacing: 0.1em; white-space: nowrap; }
   #opt-mode:has([data-opt='score']:not([hidden])) .lab .info { display: none; }
 }
+
+/* --- your profile: your name, then your record on this device (profile.js) --- */
+.pf { display: flex; flex-direction: column; gap: var(--s3); }
+.pf-stats { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s3); border-top: 2px solid var(--ink); }
+.pf-big { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); }
+.pf-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: var(--s2) var(--s1) var(--s2); background: var(--paper-lit); border: 2px solid var(--ink); box-shadow: var(--frame); }
+.pf-tile b { font: 400 clamp(30px, 6vw, 42px)/1 var(--brush); color: var(--red-deep); font-variant-numeric: tabular-nums; }
+.pf-tile span { font: 800 11px/1.2 var(--serif); letter-spacing: 0.18em; text-transform: uppercase; }
+.pf-tile small { position: absolute; top: 5px; right: 7px; font: 800 11px/1 var(--serif); color: var(--soft); }
+.pf-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 26px; }
+.pf-r { display: grid; place-items: center; width: 24px; height: 24px; font: 800 12px/1 var(--serif); font-style: normal; border: 2px solid var(--ink); background: var(--paper-lit); }
+.pf-r.w { background: var(--red-deep); color: #fff3e0; }
+.pf-r.l { color: var(--soft); border-color: var(--faint); }
+.pf-modes, .pf-facts { display: grid; gap: 4px var(--s4); margin: 0; padding: 0; list-style: none; }
+.pf-modes li { display: grid; grid-template-columns: 18px minmax(0, 7.5em) minmax(40px, 1fr) auto; align-items: center; gap: var(--s2); }
+.pf-modes li.none { color: var(--soft); }
+.pf-modes b { font: 400 18px/1.2 var(--brush); white-space: nowrap; }
+.pf-modes .bar { height: 8px; background: rgba(28, 27, 31, 0.12); }
+.pf-modes .bar i { display: block; height: 100%; background: var(--red-deep); }
+.pf-modes .n { font: 800 12.5px/1 var(--serif); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pf-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-top: var(--s2); border-top: 1.5px solid var(--faint); }
+.pf-facts li { display: flex; align-items: baseline; gap: 7px; min-width: 0; font: 600 13px/1.3 var(--serif); }
+.pf-facts .ic { align-self: center; flex: none; font-size: 13px; }
+.pf-facts span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--soft); }
+.pf-facts b { margin-left: auto; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pf-foot { display: flex; flex-direction: column; gap: var(--s2); padding-top: var(--s3); border-top: 2px solid var(--ink); }
+.pf-btns { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.pf-btns .btn { flex: 1 1 auto; padding: 7px 12px 6px; font-size: 17px; }
+.pf-btns .btn:disabled { opacity: 0.45; }
+@media (max-width: 480px) { .pf-facts { grid-template-columns: minmax(0, 1fr); } }

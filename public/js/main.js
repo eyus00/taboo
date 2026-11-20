@@ -14,8 +14,9 @@ import { play } from './play.js';
 import { scenePreview, styleStill, clearPictures, paintBackdrop, paperTexture } from './art.js';
 import * as art from './art.js'; // (also: playerPortrait, for the results)
 import { loadTheme, THEME_MAP } from './themes/index.js';
-import { present } from './present.js';
+import { present, starOf } from './present.js';
 import { chat } from './chat.js';
+import { profile } from './profile.js';
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -375,6 +376,7 @@ function openProfile() {
   $('profile-error').textContent = '';
   $('profile-note').textContent = room ? `You are in room ${room.code}. Leave the room to change your name.` : '';
   $('profile-seal').textContent = initial(myName);
+  paintProfile();
   openPopup('profile');
   if (isTouch) field.blur(); // on a phone the keyboard comes up when you tap the name, not before
   else if (!room) field.select();
@@ -405,6 +407,141 @@ $('profile-form').addEventListener('submit', (e) => {
   if (changed) toast(`Signed as ${name}`);
   closeProfile();
 });
+
+// --- your record (profile.js): what is counted, shown; saved to a file, read from one -------
+const PF_MODES = [['potato', 'Hot Potato', 'flame'], ['time', 'Least Time', 'glass'], ['team', 'Team Bomb', 'bomb'], ['ko', 'Knockout', 'oni']];
+const longTime = (ms) => {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const min = Math.floor(s / 60);
+  return min < 60 ? `${min}m ${s % 60}s` : `${Math.floor(min / 60)}h ${min % 60}m`;
+};
+const favourite = (counts) => Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+function paintProfile() {
+  const p = profile.get();
+  const pct = p.rounds ? Math.round((p.wins / p.rounds) * 100) : 0;
+  const big = $('pf-big');
+  big.textContent = '';
+  for (const [label, value, small] of [['Rounds', p.rounds, ''], ['Won', p.wins, p.rounds ? `${pct}%` : ''], ['Best run', p.best, p.streak > 1 ? `now ${p.streak}` : '']]) {
+    const tile = el('div', 'pf-tile');
+    tile.append(el('b', '', String(value)), el('span', '', label));
+    if (small) tile.append(el('small', '', small));
+    big.append(tile);
+  }
+  // the last rounds, oldest first: won, lost, drawn
+  const form = $('pf-form');
+  form.textContent = '';
+  if (!p.recent.length) form.append(el('p', 'note', 'Play a round with others and it is counted here.'));
+  for (const r of p.recent) {
+    const chip = el('i', `pf-r ${r.r.toLowerCase()}`, r.r);
+    chip.title = `${PF_MODES.find((x) => x[0] === r.mode)?.[1] || ''}: ${r.r === 'W' ? 'won' : r.r === 'L' ? 'lost' : 'drawn'}`;
+    form.append(chip);
+  }
+  const modes = $('pf-modes');
+  modes.textContent = '';
+  for (const [id, name, icon] of PF_MODES) {
+    const g = p.by[id];
+    const li = el('li', g.rounds ? '' : 'none');
+    li.innerHTML = svg(icon);
+    const bar = el('span', 'bar');
+    const fill = el('i');
+    fill.style.width = `${g.rounds ? Math.round((g.wins / g.rounds) * 100) : 0}%`;
+    bar.append(fill);
+    li.append(el('b', '', name), bar, el('span', 'n', g.rounds ? `${g.wins} of ${g.rounds}` : 'not yet'));
+    modes.append(li);
+  }
+  const cups = p.cups.ko.played + p.cups.team.played;
+  const style = THEMES.find((t) => t.id === favourite(p.styles))?.name;
+  const stage = ARENAS.find((a) => a.id === favourite(p.stages))?.name;
+  const facts = $('pf-facts');
+  facts.textContent = '';
+  for (const [icon, label, value] of [
+    ['target', 'Tags and passes', String(p.tags)],
+    ['oni', 'Time as the oni', longTime(p.oniMs)],
+    ['clock', 'Time played', longTime(p.playMs)],
+    ['flag', 'Flags taken', String(p.team.flags)],
+    ['bomb', 'Bombs gone off in hand', String(p.team.blown)],
+    ['star', 'Best of the winners', String(p.team.stars)],
+    ['cup', 'Tournaments won', cups ? `${p.cups.ko.won + p.cups.team.won} of ${cups}` : '0'],
+    ['brush', 'Most played style', style || '-'],
+    ['gate', 'Most played stage', stage || '-'],
+  ]) {
+    const li = el('li');
+    li.innerHTML = svg(icon);
+    li.append(el('span', '', label), el('b', '', value));
+    facts.append(li);
+  }
+  $('btn-pf-reset').disabled = !p.rounds && !cups;
+}
+$('btn-pf-export').addEventListener('click', () => {
+  sfx.play('click');
+  const { filename, text } = profile.toFile(myName);
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = el('a');
+  a.href = url;
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  toast(`Saved as ${filename}`);
+});
+$('btn-pf-import').addEventListener('click', () => {
+  sfx.play('click');
+  $('pf-file').value = '';
+  $('pf-file').click();
+});
+$('pf-file').addEventListener('change', async () => {
+  const file = $('pf-file').files?.[0];
+  if (!file) return;
+  let text = '';
+  try {
+    text = await file.text();
+  } catch {}
+  const read = profile.fromText(text);
+  if (!read.ok) {
+    $('profile-error').textContent = read.error;
+    return;
+  }
+  const mine = profile.get();
+  const sure = await ask({ title: 'Load this profile?', body: `The file has ${plural(read.data.rounds, 'round')}${read.data.name ? `, saved as ${read.data.name}` : ''}. It takes the place of what is counted on this device (${plural(mine.rounds, 'round')}).`, yes: 'Load it', no: 'Keep mine' });
+  if (!sure) return;
+  profile.replace(read.data);
+  // (the name comes with it - unless a room knows you by another one right now)
+  const name = cleanName(read.data.name);
+  if (name && !room) {
+    myName = name;
+    store.set('tag.name', name);
+    $('home-name').textContent = myName;
+    $('home-seal').textContent = initial(myName);
+    $('profile-name').value = myName;
+    $('profile-seal').textContent = initial(myName);
+  }
+  $('profile-error').textContent = '';
+  paintProfile();
+  toast('Profile loaded');
+});
+$('btn-pf-reset').addEventListener('click', async () => {
+  sfx.play('click');
+  const p = profile.get();
+  if (!(await ask({ title: 'Start afresh?', body: `Everything counted on this device (${plural(p.rounds, 'round')}) is wiped. Save it to a file first if you want to keep it.`, yes: 'Wipe it', no: 'Keep it' }))) return;
+  profile.reset();
+  paintProfile();
+  toast('Your record is empty again');
+});
+// A round has ended (told by the server, once): count it, if we played in it - and a
+// tournament when its last round has.
+let cupMine = false; // we played a round of the tournament that is on
+function countRound(res) {
+  if (rig) return;
+  const slot = play.mySlot();
+  const played = profile.round(res, { slot, theme: play.info?.theme, arena: play.info?.arena, duration: play.info?.duration, star: starOf(res) === slot });
+  if (!res.cup) return;
+  if (played) cupMine = true;
+  if (!res.cup.final) return;
+  if (cupMine && res.reason !== 'forfeit') profile.cup(res.cup.ko ? 'ko' : 'team', res.winners.includes(res.cup.ko ? me()?.slot ?? slot : slot));
+  cupMine = false;
+}
 
 // ---------------------------------------------------------------------------
 // Talking to the server
@@ -2525,6 +2662,7 @@ socket.on('round', (msg) => {
   if (!room) return;
   clearInterval(nextTimer);
   // (whatever is on the players' screen stays: the opening takes over from it)
+  if (msg.cup?.round === 1) cupMine = false; // (a new tournament)
   const mine = me();
   // (a bot filling in may hold the same place as someone who arrived after the round began: they are only watching)
   const mySlot = mine && msg.players.some((p) => p.slot === mine.slot && !p.bot) ? mine.slot : -1;
@@ -2540,6 +2678,7 @@ socket.on('end', (res) => {
     show('game');
   }
   play.finish();
+  countRound(res);
   showResults(res);
   // Between the rounds of a tournament the result is shown on the players' screen itself (the
   // one the next round's draw is made on), over the card: who won, everyone's numbers, where

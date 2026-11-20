@@ -1514,4 +1514,50 @@ test('bots play team battles: flags are taken and turned, bombs change hands and
   assert.ok(falls / minutes < 0.03, `${falls} pit falls in ${minutes} bot-minutes`);
 });
 
+await (async () => {
+  const { profile } = await import('../public/js/profile.js');
+  test('the profile: rounds played are counted by what happened; a file is read back, and a doctored one put right', () => {
+    profile.reset();
+    const row = (slot, o = {}) => ({ slot, name: `P${slot}`, ms: 4000, tags: 2, team: slot % 2, boom: false, caps: 1, plus: 12, minus: 3, ...o });
+    const ctx = { slot: 0, theme: 'ink', arena: 'hills', duration: 60 };
+    // a team round won, as the best of the winners
+    assert.ok(profile.round({ mode: 'team', reason: 'time', rows: [row(0), row(1, { boom: true })], winners: [0], loser: -1, team: { score: [30, 10], win: 0 }, cup: null }, { ...ctx, star: true }));
+    // a team round drawn; a Hot Potato lost; a knockout round survived; a round watched; one that ended because everyone left
+    profile.round({ mode: 'team', reason: 'time', rows: [row(0, { boom: true }), row(1)], winners: [0, 1], loser: -1, team: { score: [5, 5], win: -1 }, cup: null }, ctx);
+    profile.round({ mode: 'potato', reason: 'time', rows: [row(0), row(1)], winners: [1], loser: 0, team: null, cup: null }, ctx);
+    profile.round({ mode: 'cup', reason: 'time', rows: [row(0), row(1)], winners: [0], loser: 1, team: null, cup: { ko: true, caught: 1, final: false } }, { ...ctx, theme: 'shadow' });
+    assert.equal(profile.round({ mode: 'potato', reason: 'time', rows: [row(1), row(2)], winners: [1], loser: 2, team: null, cup: null }, ctx), false, 'a round only watched is not counted');
+    assert.equal(profile.round({ mode: 'potato', reason: 'forfeit', rows: [row(0)], winners: [0], loser: -1, team: null, cup: null }, ctx), false, 'nor one that ended because everyone else left');
+    profile.cup('ko', true);
+    profile.cup('team', false);
+    const p = profile.get();
+    assert.deepEqual([p.rounds, p.wins, p.losses, p.draws, p.streak, p.best], [4, 2, 1, 1, 1, 1]);
+    assert.deepEqual(p.by, { potato: { rounds: 1, wins: 0 }, time: { rounds: 0, wins: 0 }, team: { rounds: 2, wins: 1 }, ko: { rounds: 1, wins: 1 } });
+    assert.deepEqual(p.team, { flags: 2, plus: 24, minus: 6, blown: 1, stars: 1 });
+    assert.deepEqual([p.playMs, p.oniMs, p.tags], [240000, 16000, 8]);
+    assert.deepEqual([p.styles, p.stages], [{ ink: 3, shadow: 1 }, { hills: 4 }]);
+    assert.deepEqual(p.cups, { ko: { played: 1, won: 1 }, team: { played: 1, won: 0 } });
+    assert.equal(p.recent.map((x) => x.r).join(''), 'WDLW');
+    // out to a file and back
+    const file = profile.toFile('Hana Sato!');
+    assert.equal(file.filename, 'onigokko-hana-sato.json');
+    const back = profile.fromText(file.text);
+    assert.ok(back.ok);
+    assert.deepEqual({ ...back.data, updated: 0 }, { ...p, name: 'Hana Sato!', updated: 0 });
+    // not a profile; from a newer game; nonsense
+    assert.equal(profile.fromText('{"app":"other"}').ok, false);
+    assert.equal(profile.fromText(JSON.stringify({ app: 'onigokko', kind: 'profile', v: 99 })).ok, false);
+    assert.equal(profile.fromText('not json').ok, false);
+    // a file someone has been at: only what a profile has survives, as numbers that can be true
+    const odd = profile.fromText(JSON.stringify({ app: 'onigokko', kind: 'profile', v: 1, id: '<x>', name: '<b>Zed</b>', rounds: 5, wins: 99, losses: -4, best: 1e30, streak: 'many', tags: 2.6, by: { team: { rounds: 2, wins: 7 }, hack: { rounds: 1 } }, styles: { ink: 2, '<script>': 9, shadow: -1 }, recent: [{ mode: 'nope', r: 'W' }, { mode: 'team', r: 'W' }, 'x'], __proto__: { polluted: true }, extra: 1 })).data;
+    assert.deepEqual([odd.rounds, odd.wins, odd.losses, odd.best, odd.streak, odd.tags], [5, 5, 0, 5, 0, 3]);
+    assert.deepEqual(odd.by.team, { rounds: 2, wins: 2 });
+    assert.ok(!('hack' in odd.by) && !('extra' in odd) && !/[<>]/.test(odd.name) && /^p_/.test(odd.id));
+    assert.deepEqual([odd.styles, odd.recent.length], [{ ink: 2 }, 1]);
+    assert.equal({}.polluted, undefined);
+    profile.reset();
+    assert.equal(profile.get().rounds, 0);
+  });
+})();
+
 console.log(`sim: ${passed} tests passed`);
